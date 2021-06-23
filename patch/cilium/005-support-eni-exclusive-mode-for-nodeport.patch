@@ -1,0 +1,106 @@
+From b1a61b0a89278f5fd9fd0e813dda0282340c7abf Mon Sep 17 00:00:00 2001
+From: xinwenqiang <xinwenqiang@bytedance.com>
+Date: Wed, 6 Apr 2022 18:50:07 +0800
+Subject: [PATCH] adapt eni exclusive mode for nodeport
+
+---
+ bpf/lib/nodeport.h                  | 12 +++++++++++-
+ daemon/cmd/daemon_main.go           |  3 +++
+ pkg/datapath/linux/config/config.go |  4 ++++
+ pkg/option/config.go                |  7 +++++++
+ 4 files changed, 25 insertions(+), 1 deletion(-)
+
+diff --git a/bpf/lib/nodeport.h b/bpf/lib/nodeport.h
+index b3c6676..ad9c113 100644
+--- a/bpf/lib/nodeport.h
++++ b/bpf/lib/nodeport.h
+@@ -1770,6 +1770,7 @@ static __always_inline int nodeport_lb4(struct __ctx_buff *ctx,
+ 	struct ct_state ct_state_new = {};
+ 	union macaddr smac, *mac;
+ 	bool backend_local;
++	struct endpoint_info *ep_info;
+ 	__u32 monitor = 0;
+ 
+ 	cilium_capture_in(ctx);
+@@ -1830,7 +1831,16 @@ skip_service_lookup:
+ 		return DROP_MISSED_TAIL_CALL;
+ 	}
+ 
+-	backend_local = __lookup_ip4_endpoint(tuple.daddr);
++	ep_info = __lookup_ip4_endpoint(tuple.daddr);
++#ifndef ENABLE_ENI_EXCLUSIVE
++	backend_local = ep_info;
++#else
++	if (ep_info && ep_info->lxc_id == HOST_EP_ID)
++		backend_local = true;
++	else
++		backend_local = false;
++#endif
++
+ 	if (!backend_local && lb4_svc_is_hostport(svc))
+ 		return DROP_INVALID;
+ 
+diff --git a/daemon/cmd/daemon_main.go b/daemon/cmd/daemon_main.go
+index babd522..6dbdadd 100644
+--- a/daemon/cmd/daemon_main.go
++++ b/daemon/cmd/daemon_main.go
+@@ -580,6 +580,9 @@ func init() {
+ 	flags.MarkHidden(option.NodePortMode)
+ 	option.BindEnv(option.NodePortMode)
+ 
++	flags.Bool(option.ENIModeExclusive, false, "Exclusive ENI mode")
++	option.BindEnv(option.ENIModeExclusive)
++
+ 	flags.String(option.NodePortAlg, option.NodePortAlgRandom, "BPF load balancing algorithm (\"random\", \"maglev\")")
+ 	flags.MarkHidden(option.NodePortAlg)
+ 	option.BindEnv(option.NodePortAlg)
+diff --git a/pkg/datapath/linux/config/config.go b/pkg/datapath/linux/config/config.go
+index 85b34e8..572d553 100644
+--- a/pkg/datapath/linux/config/config.go
++++ b/pkg/datapath/linux/config/config.go
+@@ -258,6 +258,10 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
+ 	}
+ 
+ 	if option.Config.EnableNodePort {
++		if option.Config.ENIModeExclusive {
++			cDefinesMap["ENABLE_ENI_EXCLUSIVE"] = "1"
++		}
++
+ 		if option.Config.EnableHealthDatapath {
+ 			cDefinesMap["ENABLE_HEALTH_CHECK"] = "1"
+ 		}
+diff --git a/pkg/option/config.go b/pkg/option/config.go
+index 0bc22a2..0742f26 100644
+--- a/pkg/option/config.go
++++ b/pkg/option/config.go
+@@ -249,6 +249,9 @@ const (
+ 	// ("snat", "dsr" or "hybrid")
+ 	NodePortMode = "node-port-mode"
+ 
++	// ENIModeExclusive indicates wether eni work on exclusive mode
++	ENIModeExclusive = "eni-mode-exclusive"
++
+ 	// NodePortAlg indicates which algorithm is used for backend selection
+ 	// ("random" or "maglev")
+ 	NodePortAlg = "node-port-algorithm"
+@@ -1665,6 +1668,9 @@ type DaemonConfig struct {
+ 	// ("snat", "dsr" or "hybrid")
+ 	NodePortMode string
+ 
++	// ENIModeExclusive indicates wether eni work on exclusive mode
++	ENIModeExclusive bool
++
+ 	// NodePortAlg indicates which backend selection algorithm is used
+ 	// ("random" or "maglev")
+ 	NodePortAlg string
+@@ -2410,6 +2416,7 @@ func (c *DaemonConfig) Populate() {
+ 	c.EnableL7Proxy = viper.GetBool(EnableL7Proxy)
+ 	c.EnableTracing = viper.GetBool(EnableTracing)
+ 	c.EnableNodePort = viper.GetBool(EnableNodePort)
++	c.ENIModeExclusive = viper.GetBool(ENIModeExclusive)
+ 	c.EnableSVCSourceRangeCheck = viper.GetBool(EnableSVCSourceRangeCheck)
+ 	c.EnableHostPort = viper.GetBool(EnableHostPort)
+ 	c.EnableHostLegacyRouting = viper.GetBool(EnableHostLegacyRouting)
+-- 
+2.32.0 (Apple Git-132)
+

@@ -1,0 +1,188 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  annotations:
+    app: cello
+  name: cello
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: cello
+  template:
+    metadata:
+      labels:
+        app: cello
+    spec:
+      tolerations:
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "node.kubernetes.io/not-ready"
+          operator: "Exists"
+          effect: "NoExecute"
+      nodeSelector:
+        beta.kubernetes.io/arch: amd64
+      serviceAccountName: cello-service-account
+      hostNetwork: true
+      hostPID: true
+      restartPolicy: Always
+      initContainers:
+        - name: cello-init
+          image: cr-cn-guilin-boe.ivolces.com/vke/cello-test:v1.1.0.beta.1.2
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          command: ["/bin/bash", "-c", "/script/install_env.sh"]
+          volumeMounts:
+            - mountPath: /opt/cni/bin/
+              name: host-cni-bin-dir
+            - mountPath: /etc/cni/net.d/
+              name: host-cni-conf-dir
+            - mountPath: /lib/modules
+              name: host-lib-modules
+            - mountPath: /etc/cello
+              name: configvolume
+      containers:
+        - name: cello
+          image: cr-cn-guilin-boe.ivolces.com/vke/cello-test:v1.1.0.beta.1.2
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c", "/script/entrypoint-cello.sh"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            privileged: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /var/run/cello
+              name: host-run-cello
+        - name: cilium
+          image: cr-cn-guilin-boe.ivolces.com/vke/cello-test:v1.1.0.beta.1.2
+          imagePullPolicy: IfNotPresent
+          command: [ "/usr/bin/bash", "-c", "/script/entrypoint-cilium.sh"]
+          env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: 172.16.45.239
+            - name: KUBERNETES_SERVICE_PORT
+              value: "6443"
+            # probe/partial/strict/disabled, partial default
+            - name: KUBE_PROXY_REPLACEMENT
+              value: strict
+            - name: NODENAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+            - name: CILIUM_K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+          livenessProbe:
+            failureThreshold: 6
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            tcpSocket:
+              host: localhost
+              port: 9099
+          readinessProbe:
+            tcpSocket:
+              host: localhost
+              port: 9099
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /host
+              name: host-root
+            - mountPath: /lib/modules
+              name: host-lib-modules
+            - mountPath: /etc/cni/net.d
+              name: host-cni-conf-dir
+            - mountPath: /opt/cni/bin/
+              name: host-cni-bin-dir
+            - mountPath: /sys/fs
+              name: host-sys-fs
+            - mountPath: /var/run/cilium
+              name: host-cilium-run
+            - mountPath: /host/opt/cni/bin
+              name: host-cni-bin-dir
+            - mountPath: /host/etc/cni/net.d
+              name: host-cni-conf-dir
+            - mountPath: /run/xtables.lock
+              name: host-xtables-lock
+            - mountPath: /etc/cilium/cilium-config
+              name: cilium-config-path
+              readOnly: true
+      volumes:
+        - name: configvolume
+          configMap:
+            name: cello-config
+            items:
+              - key: conf
+                path: cello.json
+              - key: 10-cello.conflist
+                path: 10-cello.conflist
+              - key: 00-cello-meta.conflist
+                path: 00-cello-meta.conflist
+        - name: cilium-config-path
+          configMap:
+            name: cilium-config
+        - name: host-cni-bin-dir
+          hostPath:
+            path: /opt/cni/bin/
+            type: DirectoryOrCreate
+        - name: host-cni-conf-dir
+          hostPath:
+            path: /etc/cni/net.d/
+            type: DirectoryOrCreate
+        - name: host-run-cello
+          hostPath:
+            path: /var/run/cello
+            type: DirectoryOrCreate
+        - name: host-device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+            type: "Directory"
+        - name: host-lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: host-root
+          hostPath:
+            path: /
+            type: "Directory"
+        - name: host-cilium-run
+          hostPath:
+            path: /var/run/cilium
+            type: DirectoryOrCreate
+        # To keep state between restarts / upgrades for bpf maps
+        - name: host-sys-fs
+          hostPath:
+            path: /sys/fs/
+            type: DirectoryOrCreate
+        - name: host-bpf-maps
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
+        # To access iptables concurrently with other processes (e.g. kube-proxy)
+        - name: host-xtables-lock
+          hostPath:
+            path: /run/xtables.lock
+            type: FileOrCreate

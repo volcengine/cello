@@ -1,0 +1,80 @@
+---
+ bpf/lib/nodeport.h                  | 27 +++++++++++++++++++++++++++
+ pkg/datapath/linux/config/config.go |  9 +++++++++
+ 2 files changed, 36 insertions(+)
+
+diff --git a/bpf/lib/nodeport.h b/bpf/lib/nodeport.h
+index 2159fec71..cf774266f 100644
+--- a/bpf/lib/nodeport.h
++++ b/bpf/lib/nodeport.h
+@@ -1566,6 +1566,15 @@ int tail_nodeport_ipv4_dsr(struct __ctx_buff *ctx)
+ 
+ 		ret = fib_lookup(ctx, &fib_params.l, sizeof(fib_params),
+ 				 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++
++#ifdef HOST_GATEWAY_IPV4
++		if(ret != 0) {
++			fib_params.l.ipv4_dst = HOST_GATEWAY_IPV4;
++			ret = fib_lookup(ctx, &fib_params.l, sizeof(fib_params),
++				 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++		}
++#endif/* HOST_GATEWAY_IPV4 */
++
+ 		if (ret != 0) {
+ 			ret = DROP_NO_FIB;
+ 			goto drop_err;
+@@ -1709,6 +1718,15 @@ int tail_nodeport_nat_ipv4(struct __ctx_buff *ctx)
+ 
+ 		ret = fib_lookup(ctx, &fib_params.l, sizeof(fib_params),
+ 				 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++
++#ifdef HOST_GATEWAY_IPV4
++		if(ret != 0) {
++			fib_params.l.ipv4_dst = HOST_GATEWAY_IPV4;
++			ret = fib_lookup(ctx, &fib_params.l, sizeof(fib_params),
++				 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++		}
++#endif/* HOST_GATEWAY_IPV4 */
++
+ 		if (ret != 0) {
+ 			ret = DROP_NO_FIB;
+ 			goto drop_err;
+@@ -2009,6 +2027,15 @@ static __always_inline int rev_nodeport_lb4(struct __ctx_buff *ctx, int *ifindex
+ 			ret = fib_lookup(ctx, &fib_params, sizeof(fib_params),
+ 					 BPF_FIB_LOOKUP_DIRECT |
+ 					 BPF_FIB_LOOKUP_OUTPUT);
++
++#ifdef HOST_GATEWAY_IPV4
++			if(ret != 0) {
++				fib_params.ipv4_dst = HOST_GATEWAY_IPV4;
++				ret = fib_lookup(ctx, &fib_params, sizeof(fib_params),
++					BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++			}
++#endif/* HOST_GATEWAY_IPV4 */
++
+ 			if (ret != 0)
+ 				return DROP_NO_FIB;
+ 
+diff --git a/pkg/datapath/linux/config/config.go b/pkg/datapath/linux/config/config.go
+index 3c0c2d1a4..53d3a9eb5 100644
+--- a/pkg/datapath/linux/config/config.go
++++ b/pkg/datapath/linux/config/config.go
+@@ -280,6 +280,16 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
+ 			if option.Config.EnableHealthDatapath {
+ 				cDefinesMap["LB4_HEALTH_MAP"] = lbmap.HealthProbe4MapName
+ 			}
++			// add hostGatewayIPv4
++			defaultRoutes, err := netlink.RouteListFiltered(netlink.FAMILY_V4, &netlink.Route{Dst: nil}, netlink.RT_FILTER_DST)
++			if err != nil {
++				log.Errorf("Get host gateway ip failed: %s", err.Error())
++			} else if len(defaultRoutes) == 0 {
++				log.Errorf("Get host gateway ip failed: empty")
++			} else {
++               log.Infof("Set HOST_GATEWAY_IPV4 to %s", defaultRoutes[0].Gw.String())
++				fmt.Fprint(fw, defineIPv4("HOST_GATEWAY_IPV4", defaultRoutes[0].Gw))
++			}
+ 		}
+ 		if option.Config.EnableIPv6 {
+ 			cDefinesMap["NODEPORT_NEIGH6"] = neighborsmap.Map6Name
+-- 
+2.30.1 (Apple Git-130)

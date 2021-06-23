@@ -1,0 +1,229 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: cello
+  name: cello
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: cello
+  template:
+    metadata:
+      labels:
+        app: cello
+    spec:
+      tolerations:
+        - operator: "Exists"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+      serviceAccountName: cello-service-account
+      hostNetwork: true
+      hostPID: true
+      priorityClassName: "system-node-critical"
+      restartPolicy: Always
+      initContainers:
+        - name: cello-init
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            privileged: true
+          command: [ "/bin/bash", "-c", "/script/install_env.sh" ]
+          volumeMounts:
+            - mountPath: /opt/cni/bin/
+              name: host-cni-bin-dir
+            - mountPath: /etc/cni/net.d/
+              name: host-cni-conf-dir
+            - mountPath: /lib/modules
+              name: host-lib-modules
+            - mountPath: /etc/cello
+              name: configvolume
+      containers:
+        - name: cello
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [ "cello-agent" ]
+          env:
+            {{- if .Values.cello.k8sServiceHost }}
+            - name: KUBERNETES_SERVICE_HOST
+              value: {{ .Values.cello.k8sServiceHost | quote }}
+            {{- end }}
+            {{- if .Values.cello.k8sServicePort }}
+            - name: KUBERNETES_SERVICE_PORT
+              value: {{ .Values.cello.k8sServicePort | quote }}
+            {{- end }}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            privileged: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /var/run/cello
+              name: host-run-cello
+            - mountPath: /var/run/cilium
+              name: host-cilium-run
+            - mountPath: /var/run/netns
+              name: host-run-netns
+            - mountPath: /opt/cni/bin
+              name: host-cni-bin-dir
+            - mountPath: /var/log/cello
+              name: host-log-cello
+            - mountPath: /var/log/cello/cni.log
+              name: host-log-cello-cni
+            - mountPath: /var/lib/kubelet/device-plugins
+              name: host-device-plugins
+        - name: cilium
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [ "cilium-launcher" ]
+          env:
+            {{- if .Values.cello.k8sServiceHost }}
+            - name: KUBERNETES_SERVICE_HOST
+              value: {{ .Values.cello.k8sServiceHost | quote }}
+            {{- end }}
+            {{- if .Values.cello.k8sServicePort }}
+            - name: KUBERNETES_SERVICE_PORT
+              value: {{ .Values.cello.k8sServicePort | quote }}
+            {{- end }}
+            # probe/partial/strict/disabled, partial default
+            - name: NODENAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+            - name: CILIUM_K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: CILIUM_CNI_CHAINING_MODE
+              value: cello-chainer
+          livenessProbe:
+            failureThreshold: 6
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            tcpSocket:
+              host: localhost
+              port: 9099
+          readinessProbe:
+            tcpSocket:
+              host: localhost
+              port: 9099
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /host
+              name: host-root
+            - mountPath: /lib/modules
+              name: host-lib-modules
+            - mountPath: /etc/cni/net.d
+              name: host-cni-conf-dir
+            - mountPath: /opt/cni/bin/
+              name: host-cni-bin-dir
+            - mountPath: /sys/fs/bpf
+              name: host-bpf-maps
+            - mountPath: /var/run/cilium
+              name: host-cilium-run
+            - mountPath: /var/run/netns
+              name: host-run-netns
+            - mountPath: /host/opt/cni/bin
+              name: host-cni-bin-dir
+            - mountPath: /host/etc/cni/net.d
+              name: host-cni-conf-dir
+            - mountPath: /run/xtables.lock
+              name: host-xtables-lock
+            - mountPath: /etc/cilium/cilium-config
+              name: cilium-config-path
+              readOnly: true
+            - mountPath: /etc/cilium/cello-config
+              name: configvolume
+              subPath: cello.json
+      volumes:
+        - name: configvolume
+          configMap:
+            name: cello-config
+            items:
+              - key: conf
+                path: cello.json
+              - key: 10-cello.conflist
+                path: net.d/10-cello.conflist
+        - name: cilium-config-path
+          configMap:
+            name: cilium-config
+        - name: host-cni-bin-dir
+          hostPath:
+            path: /opt/cni/bin/
+            type: DirectoryOrCreate
+        - name: host-cni-conf-dir
+          hostPath:
+            path: /etc/cni/net.d/
+            type: DirectoryOrCreate
+        - name: host-run-cello
+          hostPath:
+            path: /var/run/cello
+            type: DirectoryOrCreate
+        - name: host-run-netns
+          hostPath:
+            path: /var/run/netns
+            type: DirectoryOrCreate
+        - name: host-log-cello
+          hostPath:
+            path: /var/log/cello
+            type: DirectoryOrCreate
+        - name: host-log-cello-cni
+          hostPath:
+            path: /var/log/cello/cni.log
+            type: FileOrCreate
+        - name: host-device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+            type: Directory
+        - name: host-lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory
+        - name: host-cilium-run
+          hostPath:
+            path: /var/run/cilium
+            type: DirectoryOrCreate
+        # To keep state between restarts / upgrades for bpf maps
+        - name: host-bpf-maps
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
+        # To access iptables concurrently with other processes (e.g. kube-proxy)
+        - name: host-xtables-lock
+          hostPath:
+            path: /run/xtables.lock
+            type: FileOrCreate

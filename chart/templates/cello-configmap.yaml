@@ -1,0 +1,58 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: cello-config
+  namespace: kube-system
+data:
+  conf: |
+    {
+      {{- $configmap := (lookup "v1" "ConfigMap" "kube-system" "cello-config") }}
+      {{- if $configmap }}
+      {{- $conf := $configmap.data.conf | fromJson }}
+      {{- else }}
+      "subnets": [
+        {{- $last := sub (len .Values.cello.subnetIDs) 1}}
+        {{- range $idx,$item := .Values.cello.subnetIDs }}
+        {{ quote $item }}{{ if ne $idx $last }},{{end}}
+        {{- end}}
+      ],
+      "securityGroups": [
+        {{- $last := sub (len .Values.cello.securityGroupIDs) 1}}
+        {{- range $idx,$item := .Values.cello.securityGroupIDs }}
+        {{ quote $item }}{{ if ne $idx $last }},{{end}}
+        {{- end}}
+      ],
+      {{- end }}
+      "credentialAccessKeyId": "{{ .Values.cello.accessKey }}",
+      "credentialAccessKeySecret": "{{ .Values.cello.secretKey }}",
+      "openApiAddress": "{{ .Values.cello.openAPIAddress }}",
+      "poolTarget": 3,
+      "poolTargetMin": 5,
+      "poolMaxCapProbe": true,
+      "poolMonitorIntervalSec": 120,
+      "networkMode": "eni_shared",
+      "ipFamily": "{{ .Values.cello.ipFamily }}",
+      "platform": "kubernetes"
+    }
+  10-cello.conflist: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "cello-chainer",
+      "plugins": [
+        {
+          "type": "cello-cni",
+          "capabilities": {
+            "bandwidth": true
+           },
+          "redirectToHostCIDRs": [
+            {{- $last := sub (len .Values.cello.redirectToHostCIDRs) 1}}
+            {{- range $idx,$item := .Values.cello.redirectToHostCIDRs }}
+            {{ quote $item }}{{ if ne $idx $last }},{{end}}
+            {{- end}}
+          ]
+        },
+        {
+          "type": "cilium-cni"
+        }
+      ]
+    }

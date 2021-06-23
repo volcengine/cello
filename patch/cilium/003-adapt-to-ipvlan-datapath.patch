@@ -1,0 +1,39 @@
+From f8a6c547d44444389e05eb8ce5b580a67db7b4f9 Mon Sep 17 00:00:00 2001
+From: xinwenqiang <xinwenqiang@bytedance.com>
+Date: Wed, 26 Jan 2022 17:25:15 +0800
+Subject: [PATCH 2/2] adapt to ipvlan datapath
+
+---
+ bpf/lib/nodeport.h | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/bpf/lib/nodeport.h b/bpf/lib/nodeport.h
+index 28848f4..1d98e97 100644
+--- a/bpf/lib/nodeport.h
++++ b/bpf/lib/nodeport.h
+@@ -2059,7 +2059,7 @@ __section_tail(CILIUM_MAP_CALLS, CILIUM_CALL_IPV4_NODEPORT_REVNAT)
+ int tail_rev_nodeport_lb4(struct __ctx_buff *ctx)
+ {
+ 	int ifindex = 0;
+-	int ret = 0;
++	int ret, dir = 0;
+ #if defined(ENABLE_HOST_FIREWALL) && defined(IS_BPF_HOST)
+ 	/* We only enforce the host policies if nodeport.h is included from
+ 	 * bpf_host.
+@@ -2081,8 +2081,11 @@ int tail_rev_nodeport_lb4(struct __ctx_buff *ctx)
+
+ 	edt_set_aggregate(ctx, 0);
+ 	cilium_capture_out(ctx);
+-
+-	return ctx_redirect(ctx, ifindex, 0);
++	dir = ctx_load_meta(ctx, CB_NAT);
++	if (dir == NAT_DIR_INGRESS){
++		return ctx_redirect(ctx, ifindex, 0);
++	}
++	return CTX_ACT_OK;
+ }
+
+ declare_tailcall_if(__or3(__and(is_defined(ENABLE_IPV4),
+--
+2.32.0 (Apple Git-132)
+

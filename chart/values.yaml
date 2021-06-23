@@ -1,0 +1,26 @@
+image:
+  repository: "cr-cn-beijing.volces.com/cello/cello"
+  tag: v1.6.2
+  pullPolicy: "Always"
+
+cello:
+  # IDs of the subnets to be used by Pods.
+  subnetIDs: []
+  # IDs of the security groups to be used by Pods.
+  securityGroupIDs: []
+  # IPFamily represents the IP Family: "ipv4", "ipv6" or "dual".
+  ipFamily: "ipv4"
+  # All traffic targeting these CIDRs will be redirected to host.
+  redirectToHostCIDRs: ["169.254.0.0/16"]
+
+  # VolcEngine OpenAPI address
+  openAPIAddress: "open.volcengineapi.com"
+  # VolcEngine OpenAPI secrets
+  accessKey: ""
+  secretKey: ""
+  # Kubernetes service host
+  k8sServiceHost: ""
+  # Kubernetes service port
+  k8sServicePort: ""
+cilium:
+  debug: false

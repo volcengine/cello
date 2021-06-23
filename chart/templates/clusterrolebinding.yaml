@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cello-cluster-role-binding
+  namespace: kube-system
+subjects:
+  - kind: ServiceAccount
+    name: cello-service-account
+    namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cello-cluster-role

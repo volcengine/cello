@@ -1,0 +1,152 @@
+# namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cello-monitor
+
+---
+# rbac
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-cello
+    namespace: cello-monitor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - services
+      - endpoints
+      - pods
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - configmaps
+    verbs: ["get"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-cello
+  namespace: cello-monitor
+---
+
+# config for prometheus
+apiVersion: v1
+data:
+  prometheus.yaml: |
+    global:
+      scrape_interval: 10s
+      scrape_timeout: 10s
+      evaluation_interval: 10s
+    scrape_configs:
+      - job_name: cello-metric
+        scrape_interval: 1m
+        scrape_timeout: 10s
+        metrics_path: /metrics
+        scheme: http
+        kubernetes_sd_configs:
+        - role: pod
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_label_app]
+          regex: cello
+          replacement: $1
+          action: keep
+        - source_labels: [__meta_kubernetes_namespace]
+          regex: kube-system
+          action: keep
+        - source_labels: [__address__]
+          separator: ;
+          regex: (.*)
+          target_label: __address__
+          replacement: $1:11414
+          action: replace
+        - separator: ;
+          regex: __meta_kubernetes_pod_(.+)
+          replacement: $1
+          action: labelmap
+        - regex: container_name
+          action: labeldrop
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: prometheus-config
+  namespace: cello-monitor
+
+---
+# deploy for prometheus
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-cello
+  namespace: cello-monitor
+  labels:
+    app: prometheus-cello
+spec:
+  selector:
+    matchLabels:
+      app: prometheus-cello
+  replicas: 1
+  template:
+    metadata:
+      name: prometheus-cello
+      labels:
+        app: prometheus-cello
+    spec:
+      hostNetwork: true
+      serviceAccountName: prometheus-cello
+      containers:
+        - name: prometheus
+          #image: prom/prometheus:v1.7.0
+          image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:prometheus-v1.7.0   # TOEDIT
+          imagePullPolicy: IfNotPresent
+          args:
+            - '-storage.local.retention=48h'
+            - '-storage.local.memory-chunks=500000'
+            - '-config.file=/etc/prometheus/prometheus.yaml'
+          ports:
+            - name: webui
+              containerPort: 9090
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/prometheus
+      volumes:
+        - name: config-volume
+          configMap:
+            name: prometheus-config
+
+---
+# prometheus service
+# optional, not necessary
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: prometheus-cello
+#   namespace: cello-monitor
+#   labels:
+#     app: prometheus-cello
+# spec:
+#   externalTrafficPolicy: Cluster
+#   ports:
+#   - name: cello-metrics
+#     port: 9090
+#     protocol: TCP
+#     targetPort: 9090
+#   type: NodePort
+#   selector:
+#     app: prometheus-cello

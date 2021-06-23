@@ -1,0 +1,167 @@
+# at least 2 worker node needed for test
+# namespace policy-test
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: policy-test
+
+---
+# server pod with policy
+apiVersion: v1
+kind: Pod
+metadata:
+  name: policy-spod
+  namespace: policy-test
+  labels:
+    app: policy-spod
+spec:
+  containers:
+  - name: nginx
+    # image: docker.io/library/nginx:latest
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: access-policy
+  namespace: policy-test
+spec:
+  podSelector:
+    matchLabels:
+      app: policy-spod
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          access: "true"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: policy-svc
+  namespace: policy-test
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: policy-spod
+
+---
+# server pod without policy
+apiVersion: v1
+kind: Pod
+metadata:
+  name: non-policy-spod
+  namespace: policy-test
+  labels:
+    app: non-policy-spod
+spec:
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app: policy-spod
+        topologyKey: kubernetes.io/hostname
+  containers:
+  - name: nginx
+    # image: docker.io/library/nginx:latest
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: non-policy-svc
+  namespace: policy-test
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: non-policy-spod
+
+
+
+---
+# client pod without policy label
+apiVersion: v1
+kind: Pod
+metadata:
+  name: non-policy-cli
+  namespace: policy-test
+  labels:
+    app: non-policy-cli
+spec:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: "app"
+            operator: In
+            values:
+            - non-policy-spod
+            - policy-spod
+        topologyKey: kubernetes.io/hostname
+  restartPolicy: Never
+  initContainers:
+  - name: waiting
+    # After version 1.28.4, the following errors may occur in dns parsing: server can't find policy-svc.policy-test.svc.cluster.local: NXDOMAIN
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    command: ["sh", "-c", "for i in `seq 1 120`; do nslookup policy-svc && nslookup non-policy-svc && wget -T 1 non-policy-svc && sleep 30 && exit 0; sleep 1; done"]
+  containers:
+  - name: policy
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    command: ["sh", "-c", "wget -T 1 policy-svc"]
+  - name: non-policy
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    command: ["sh", "-c", "wget -T 1 non-policy-svc"]
+---
+
+# client pod with policy label
+apiVersion: v1
+kind: Pod
+metadata:
+  name: policy-cli
+  namespace: policy-test
+  labels:
+    app: policy-cli
+    access: "true"
+spec:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: "app"
+            operator: In
+            values:
+            - non-policy-spod
+            - policy-spod
+        topologyKey: kubernetes.io/hostname
+  restartPolicy: Never
+  initContainers:
+  - name: waiting
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    command: ["sh", "-c", "for i in `seq 1 120`; do nslookup policy-svc && nslookup non-policy-svc && wget -T 1 non-policy-svc && sleep 30 && exit 0; sleep 1; done"]
+  containers:
+  - name: policy
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    command: ["sh", "-c", "wget -T 1 policy-svc"]
+  - name: non-policy
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    command: ["sh", "-c", "wget -T 1 non-policy-svc"]

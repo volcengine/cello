@@ -1,0 +1,165 @@
+From f3948c6810a6c34ed594578cdf6eba6f26ea605b Mon Sep 17 00:00:00 2001
+From: xinwenqiang <xinwenqiang@bytedance.com>
+Date: Wed, 9 Feb 2022 14:59:00 +0800
+Subject: [PATCH] fix nodeport while rs in hostnetwork
+
+---
+ bpf/bpf_host.c                      | 11 ++++
+ bpf/lib/nodeport.h                  | 97 +++++++++++++++++++++++++++++
+ pkg/datapath/linux/config/config.go |  3 +
+ 3 files changed, 111 insertions(+)
+
+diff --git a/bpf/bpf_host.c b/bpf/bpf_host.c
+index 205e3d0..744d4f6 100644
+--- a/bpf/bpf_host.c
++++ b/bpf/bpf_host.c
+@@ -1035,6 +1035,17 @@ out:
+ 	}
+ #endif
+
++#if defined(ENABLE_NODEPORT)
++/* for hostnetwork */
++	int ifindex = 0;
++	ret = rev_nodeport_lb4_host(ctx, &ifindex);
++	if(ret == CTX_ACT_OK) {
++		send_trace_notify(ctx, TRACE_TO_NETWORK, src_id, 0, 0,
++			  0, ret, 0);
++		return ret;
++	}
++#endif
++
+ #if defined(ENABLE_NODEPORT) && \
+ 	(!defined(ENABLE_DSR) || \
+ 	 (defined(ENABLE_DSR) && defined(ENABLE_DSR_HYBRID)) || \
+diff --git a/bpf/lib/nodeport.h b/bpf/lib/nodeport.h
+index 1d98e97..b3c6676 100644
+--- a/bpf/lib/nodeport.h
++++ b/bpf/lib/nodeport.h
+@@ -1917,6 +1917,10 @@ redo_local:
+ #endif /* DSR_ENCAP_MODE */
+ 			ep_tail_call(ctx, CILIUM_CALL_IPV4_NODEPORT_DSR);
+ 		} else {
++			if (ip4->daddr == HOST_IPV4) {
++				cilium_capture_in(ctx);
++				return CTX_ACT_OK;
++			}
+ 			ctx_store_meta(ctx, CB_NAT, NAT_DIR_EGRESS);
+ 			ep_tail_call(ctx, CILIUM_CALL_IPV4_NODEPORT_NAT);
+ 		}
+@@ -2055,6 +2059,99 @@ static __always_inline int rev_nodeport_lb4(struct __ctx_buff *ctx, int *ifindex
+ 	return CTX_ACT_OK;
+ }
+
++/* like rev_nodeport_lb4 for hostnetwork backend */
++static __always_inline int rev_nodeport_lb4_host(struct __ctx_buff *ctx, int *ifindex)
++{
++	struct ipv4_ct_tuple tuple = {};
++	void *data, *data_end;
++	struct iphdr *ip4;
++	struct csum_offset csum_off = {};
++	int ret, ret2, l3_off = ETH_HLEN, l4_off;
++	struct ct_state ct_state = {};
++	struct bpf_fib_lookup fib_params = {};
++	union macaddr *dmac = NULL;
++	__u32 monitor = 0;
++	bool l2_hdr_required = true;
++
++	if (!revalidate_data(ctx, &data, &data_end, &ip4))
++		return DROP_INVALID;
++
++	tuple.nexthdr = ip4->protocol;
++	tuple.daddr = ip4->daddr;
++	tuple.saddr = ip4->saddr;
++
++	l4_off = l3_off + ipv4_hdrlen(ip4);
++	csum_l4_offset_and_flags(tuple.nexthdr, &csum_off);
++
++	ret = ct_lookup4(get_ct_map4(&tuple), &tuple, ctx, l4_off, CT_INGRESS, &ct_state,
++			 &monitor);
++
++	if (ret == CT_REPLY && ct_state.node_port == 1 && ct_state.rev_nat_index != 0) {
++		ret2 = lb4_rev_nat(ctx, l3_off, l4_off, &csum_off,
++				   &ct_state, &tuple,
++				   REV_NAT_F_TUPLE_SADDR, ipv4_has_l4_header(ip4));
++		if (IS_ERR(ret2))
++			return ret2;
++
++		if (!revalidate_data(ctx, &data, &data_end, &ip4))
++			return DROP_INVALID;
++
++		bpf_mark_snat_done(ctx);
++
++		*ifindex = ct_state.ifindex;
++
++		ret = maybe_add_l2_hdr(ctx, *ifindex, &l2_hdr_required);
++		if (ret != 0)
++			return ret;
++		if (!l2_hdr_required)
++			return CTX_ACT_OK;
++		else if (!revalidate_data_with_eth_hlen(ctx, &data, &data_end,
++							&ip4, __ETH_HLEN))
++			return DROP_INVALID;
++
++		if (fib_lookup_bypass())
++			dmac = map_lookup_elem(&NODEPORT_NEIGH4, &ip4->daddr);
++		if (dmac) {
++			union macaddr mac = NATIVE_DEV_MAC_BY_IFINDEX(*ifindex);
++
++			if (eth_store_daddr_aligned(ctx, dmac->addr, 0) < 0)
++				return DROP_WRITE_ERROR;
++			if (eth_store_saddr_aligned(ctx, mac.addr, 0) < 0)
++				return DROP_WRITE_ERROR;
++		} else {
++			fib_params.family = AF_INET;
++			fib_params.ifindex = *ifindex;
++
++			fib_params.ipv4_src = ip4->saddr;
++			fib_params.ipv4_dst = ip4->daddr;
++
++			ret = fib_lookup(ctx, &fib_params, sizeof(fib_params),
++					 BPF_FIB_LOOKUP_DIRECT |
++					 BPF_FIB_LOOKUP_OUTPUT);
++
++#ifdef HOST_GATEWAY_IPV4
++			if(ret != 0) {
++				fib_params.ipv4_dst = HOST_GATEWAY_IPV4;
++				ret = fib_lookup(ctx, &fib_params, sizeof(fib_params),
++					BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++			}
++#endif/* HOST_GATEWAY_IPV4 */
++
++			if (ret != 0)
++				return DROP_NO_FIB;
++
++			if (eth_store_daddr(ctx, fib_params.dmac, 0) < 0)
++				return DROP_WRITE_ERROR;
++			if (eth_store_saddr(ctx, fib_params.smac, 0) < 0)
++				return DROP_WRITE_ERROR;
++		}
++	} else {
++		return DROP_MISSED_TAIL_CALL;
++	}
++
++	return CTX_ACT_OK;
++}
++
+ __section_tail(CILIUM_MAP_CALLS, CILIUM_CALL_IPV4_NODEPORT_REVNAT)
+ int tail_rev_nodeport_lb4(struct __ctx_buff *ctx)
+ {
+diff --git a/pkg/datapath/linux/config/config.go b/pkg/datapath/linux/config/config.go
+index a790e12..85b34e8 100644
+--- a/pkg/datapath/linux/config/config.go
++++ b/pkg/datapath/linux/config/config.go
+@@ -290,6 +290,9 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
+                log.Infof("Set HOST_GATEWAY_IPV4 to %s", defaultRoutes[0].Gw.String())
+ 				fmt.Fprint(fw, defineIPv4("HOST_GATEWAY_IPV4", defaultRoutes[0].Gw))
+ 			}
++
++			// add HostIPv4
++			fmt.Fprint(fw, defineIPv4("HOST_IPV4", node.GetIPv4().To4()))
+ 		}
+ 		if option.Config.EnableIPv6 {
+ 			cDefinesMap["NODEPORT_NEIGH6"] = neighborsmap.Map6Name
+--
+2.32.0 (Apple Git-132)
+

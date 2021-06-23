@@ -1,0 +1,166 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cello-service-account
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cello-cluster-role
+  namespace: kube-system
+rules:
+  - apiGroups: [ "" ]
+    resources: [ "pods", "nodes", "namespaces", "configmaps", "serviceaccounts" ]
+    verbs: [ "get", "watch", "list", "update" ]
+  - apiGroups: [ "" ]
+    resources:
+      - events
+    verbs:
+      - create
+  - apiGroups: [ "networking.k8s.io" ]
+    resources:
+      - networkpolicies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [ "coordination.k8s.io" ]
+    resources: [ "leases" ]
+    verbs: [ "get", "watch", "update", "create" ]
+  - apiGroups: [ "extensions" ]
+    resources:
+      - networkpolicies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [ "" ]
+    resources:
+      - pods/status
+    verbs:
+      - update
+  - apiGroups: [ "discovery.k8s.io" ]
+    resources:
+      - endpointslices
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [ "" ]
+    resources:
+      - endpoints
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [ "" ]
+    resources:
+      - nodes
+      - nodes/status
+    verbs:
+      - patch
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - update
+  - apiGroups:
+      - cilium.io
+    resources:
+      - '*'
+    verbs:
+      - '*'
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cello-cluster-role-binding
+  namespace: kube-system
+subjects:
+  - kind: ServiceAccount
+    name: cello-service-account
+    namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cello-cluster-role
+
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: cello-config
+  namespace: kube-system
+data:
+  conf: |
+    {
+      "subnets":[
+              "vsw-xxx",
+              "vsw-yyy"
+      ],
+      "security_groups": [
+              "sg1",
+              "sg2"
+      ],
+      "ram_role": "KubernetesNodeRoleForECS",
+      "open_api_address": "open-boe.volcengineapi.com",
+      "eni_manager_config": {
+              "eni_target": 1,
+              "ip_target": 3,
+              "ip_target_min": 5,
+              "monitor_interval": 10,
+              "reduce_interval": 30,
+              "resource_sync_period": 60
+      }
+    }
+  10-cello.conflist: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "cello-chainer",
+      "plugins": [
+        {
+          "type": "cello-cni"
+        },
+        {
+          "name": "cilium",
+          "type": "cilium-cni"
+        }
+      ]
+    }
+
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cilium-config
+  namespace: kube-system
+data:
+  agent-health-port: "9099"
+  bpf-map-dynamic-size-ratio: "0.0025"
+  disable-envoy-version-check: "true"
+  direct-routing-device: "eth0"
+  datapath-mode: "ipvlan"
+  debug: "false"
+  enable-ipv6: "false"
+  enable-ipv4-masquerade: "false"
+  enable-policy: "never"
+  enable-endpoint-health-checking: "false"
+  enable-host-legacy-routing: "true"
+  enable-local-node-route: "false"
+  ipam: "cluster-pool"
+  ipv4-range: "169.254.0.0/16"
+  ipvlan-master-device: "eth0"
+  kube-proxy-replacement: "strict"
+  node-port-mode: "snat"
+  tunnel: "disabled"

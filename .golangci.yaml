@@ -1,0 +1,43 @@
+# golangci-lint configuration used for CI
+run:
+  tests: true
+  timeout: 10m
+  skip-files:
+    - ".*\\.pb\\.go"
+  skip-dirs-use-default: true
+
+# all available settings of specific linters
+linters-settings:
+  goimports:
+    local-prefixes: github.com/volcengine/cello
+  goheader:
+    template-path: ./copyright.txt
+
+issues:
+  # Excluding configuration per-path, per-linter, per-text and per-source
+  exclude-rules:
+    - linters: [ staticcheck ]
+      text: "SA1019"                  # this is rule for deprecated method
+    - linters: [ staticcheck ]
+      text: "SA9003: empty branch"
+    - linters: [ staticcheck ]
+      text: "SA2001: empty critical section"
+    - linters: [ goerr113 ]
+      text: "do not define dynamic errors, use wrapped static errors instead" # This rule to avoid opinionated check fmt.Errorf("text")
+    # Skip goimports check on generated files
+    - path: \\.(generated\\.deepcopy|pb)\\.go$
+      linters:
+        - goimports
+
+linters:
+  disable-all: true
+  enable:
+    - goerr113
+    - gofmt
+    - goimports
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+    - goheader

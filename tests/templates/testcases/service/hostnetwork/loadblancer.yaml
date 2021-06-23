@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: spod-hn
+  labels:
+    app: spod-hn
+spec:
+  hostNetwork: true
+  containers:
+  - name: nginx
+    # image: docker.io/library/nginx:latest
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+
+---
+# Cluster Loadbalancer
+apiVersion: v1
+kind: Service
+metadata:
+  name: loadbalancer-cluster-hn
+  labels:
+    test: lbsvc-hn
+spec:
+  selector:
+    app: spod-hn
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  type: LoadBalancer
+
+---
+# Local Traffic Loadbalancer
+apiVersion: v1
+kind: Service
+metadata:
+  name: loadbalancer-local-hn
+  labels:
+    test: lbsvc-hn
+spec:
+  selector:
+    app: spod-hn
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  type: LoadBalancer
+  externalTrafficPolicy: Local

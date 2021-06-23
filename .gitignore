@@ -1,0 +1,8 @@
+/.idea
+/.vscode
+/output
+*.swp
+*.swo
+*.db
+
+/pkg/utils/logger/log_test.log

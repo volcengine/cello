@@ -1,0 +1,66 @@
+From bab28966546a8c7a78467b4296158ac17013fd46 Mon Sep 17 00:00:00 2001
+From: xinwenqiang <xinwenqiang@bytedance.com>
+Date: Mon, 13 Mar 2023 16:01:00 +0800
+Subject: [PATCH] Support pod egress qos
+
+---
+ bpf/bpf_lxc.c                       | 15 +++++++++++++--
+ pkg/datapath/linux/config/config.go |  6 ++++++
+ 2 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/bpf/bpf_lxc.c b/bpf/bpf_lxc.c
+index e4baa4d207..fe689b4fd0 100644
+--- a/bpf/bpf_lxc.c
++++ b/bpf/bpf_lxc.c
+@@ -974,10 +974,21 @@ int handle_xgress(struct __ctx_buff *ctx)
+ 		goto out;
+ 	}
+ 
++#if defined(ENABLE_BANDWIDTH_MANAGER)
++    edt_set_aggregate(ctx, LXC_ID);
++	ret = edt_sched_departure(ctx);
++	/* No send_drop_notify_error() here given we're rate-limiting. */
++	if (ret == CTX_ACT_DROP) {
++		update_metrics(ctx_full_len(ctx), METRIC_EGRESS,
++			       -DROP_EDT_HORIZON);
++		return ret;
++	}
++#endif
++
+ 	switch (proto) {
+ #ifdef ENABLE_IPV6
+ 	case bpf_htons(ETH_P_IPV6):
+-		edt_set_aggregate(ctx, LXC_ID);
++//		edt_set_aggregate(ctx, LXC_ID);
+ 		invoke_tailcall_if(__or(__and(is_defined(ENABLE_IPV4), is_defined(ENABLE_IPV6)),
+ 					is_defined(DEBUG)),
+ 				   CILIUM_CALL_IPV6_FROM_LXC, tail_handle_ipv6);
+@@ -985,7 +996,7 @@ int handle_xgress(struct __ctx_buff *ctx)
+ #endif /* ENABLE_IPV6 */
+ #ifdef ENABLE_IPV4
+ 	case bpf_htons(ETH_P_IP):
+-		edt_set_aggregate(ctx, LXC_ID);
++//		edt_set_aggregate(ctx, LXC_ID);
+ 		invoke_tailcall_if(__or(__and(is_defined(ENABLE_IPV4), is_defined(ENABLE_IPV6)),
+ 					is_defined(DEBUG)),
+ 				   CILIUM_CALL_IPV4_FROM_LXC, tail_handle_ipv4);
+diff --git a/pkg/datapath/linux/config/config.go b/pkg/datapath/linux/config/config.go
+index 572d553f3f..70d173c507 100644
+--- a/pkg/datapath/linux/config/config.go
++++ b/pkg/datapath/linux/config/config.go
+@@ -792,6 +792,12 @@ func (h *HeaderfileWriter) writeTemplateConfig(fw *bufio.Writer, e datapath.Endp
+ 		fmt.Fprint(fw, "#define ENABLE_ARP_PASSTHROUGH 1\n")
+ 	}
+ 
++	if option.Config.EnableBandwidthManager {
++		fmt.Fprint(fw, "#define ENABLE_BANDWIDTH_MANAGER 1\n")
++		fmt.Fprintf(fw, "#define THROTTLE_MAP %s\n", bwmap.MapName)
++		fmt.Fprintf(fw, "#define THROTTLE_MAP_SIZE %d\n", bwmap.MapSize)
++	}
++
+ 	if !e.HasIpvlanDataPath() {
+ 		if !e.RequireARPPassthrough() {
+ 			fmt.Fprint(fw, "#define ENABLE_ARP_RESPONDER 1\n")
+-- 
+2.34.1
+

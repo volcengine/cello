@@ -1,0 +1,526 @@
+From a4327798c8dccec52bd5883313dc479eddf85610 Mon Sep 17 00:00:00 2001
+From: xinwenqiang <xinwenqiang@bytedance.com>
+Date: Fri, 17 Mar 2023 18:01:41 +0800
+Subject: [PATCH] Support ipv6
+
+Fix node IPv6 addrees not in endpoint list issue
+See Cilium issue: https://github.com/cilium/cilium/pull/17418
+
+Add nodeport support for IPv6 hostnetwork pod.
+* Add support for IPv6 hostnetwork pod.
+* Removed unuesd debug code.
+* Fix unhandled SNAT when service backend is remote endpoint.
+---
+ bpf/bpf_host.c                             |  60 ++++++----
+ bpf/lib/icmp6.h                            |   2 +-
+ bpf/lib/nodeport.h                         | 128 ++++++++++++++++++++-
+ bpf/node_config.h                          |   6 +-
+ pkg/datapath/linux/config/config.go        |  15 ++-
+ pkg/node/ip_linux.go                       |   7 +-
+ plugins/cilium-cni/chaining/cello/cello.go |  40 ++++---
+ 7 files changed, 209 insertions(+), 49 deletions(-)
+
+diff --git a/bpf/bpf_host.c b/bpf/bpf_host.c
+index 744d4f60a2..bd15198a35 100644
+--- a/bpf/bpf_host.c
++++ b/bpf/bpf_host.c
+@@ -921,8 +921,8 @@ handle_netdev(struct __ctx_buff *ctx, const bool from_host)
+ #ifdef ENABLE_HOST_FIREWALL
+ 		int ret = DROP_UNSUPPORTED_L2;
+ 
+-		return send_drop_notify(ctx, SECLABEL, WORLD_ID, 0, ret,
+-					CTX_ACT_DROP, METRIC_EGRESS);
++		//return send_drop_notify(ctx, SECLABEL, WORLD_ID, 0, ret, CTX_ACT_DROP, METRIC_EGRESS);
++		return ret;
+ #else
+ 		send_trace_notify(ctx, TRACE_TO_STACK, HOST_ID, 0, 0, 0,
+ 				  REASON_FORWARDED, 0);
+@@ -971,16 +971,18 @@ int to_netdev(struct __ctx_buff *ctx __maybe_unused)
+ {
+ 	__u32 __maybe_unused src_id = 0;
+ 	__u16 __maybe_unused proto = 0;
++	int ifindex = 0;
+ 	int ret = CTX_ACT_OK;
+ 
+-#ifdef ENABLE_HOST_FIREWALL
++#if defined(ENABLE_HOST_FIREWALL) || defined(ENABLE_NODEPORT)
+ 	if (!proto && !validate_ethertype(ctx, &proto)) {
+ 		ret = DROP_UNSUPPORTED_L2;
+-		goto out;
++		return ret;
+ 	}
++#endif
+ 
++#ifdef ENABLE_HOST_FIREWALL
+ 	policy_clear_mark(ctx);
+-
+ 	switch (proto) {
+ # if defined ENABLE_ARP_PASSTHROUGH || defined ENABLE_ARP_RESPONDER
+ 	case bpf_htons(ETH_P_ARP):
+@@ -1019,12 +1021,34 @@ int to_netdev(struct __ctx_buff *ctx __maybe_unused)
+ 		ret = DROP_UNKNOWN_L3;
+ 		break;
+ 	}
+-out:
+-	if (IS_ERR(ret))
+-		return send_drop_notify_error(ctx, src_id, ret, CTX_ACT_DROP,
+-					      METRIC_EGRESS);
+ #endif /* ENABLE_HOST_FIREWALL */
+ 
++#if defined(ENABLE_NODEPORT)
++	/* handle nodeport reverse dnat for hostnetwork pods */
++	switch (proto) {
++		#ifdef ENABLE_IPV4
++		case bpf_htons(ETH_P_IP): {
++			ret = rev_nodeport_lb4_host(ctx, &ifindex);
++			break;
++		}
++		#endif/* ENABLE_IPV4 */
++		#ifdef ENABLE_IPV6
++		case bpf_htons(ETH_P_IPV6): {
++			ret = rev_nodeport_lb6_host(ctx, &ifindex);
++			break;
++		}
++		#endif/* ENABLE_IPV6 */
++		default:
++			ret = DROP_UNKNOWN_L3;
++			break;
++	}
++	if (ret == CTX_ACT_OK) {
++	send_trace_notify(ctx, TRACE_TO_NETWORK, src_id, 0, 0,
++			  0, ret, 0);
++		return CTX_ACT_OK;
++	}
++#endif /*ENABLE_NODEPORT*/
++
+ #if defined(ENABLE_BANDWIDTH_MANAGER)
+ 	ret = edt_sched_departure(ctx);
+ 	/* No send_drop_notify_error() here given we're rate-limiting. */
+@@ -1035,17 +1059,6 @@ out:
+ 	}
+ #endif
+ 
+-#if defined(ENABLE_NODEPORT)
+-/* for hostnetwork */
+-	int ifindex = 0;
+-	ret = rev_nodeport_lb4_host(ctx, &ifindex);
+-	if(ret == CTX_ACT_OK) {
+-		send_trace_notify(ctx, TRACE_TO_NETWORK, src_id, 0, 0,
+-			  0, ret, 0);
+-		return ret;
+-	}
+-#endif
+-
+ #if defined(ENABLE_NODEPORT) && \
+ 	(!defined(ENABLE_DSR) || \
+ 	 (defined(ENABLE_DSR) && defined(ENABLE_DSR_HYBRID)) || \
+@@ -1054,9 +1067,10 @@ out:
+ 	if ((ctx->mark & MARK_MAGIC_SNAT_DONE) != MARK_MAGIC_SNAT_DONE) {
+ 		ret = handle_nat_fwd(ctx);
+ 		if (IS_ERR(ret))
+-			return send_drop_notify_error(ctx, 0, ret,
+-						      CTX_ACT_DROP,
+-						      METRIC_EGRESS);
++			// return send_drop_notify_error(ctx, 0, ret,
++			// 			      CTX_ACT_DROP,
++			// 			      METRIC_EGRESS);
++			return CTX_ACT_DROP;
+ 	}
+ #endif
+ #ifdef ENABLE_HEALTH_CHECK
+diff --git a/bpf/lib/icmp6.h b/bpf/lib/icmp6.h
+index 2401132e9d..5534599c8b 100644
+--- a/bpf/lib/icmp6.h
++++ b/bpf/lib/icmp6.h
+@@ -394,7 +394,7 @@ static __always_inline int __icmp6_handle_ns(struct __ctx_buff *ctx, int nh_off)
+ 	}
+ 
+ 	/* Unknown target address, drop */
+-	return ACTION_UNKNOWN_ICMP6_NS;
++	return 0;
+ }
+ 
+ #ifndef SKIP_ICMPV6_NS_HANDLING
+diff --git a/bpf/lib/nodeport.h b/bpf/lib/nodeport.h
+index ad9c11352f..46efff8180 100644
+--- a/bpf/lib/nodeport.h
++++ b/bpf/lib/nodeport.h
+@@ -1,4 +1,4 @@
+-/* SPDX-License-Identifier: GPL-2.0 */
++/* SPDX-License-Identifier: GPL-2.0 GATEWEAY*/
+ /* Copyright (C) 2019-2020 Authors of Cilium */
+ 
+ #ifndef __NODEPORT_H_
+@@ -521,6 +521,8 @@ int tail_nodeport_ipv6_dsr(struct __ctx_buff *ctx)
+ 	union v6addr addr;
+ 	int ret, ohead = 0;
+ 	bool l2_hdr_required = true;
++	union v6addr host_gw_v6_addr = {};
++	
+ 
+ 	if (!revalidate_data(ctx, &data, &data_end, &ip6)) {
+ 		ret = DROP_INVALID;
+@@ -582,6 +584,15 @@ int tail_nodeport_ipv6_dsr(struct __ctx_buff *ctx)
+ 
+ 		ret = fib_lookup(ctx, &fib_params.l, sizeof(fib_params),
+ 				 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++		if (ret != 0 ) {
++			BPF_V6(host_gw_v6_addr, HOST_GATEWAY_IPV6);
++			fib_params.l.ipv6_dst[0]=host_gw_v6_addr.p1;
++			fib_params.l.ipv6_dst[1]=host_gw_v6_addr.p2;
++			fib_params.l.ipv6_dst[2]=host_gw_v6_addr.p3;
++			fib_params.l.ipv6_dst[3]=host_gw_v6_addr.p4;
++			ret = fib_lookup(ctx, &fib_params.l, sizeof(fib_params),
++					 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++		}
+ 		if (ret != 0) {
+ 			ret = DROP_NO_FIB;
+ 			goto drop_err;
+@@ -726,6 +737,15 @@ int tail_nodeport_nat_ipv6(struct __ctx_buff *ctx)
+ 
+ 		ret = fib_lookup(ctx, &fib_params.l, sizeof(fib_params),
+ 				 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++		if (ret != 0 ) {
++			BPF_V6(tmp, HOST_GATEWAY_IPV6);
++			fib_params.l.ipv6_dst[0] = tmp.p1;
++			fib_params.l.ipv6_dst[1] = tmp.p2;
++			fib_params.l.ipv6_dst[2] = tmp.p3;
++			fib_params.l.ipv6_dst[3] = tmp.p4;
++			ret = fib_lookup(ctx, &fib_params.l, sizeof(fib_params),
++					 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++		}
+ 		if (ret != 0) {
+ 			ret = DROP_NO_FIB;
+ 			goto drop_err;
+@@ -767,6 +787,7 @@ static __always_inline int nodeport_lb6(struct __ctx_buff *ctx,
+ 	union macaddr smac, *mac;
+ 	bool backend_local;
+ 	__u32 monitor = 0;
++	struct endpoint_info *ep_info;
+ 
+ 	cilium_capture_in(ctx);
+ 
+@@ -823,7 +844,15 @@ skip_service_lookup:
+ 		return DROP_MISSED_TAIL_CALL;
+ 	}
+ 
+-	backend_local = __lookup_ip6_endpoint(&tuple.daddr);
++	ep_info = __lookup_ip6_endpoint(&tuple.daddr);
++	#ifndef ENABLE_ENI_EXCLUSIVE
++	backend_local = ep_info;
++	#else
++	if (ep_info && ep_info->lxc_id == HOST_EP_ID)
++		backend_local = true;
++	else
++		backend_local = false;
++	#endif
+ 	if (!backend_local && lb6_svc_is_hostport(svc))
+ 		return DROP_INVALID;
+ 
+@@ -918,6 +947,83 @@ redo_local:
+ 	return CTX_ACT_OK;
+ }
+ 
++
++/* See comment in tail_rev_nodeport_lb4(). */
++static __always_inline int rev_nodeport_lb6_host(struct __ctx_buff *ctx, int *ifindex)
++{
++	int ret, ret2 = ETH_HLEN, l4_off;
++	struct ipv6_ct_tuple tuple = {};
++	void *data, *data_end;
++	struct ipv6hdr *ip6;
++	struct csum_offset csum_off = {};
++	struct ct_state ct_state = {};
++	struct bpf_fib_lookup fib_params = {};
++	union macaddr *dmac = NULL;
++	__u32 monitor = 0;
++	bool l2_hdr_required = true;
++
++	if (!revalidate_data(ctx, &data, &data_end, &ip6))
++		return DROP_INVALID;
++
++	ret = ipv6_extract_tuple(ctx, &tuple, &l4_off);
++	if (ret < 0) {
++		return CTX_ACT_OK;
++	}
++	ret = ct_lookup6(get_ct_map6(&tuple), &tuple, ctx, l4_off, CT_INGRESS, &ct_state,
++			 &monitor);
++
++	if (ret == CT_REPLY && ct_state.node_port == 1 && ct_state.rev_nat_index != 0) {
++		csum_l4_offset_and_flags(tuple.nexthdr, &csum_off);
++		ret2 = lb6_rev_nat(ctx, l4_off, &csum_off, ct_state.rev_nat_index,
++				   &tuple, REV_NAT_F_TUPLE_SADDR);
++		if (IS_ERR(ret2))
++			return ret2;
++
++		bpf_mark_snat_done(ctx);
++
++		ret = maybe_add_l2_hdr(ctx, *ifindex, &l2_hdr_required);
++		if (ret != 0)
++			return ret;
++		if (!l2_hdr_required)
++			return CTX_ACT_OK;
++		else if (!revalidate_data_with_eth_hlen(ctx, &data, &data_end,
++							&ip6, __ETH_HLEN))
++			return DROP_INVALID;
++
++		if (fib_lookup_bypass())
++			dmac = map_lookup_elem(&NODEPORT_NEIGH6, &tuple.daddr);
++		if (dmac) {
++			union macaddr mac = NATIVE_DEV_MAC_BY_IFINDEX(*ifindex);
++
++			if (eth_store_daddr_aligned(ctx, dmac->addr, 0) < 0)
++				return DROP_WRITE_ERROR;
++			if (eth_store_saddr_aligned(ctx, mac.addr, 0) < 0)
++				return DROP_WRITE_ERROR;
++		} else {
++			fib_params.family = AF_INET6;
++			fib_params.ifindex = *ifindex;
++
++			ipv6_addr_copy((union v6addr *) &fib_params.ipv6_src, &tuple.saddr);
++			ipv6_addr_copy((union v6addr *) &fib_params.ipv6_dst, &tuple.daddr);
++
++			ret = fib_lookup(ctx, &fib_params, sizeof(fib_params),
++					 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++			if (ret != 0)
++				return DROP_NO_FIB;
++
++			if (eth_store_daddr(ctx, fib_params.dmac, 0) < 0)
++				return DROP_WRITE_ERROR;
++			if (eth_store_saddr(ctx, fib_params.smac, 0) < 0)
++				return DROP_WRITE_ERROR;
++		}
++	} else {
++		return DROP_MISSED_TAIL_CALL;
++	}
++
++	return CTX_ACT_OK;
++}
++
++
+ /* See comment in tail_rev_nodeport_lb4(). */
+ static __always_inline int rev_nodeport_lb6(struct __ctx_buff *ctx, int *ifindex)
+ {
+@@ -931,6 +1037,7 @@ static __always_inline int rev_nodeport_lb6(struct __ctx_buff *ctx, int *ifindex
+ 	union macaddr *dmac = NULL;
+ 	__u32 monitor = 0;
+ 	bool l2_hdr_required = true;
++	union v6addr host_gw_v6_addr = {};
+ 
+ 	if (!revalidate_data(ctx, &data, &data_end, &ip6))
+ 		return DROP_INVALID;
+@@ -1013,6 +1120,15 @@ static __always_inline int rev_nodeport_lb6(struct __ctx_buff *ctx, int *ifindex
+ 
+ 			ret = fib_lookup(ctx, &fib_params, sizeof(fib_params),
+ 					 BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++			if (ret != 0) {
++				BPF_V6(host_gw_v6_addr, HOST_GATEWAY_IPV6);
++				fib_params.ipv6_dst[0] = host_gw_v6_addr.p1;
++				fib_params.ipv6_dst[1] = host_gw_v6_addr.p2;
++				fib_params.ipv6_dst[2] = host_gw_v6_addr.p3;
++				fib_params.ipv6_dst[3] = host_gw_v6_addr.p4;
++				ret = fib_lookup(ctx, &fib_params, sizeof(fib_params),
++					BPF_FIB_LOOKUP_DIRECT | BPF_FIB_LOOKUP_OUTPUT);
++			}
+ 			if (ret != 0)
+ 				return DROP_NO_FIB;
+ 
+@@ -1037,6 +1153,7 @@ int tail_rev_nodeport_lb6(struct __ctx_buff *ctx)
+ {
+ 	int ifindex = 0;
+ 	int ret = 0;
++	int dir = 0;
+ #if defined(ENABLE_HOST_FIREWALL) && defined(IS_BPF_HOST)
+ 	/* We only enforce the host policies if nodeport.h is included from
+ 	 * bpf_host.
+@@ -1059,7 +1176,12 @@ int tail_rev_nodeport_lb6(struct __ctx_buff *ctx)
+ 	edt_set_aggregate(ctx, 0);
+ 	cilium_capture_out(ctx);
+ 
+-	return ctx_redirect(ctx, ifindex, 0);
++	//return ctx_redirect(ctx, ifindex, 0);
++	dir = ctx_load_meta(ctx, CB_NAT);
++	if (dir == NAT_DIR_INGRESS){
++		return ctx_redirect(ctx, ifindex, 0);
++	}
++	return CTX_ACT_OK;
+ }
+ 
+ declare_tailcall_if(__or(__and(is_defined(ENABLE_IPV4),
+diff --git a/bpf/node_config.h b/bpf/node_config.h
+index 2f22721841..c01d2824a5 100644
+--- a/bpf/node_config.h
++++ b/bpf/node_config.h
+@@ -13,6 +13,7 @@
+  */
+ #include "lib/utils.h"
+ 
++#undef ENABLE_HOST_FIREWALL
+ DEFINE_MAC(NODE_MAC, 0xde, 0xad, 0xbe, 0xef, 0xc0, 0xde);
+ #define NODE_MAC fetch_mac(NODE_MAC)
+ 
+@@ -64,6 +65,7 @@ DEFINE_IPV6(HOST_IP, 0xbe, 0xef, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xa, 0x
+ #endif /* ENABLE_NODEPORT */
+ #define CAPTURE4_RULES cilium_capture4_rules
+ #define CAPTURE4_SIZE 16384
++#define HOST_IPV4 0xfffff50a
+ #endif /* ENABLE_IPV4 */
+ 
+ #ifdef ENABLE_IPV6
+@@ -74,6 +76,8 @@ DEFINE_IPV6(HOST_IP, 0xbe, 0xef, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xa, 0x
+ #endif /* ENABLE_NODEPORT */
+ #define CAPTURE6_RULES cilium_capture6_rules
+ #define CAPTURE6_SIZE 16384
++DEFINE_IPV6(HOST_IPV6,0xbe, 0xef, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xa, 0x0, 0x2, 0xf, 0xff, 0xff);
++DEFINE_IPV6(HOST_GATEWAY_IPV6,0xbe, 0xef, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xa, 0x0, 0x2, 0xf, 0xff, 0xff);
+ #endif /* ENABLE_IPV6 */
+ 
+ #define ENCAP_GENEVE 1
+@@ -191,4 +195,4 @@ DEFINE_IPV6(HOST_IP, 0xbe, 0xef, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0xa, 0x
+  */
+ #define IPCACHE4_PREFIXES 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, \
+ 4, 3, 2, 1
+-#define IPCACHE6_PREFIXES 4, 3, 2, 1
++#define IPCACHE6_PREFIXES 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+\ No newline at end of file
+diff --git a/pkg/datapath/linux/config/config.go b/pkg/datapath/linux/config/config.go
+index 70d173c507..08aa897e6e 100644
+--- a/pkg/datapath/linux/config/config.go
++++ b/pkg/datapath/linux/config/config.go
+@@ -291,7 +291,7 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
+ 			} else if len(defaultRoutes) == 0 {
+ 				log.Errorf("Get host gateway ip failed: empty")
+ 			} else {
+-               log.Infof("Set HOST_GATEWAY_IPV4 to %s", defaultRoutes[0].Gw.String())
++				log.Infof("Set HOST_GATEWAY_IPV4 to %s", defaultRoutes[0].Gw.String())
+ 				fmt.Fprint(fw, defineIPv4("HOST_GATEWAY_IPV4", defaultRoutes[0].Gw))
+ 			}
+ 
+@@ -304,6 +304,19 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
+ 			if option.Config.EnableHealthDatapath {
+ 				cDefinesMap["LB6_HEALTH_MAP"] = lbmap.HealthProbe6MapName
+ 			}
++			// add hostGatewayIPv6
++			defaultRoutes, err := netlink.RouteListFiltered(netlink.FAMILY_V6, &netlink.Route{Dst: nil}, netlink.RT_FILTER_DST)
++			if err != nil {
++				log.Errorf("Get host gateway ip failed: %s", err.Error())
++			} else if len(defaultRoutes) == 0 {
++				log.Errorf("Get host gateway ip failed: empty")
++			} else {
++				log.Infof("Set HOST_GATEWAY_IPV6 to %s", defaultRoutes[0].Gw.String())
++				fmt.Fprint(fw, defineIPv6("HOST_GATEWAY_IPV6", defaultRoutes[0].Gw))
++			}
++
++			// add HostIPv6
++			fmt.Fprint(fw, defineIPv6("HOST_IPV6", node.GetIPv6().To16()))
+ 		}
+ 		const (
+ 			dsrEncapInv = iota
+diff --git a/pkg/node/ip_linux.go b/pkg/node/ip_linux.go
+index 732f62babe..ad3f4b4f41 100644
+--- a/pkg/node/ip_linux.go
++++ b/pkg/node/ip_linux.go
+@@ -35,7 +35,12 @@ func initExcludedIPs() {
+ 	}
+ 	for _, l := range links {
+ 		// ... also all down devices since they won't be reachable.
+-		if l.Attrs().OperState == netlink.OperUp {
++		//
++		// We need to check for both "up" and "unknown" state, as some
++		// drivers may not implement operstate handling, and just report
++		// their state as unknown even though they are operational.
++		if l.Attrs().OperState == netlink.OperUp ||
++			l.Attrs().OperState == netlink.OperUnknown {
+ 			skip := true
+ 			for _, p := range prefixes {
+ 				if strings.HasPrefix(l.Attrs().Name, p) {
+diff --git a/plugins/cilium-cni/chaining/cello/cello.go b/plugins/cilium-cni/chaining/cello/cello.go
+index 354942d461..d75784a325 100644
+--- a/plugins/cilium-cni/chaining/cello/cello.go
++++ b/plugins/cilium-cni/chaining/cello/cello.go
+@@ -18,10 +18,10 @@ import (
+ 
+ var (
+ 	name = "cello-chainer"
+-	log = logging.DefaultLogger.WithField(logfields.LogSubsys, name)
++	log  = logging.DefaultLogger.WithField(logfields.LogSubsys, name)
+ )
+ 
+-type CelloChainer struct {}
++type CelloChainer struct{}
+ 
+ func (c *CelloChainer) ImplementsAdd() bool {
+ 	return true
+@@ -56,10 +56,10 @@ func (c *CelloChainer) Add(ctx context.Context, pluginCtx chainingapi.PluginCont
+ 	defer netNs.Close()
+ 
+ 	var (
+-		ifName                    = ""
+-		containerIP, containerMac string
+-		containerIfIndex          int
+-		disabled                  = false
++		ifName                                     = ""
++		containerIPv4, containerIPv6, containerMac string
++		containerIfIndex                           int
++		disabled                                   = false
+ 	)
+ 
+ 	if len(result.Interfaces) == 0 {
+@@ -68,6 +68,17 @@ func (c *CelloChainer) Add(ctx context.Context, pluginCtx chainingapi.PluginCont
+ 	}
+ 	ifName = result.Interfaces[0].Name
+ 
++	for _, ip := range result.IPs {
++		if ip == nil {
++			continue
++		}
++		if ip.Address.IP.To4() != nil {
++			containerIPv4 = ip.Address.IP.String()
++		} else {
++			containerIPv6 = ip.Address.IP.String()
++		}
++	}
++
+ 	if err = netNs.Do(func(_ ns.NetNS) error {
+ 		link, err := netlink.LinkByName(ifName)
+ 		if err != nil {
+@@ -75,16 +86,6 @@ func (c *CelloChainer) Add(ctx context.Context, pluginCtx chainingapi.PluginCont
+ 		}
+ 		containerMac = link.Attrs().HardwareAddr.String()
+ 		containerIfIndex = link.Attrs().Index
+-
+-		addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
+-		if err != nil {
+-			return fmt.Errorf("unable to list addresses for link %s: %s", link.Attrs().Name, err)
+-		}
+-		if len(addrs) < 1 {
+-			return fmt.Errorf("no address configured inside container")
+-		}
+-		containerIP = addrs[0].IPNet.IP.String()
+-
+ 		return nil
+ 	}); err != nil {
+ 		return
+@@ -105,7 +106,8 @@ func (c *CelloChainer) Add(ctx context.Context, pluginCtx chainingapi.PluginCont
+ 	// create endpoint
+ 	ep := &models.EndpointChangeRequest{
+ 		Addressing: &models.AddressPair{
+-			IPV4: containerIP,
++			IPV4: containerIPv4,
++			IPV6: containerIPv6,
+ 		},
+ 		ContainerID:       pluginCtx.Args.ContainerID,
+ 		State:             models.EndpointStateWaitingForIdentity,
+@@ -152,6 +154,6 @@ func (c *CelloChainer) Delete(ctx context.Context, pluginCtx chainingapi.PluginC
+ 	return nil
+ }
+ 
+-func init()  {
++func init() {
+ 	chainingapi.Register(name, &CelloChainer{})
+-}
+\ No newline at end of file
++}
+-- 
+2.34.1
+

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vpc-cni
+description: cello
+type: application
+version: v1.6.2
+appVersion: v1.6.2
