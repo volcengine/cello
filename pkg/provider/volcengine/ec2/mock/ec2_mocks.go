@@ -170,10 +170,10 @@ func (mr *MockEC2MockRecorder) DescribeNetworkInterfaceAttributes(arg0 interface
 }
 
 // DescribeNetworkInterfaces mocks base method
-func (m *MockEC2) DescribeNetworkInterfaces(arg0 *vpc.DescribeNetworkInterfacesInput) (*vpc.DescribeNetworkInterfacesOutput, error) {
+func (m *MockEC2) DescribeNetworkInterfaces(arg0 *vpc.DescribeNetworkInterfacesInput) (*ec2.DescribeNetworkInterfacesOutput, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DescribeNetworkInterfaces", arg0)
-	ret0, _ := ret[0].(*vpc.DescribeNetworkInterfacesOutput)
+	ret0, _ := ret[0].(*ec2.DescribeNetworkInterfacesOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

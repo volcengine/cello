@@ -26,7 +26,7 @@ var BuildInfo = "master"
 
 const title = "cello-ctl"
 const usage = "show cello information"
-const version = "v1.6.0"
+const version = "v1.6.2"
 const baseUrl = "http://cello_debug.socket"
 
 func main() {

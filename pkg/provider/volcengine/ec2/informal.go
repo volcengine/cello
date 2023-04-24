@@ -115,6 +115,74 @@ type DescribeNetworkInterfaceAttributesOutput struct {
 	ZoneId *string `type:"string"`
 }
 
+type DescribeNetworkInterfacesOutput struct {
+	_ struct{} `type:"structure"`
+
+	Metadata *response.ResponseMetadata
+
+	NetworkInterfaceSets []*NetworkInterfaceSetForDescribeNetworkInterfacesOutput `type:"list"`
+
+	PageNumber *int64 `type:"integer"`
+
+	PageSize *int64 `type:"integer"`
+
+	RequestId *string `type:"string"`
+
+	TotalCount *int64 `type:"integer"`
+}
+
+type NetworkInterfaceSetForDescribeNetworkInterfacesOutput struct {
+	_ struct{} `type:"structure"`
+
+	AccountId *string `type:"string"`
+
+	AssociatedElasticIp *vpc.AssociatedElasticIpForDescribeNetworkInterfacesOutput `type:"structure"`
+
+	CreatedAt *string `type:"string"`
+
+	Description *string `type:"string"`
+
+	DeviceId *string `type:"string"`
+
+	IPv6Sets []*string `type:"list"`
+
+	MacAddress *string `type:"string"`
+
+	NetworkInterfaceId *string `type:"string"`
+
+	NetworkInterfaceName *string `type:"string"`
+
+	PortSecurityEnabled *bool `type:"boolean"`
+
+	PrimaryIpAddress *string `type:"string"`
+
+	PrivateIpAddresses []*string `type:"list"`
+
+	PrivateIpSets *vpc.PrivateIpSetsForDescribeNetworkInterfacesOutput `type:"structure"`
+
+	ProjectName *string `type:"string"`
+
+	SecurityGroupIds []*string `type:"list"`
+
+	ServiceManaged *bool `type:"boolean"`
+
+	Status *string `type:"string"`
+
+	SubnetId *string `type:"string"`
+
+	Tags []*vpc.TagForDescribeNetworkInterfacesOutput `type:"list"`
+
+	Type *string `type:"string"`
+
+	UpdatedAt *string `type:"string"`
+
+	VpcId *string `type:"string"`
+
+	VpcName *string `type:"string"`
+
+	ZoneId *string `type:"string"`
+}
+
 type SubnetForDescribeSubnetsOutput struct {
 	_ struct{} `type:"structure"`
 

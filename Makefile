@@ -12,10 +12,10 @@ OUTPUT ?= output
 # Container runtime engine
 ENGINE ?= docker
 
-# IMAGE is the Cello contianer image
-IMAGE = volcstack/cello
-IMAGE_NAME = $(IMAGE):$(IMAGE_TAG)
-IMAGE_TAG = $(VERSION)
+# IMAGE Name and Tag
+IMAGE_NAME ?= volcstack/cello
+IMAGE_TAG ?= $(VERSION)
+IMAGE_NAME_TAG ?= $(IMAGE_NAME):$(IMAGE_TAG)
 
 # GO FLAGS
 GOPROXY ?=
@@ -58,9 +58,9 @@ pkg: bin
 
 image:
 ifdef GOPROXY
-	$(ENGINE) build -f ./images/Dockerfile -t $(IMAGE_NAME) --build-arg GOPROXY=$(GOPROXY) .
+	$(ENGINE) build -f ./images/Dockerfile -t $(IMAGE_NAME_TAG) --build-arg GOPROXY=$(GOPROXY) .
 else
-	$(ENGINE) build -f ./images/Dockerfile -t $(IMAGE_NAME) .
+	$(ENGINE) build -f ./images/Dockerfile -t $(IMAGE_NAME_TAG) .
 endif
 	@echo "Built OCI image \"$(IMAGE_NAME)\""
 

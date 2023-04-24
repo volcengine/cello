@@ -34,7 +34,7 @@ type APIGroupENI interface {
 	DeleteNetworkInterface(input *vpc.DeleteNetworkInterfaceInput) (*vpc.DeleteNetworkInterfaceOutput, error)
 
 	// DescribeNetworkInterfaces describe NetworkInterfaces according to input
-	DescribeNetworkInterfaces(input *vpc.DescribeNetworkInterfacesInput) (*vpc.DescribeNetworkInterfacesOutput, error)
+	DescribeNetworkInterfaces(input *vpc.DescribeNetworkInterfacesInput) (*DescribeNetworkInterfacesOutput, error)
 
 	// DescribeNetworkInterfaceAttributes return attributes of specified NetworkInterface
 	DescribeNetworkInterfaceAttributes(input *vpc.DescribeNetworkInterfaceAttributesInput) (*DescribeNetworkInterfaceAttributesOutput, error)

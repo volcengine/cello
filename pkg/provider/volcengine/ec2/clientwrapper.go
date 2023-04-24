@@ -102,8 +102,15 @@ func (c *ClientSet) DeleteNetworkInterface(input *vpc.DeleteNetworkInterfaceInpu
 	return output, nil
 }
 
-func (c *ClientSet) DescribeNetworkInterfaces(input *vpc.DescribeNetworkInterfacesInput) (*vpc.DescribeNetworkInterfacesOutput, error) {
-	output, err := c.VpcSvc.DescribeNetworkInterfacesWithContext(context.TODO(), input)
+func (c *ClientSet) DescribeNetworkInterfaces(input *vpc.DescribeNetworkInterfacesInput) (*DescribeNetworkInterfacesOutput, error) {
+	reqInfo := universal.RequestUniversal{
+		Action:      "DescribeNetworkInterfaces",
+		Version:     "2020-04-01",
+		ServiceName: "vpc",
+		HttpMethod:  universal.GET,
+	}
+	output := &DescribeNetworkInterfacesOutput{}
+	err := c.universal.DoCallWithType(reqInfo, input, output)
 	if err != nil || output.Metadata.Error != nil {
 		return output, apiErr.NewAPIRequestErr(output.Metadata, err)
 	}

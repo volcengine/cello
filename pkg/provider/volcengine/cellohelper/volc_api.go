@@ -347,6 +347,9 @@ func (e *VolcApiImpl) AllocENI(subnetId string, securityGroups []string, trunk b
 		return nil, fmt.Errorf("get eni from metadata failed, %v, %v", inErr, err)
 	}
 	eni.Trunk = volcengine.StringValue(eniAttr.Type) == ENITypeTrunk
+	if e.ipFamily.EnableIPv6() && len(eniAttr.IPv6Sets) > 0 {
+		eni.PrimaryIP.IPv6 = net.ParseIP(volcengine.StringValue(eniAttr.IPv6Sets[0]))
+	}
 	return eni, nil
 }
 
@@ -444,17 +447,20 @@ func (e *VolcApiImpl) GetAttachedENIs(withTrunk bool) (int, []*types.ENI, error)
 	if err != nil {
 		return 0, nil, err
 	}
-	enisMap := map[string]*vpc.NetworkInterfaceSetForDescribeNetworkInterfacesOutput{}
-	for _, e := range enis {
-		enisMap[volcengine.StringValue(e.NetworkInterfaceId)] = e
+	enisMap := map[string]*ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput{}
+	for _, eni := range enis {
+		enisMap[volcengine.StringValue(eni.NetworkInterfaceId)] = eni
 	}
-	for _, e := range eniList {
-		if i, exist := enisMap[e.ID]; exist {
-			e.Trunk = volcengine.StringValue(i.Type) == ENITypeTrunk
-			if e.Trunk && !withTrunk {
+	for _, eni := range eniList {
+		if i, exist := enisMap[eni.ID]; exist {
+			eni.Trunk = volcengine.StringValue(i.Type) == ENITypeTrunk
+			if eni.Trunk && !withTrunk {
 				continue
 			}
-			result = append(result, e)
+			if e.ipFamily.EnableIPv6() && len(i.IPv6Sets) > 0 {
+				eni.PrimaryIP.IPv6 = net.ParseIP(volcengine.StringValue(i.IPv6Sets[0]))
+			}
+			result = append(result, eni)
 		}
 	}
 	return total, result, nil
@@ -855,8 +861,8 @@ func (e *VolcApiImpl) cleanUpLeakedENIs() {
 	}
 }
 
-func (e *VolcApiImpl) describeNetworkInterfacesWithPage(pageNumber int, status string, eniType string, eniIDs []string, inputFilter []*vpc.TagFilterForDescribeNetworkInterfacesInput) (*vpc.DescribeNetworkInterfacesOutput, error) {
-	var resp *vpc.DescribeNetworkInterfacesOutput
+func (e *VolcApiImpl) describeNetworkInterfacesWithPage(pageNumber int, status string, eniType string, eniIDs []string, inputFilter []*vpc.TagFilterForDescribeNetworkInterfacesInput) (*ec2.DescribeNetworkInterfacesOutput, error) {
+	var resp *ec2.DescribeNetworkInterfacesOutput
 	var err error
 	input := &vpc.DescribeNetworkInterfacesInput{
 		Type:                volcengine.String(eniType),
@@ -884,8 +890,8 @@ func (e *VolcApiImpl) describeNetworkInterfacesWithPage(pageNumber int, status s
 }
 
 // getNetworkInterfacesByDescribe get eni list filter with inputFilter by openapi DescribeNetworkInterfaces.
-func (e *VolcApiImpl) getNetworkInterfacesByDescribe(status string, eniType string, eniIDs []string, inputFilter []*vpc.TagFilterForDescribeNetworkInterfacesInput) ([]*vpc.NetworkInterfaceSetForDescribeNetworkInterfacesOutput, error) {
-	var result []*vpc.NetworkInterfaceSetForDescribeNetworkInterfacesOutput
+func (e *VolcApiImpl) getNetworkInterfacesByDescribe(status string, eniType string, eniIDs []string, inputFilter []*vpc.TagFilterForDescribeNetworkInterfacesInput) ([]*ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput, error) {
+	var result []*ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput
 	pages := 1
 	first := true
 	for i := 1; i <= pages; i++ {
@@ -912,7 +918,7 @@ func (e *VolcApiImpl) getNetworkInterfacesByDescribe(status string, eniType stri
 }
 
 // getUnAttachedENIs get all ENI that created by cello but not attached.
-func (e *VolcApiImpl) getUnAttachedENIs() ([]*vpc.NetworkInterfaceSetForDescribeNetworkInterfacesOutput, error) {
+func (e *VolcApiImpl) getUnAttachedENIs() ([]*ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput, error) {
 	return e.getNetworkInterfacesByDescribe(ENIStatusAvailable, ENITypeSecondary, nil, BuildFilterForDescribeNetworkInterfacesInput(e.tags))
 }
 

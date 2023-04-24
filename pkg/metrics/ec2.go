@@ -170,7 +170,7 @@ func (m *MetricEC2Wrapper) DeleteNetworkInterface(req *vpc.DeleteNetworkInterfac
 	return resp, err
 }
 
-func (m *MetricEC2Wrapper) DescribeNetworkInterfaces(req *vpc.DescribeNetworkInterfacesInput) (*vpc.DescribeNetworkInterfacesOutput, error) {
+func (m *MetricEC2Wrapper) DescribeNetworkInterfaces(req *vpc.DescribeNetworkInterfacesInput) (*ec2.DescribeNetworkInterfacesOutput, error) {
 	start := time.Now()
 	resp, err := m.parent.DescribeNetworkInterfaces(req)
 	duration := MsSince(start)

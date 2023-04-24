@@ -38,13 +38,13 @@ kubectl delete pod -l app=cello -n kube-system
                - labelSelector:
                  matchExpressions:
                    - key: k8s-app
-                   operator: In
-                   values:
+                     operator: In
+                     values:
                    - cilium
              topologyKey: kubernetes.io/hostname
          # Deletion End
          containers:
-         ...
+         # ...
    ```
 
 3. 访问 Hubble WEB UI  
