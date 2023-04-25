@@ -112,8 +112,7 @@ spec:
       serviceAccountName: prometheus-cello
       containers:
         - name: prometheus
-          #image: prom/prometheus:v1.7.0
-          image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:prometheus-v1.7.0   # TOEDIT
+          image: prom/prometheus:v1.7.0
           imagePullPolicy: IfNotPresent
           args:
             - '-storage.local.retention=48h'

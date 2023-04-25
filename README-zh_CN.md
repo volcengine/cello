@@ -23,6 +23,29 @@ Cello 通过集成[Cilium]来替代kube-proxy实现kubernetes Service以获得�
 ![eni](docs/images/eni.jpg)
 独占模式下，Cello将辅助ENI直接分配给Pod, 将辅助ENI拉入到Pod的NetNs中并使用辅助ENI的主IP进行通信。从VPC视角，所有Pod和Node具有完全相同的“地位”。受限于ECS可挂载辅助ENI的数量，这种模式下Pod部署密度较低。在VPC网络基础上，支持Pod和所在节点通过本地`veth-pair`进行通信。
 
+## ENI 创建
+<img alt="feishu" height="400" src="./docs/images/eni_allocation.jpg"/>
+
+Cello 以 daemonset 的形式部署在每个节点上，每个 Cello 实例都会独立申请辅助 ENI。申请 ENI 时会从用户配置的subnets中选择一个，并使用用户配置的全部安全组。 `eni_exclusive` 模式直接使用eni，节点上可调度的pod数量等于`eni_quota-1`。在`eni_shared`模式下，节点上可调度的pod数量等于`(eni_quota-1)*ip_quota_per_eni`。 Cello 创建的 ENI 会携带一些标签来标识创建者，如果 Cello 存活，Cello 会根据标签定期检查和回收自己泄露的 ENI。在集群中部署 opeartor 来回收删除节点时 detached 的 ENI 可以进一步避免ENI的泄漏。删除集群后，用户仍需要检查是否有 ENI 泄漏。
+
+## 调度感知
+无论是哪种模式，Cello 都会通过 [device plugin] 报告可用网络资源的数量，以便调度器将 pod 调度到有资源的节点上。用户可以通过向 pod 的第一个容器添加以下 [requests and limits] 字段来使用此机制。
+
+```yaml
+# eni_shared mode:
+resources:
+  limits:
+    vke.volcengine.com/eni-ip: "1"
+  requests:
+    vke.volcengine.com/eni-ip: "1"
+# eni_exclusive mode:
+resources:
+  limits:
+    vke.volcengine.com/eni: "1"
+  requests:
+    vke.volcengine.com/eni: "1"
+```
+
 ## 构建
 #### 依赖
 - `protobuf [required]`

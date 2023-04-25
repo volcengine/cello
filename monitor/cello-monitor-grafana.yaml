@@ -18,8 +18,8 @@ data:
         # Access mode - proxy (server in the UI) or direct (browser in the UI).
         access: proxy
         editable: true
-        # TOEDIT
-        url: http://172.16.2.234:9090/
+        # toEdit
+        url: http://{prometheus_pod_ip}:9090/
         jsonData:
           httpMethod: GET
 
@@ -1623,8 +1623,7 @@ spec:
         app: grafana-cello
     spec:
       containers:
-        #image: grafana/grafana:7.5.4
-        - image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:grafana-7.5.4  # TOEDIT
+        - image: grafana/grafana:7.5.4
           imagePullPolicy: IfNotPresent
           name: grafana
           ports:
