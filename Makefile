@@ -1,6 +1,7 @@
 # VERSION is the source revision for binary and image building.
 VERSION ?= $(shell git log -1 --date='format:%Y%m%d' --format='format:%ad').$(shell git describe --always --contains HEAD)
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
+DATE = $(shell date +"%Y-%M-%d_%H:%M:%S")
 
 # Information of OS and ARCH
 OS = $(shell uname -s)
@@ -20,7 +21,11 @@ IMAGE_NAME_TAG ?= $(IMAGE_NAME):$(IMAGE_TAG)
 # GO FLAGS
 GOPROXY ?=
 GO_FLAGS=-ldflags="-s -w"
-CNI_VERSION_LD_FLAG=-ldflags="-X github.com/volcengine/cello/version.Version=$(VERSION)@$(BRANCH)"
+CNI_VERSION_LD_FLAG=-ldflags="-X github.com/volcengine/cello/pkg/version.Version=$(VERSION)@$(BRANCH)"
+BUILD_INFO=-ldflags="-X main.BuildInfo=$(VERSION)@$(BRANCH)_$(DATE)"
+
+# BUILD FLAGS
+CELLO_META ?=
 
 tidy: 
 	go mod tidy
@@ -30,7 +35,7 @@ cello-agent:
 		./cmd/cello-agent
 
 cello-ctl:
-	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cello-ctl $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
+	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cello-ctl $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) $(BUILD_INFO)\
 		./cmd/cello-cli
 
 cello-cni:
@@ -51,6 +56,10 @@ protobuf: tidy
 all: pkg image
 
 bin: cello-cni cello-ctl cello-agent cilium-launcher
+ifdef CELLO_META
+		CGO_ENABLED=0 GOOS=linux go build -tags meta -o $(OUTPUT)/cello-cni $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
+    		./cmd/cello-cni
+endif
 
 pkg: bin
 	cp ./script/bootstrap/* $(OUTPUT)/

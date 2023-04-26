@@ -13,35 +13,6 @@
 // limitations under the License.
 //
 
-package main
+package version
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/urfave/cli/v2"
-
-	"github.com/volcengine/cello/pkg/version"
-)
-
-var BuildInfo = "master"
-
-const title = "cello-ctl"
-const usage = "show cello information"
-
-const baseUrl = "http://cello_debug.socket"
-
-func main() {
-	app := &cli.App{
-		Name:     title,
-		Usage:    usage,
-		Version:  fmt.Sprintf("%s\n%s", version.Version, BuildInfo),
-		Commands: buildCommand(),
-	}
-
-	err := app.Run(os.Args)
-	if err != nil {
-		fmt.Printf("%s", err)
-		os.Exit(1)
-	}
-}
+var Version = "v1.6.2"

@@ -43,7 +43,7 @@ spec:
       containers:
       - name: nginx
         # image: docker.io/library/nginx:latest
-        image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+        image: cr-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
         volumeMounts:
         - name: nginx
           mountPath: /etc/nginxw
@@ -88,7 +88,7 @@ spec:
       containers:
       - name: nginx
         # image: docker.io/library/nginx:latest
-        image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+        image: cr-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
         volumeMounts:
         - name: nginx
           mountPath: /etc/nginxw

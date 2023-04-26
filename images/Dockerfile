@@ -52,9 +52,10 @@ RUN cd plugins && bash build_linux.sh
 FROM docker.io/library/golang:1.20-bullseye as cello-builder
 ARG GOPROXY
 ENV GOPROXY $GOPROXY
+ARG CELLO_META
 WORKDIR /go/src/cello/
 COPY ../.. .
-RUN make bin
+RUN CELLO_META=$CELLO_META make bin
 
 FROM cello-base
 # cello & cilium bin
