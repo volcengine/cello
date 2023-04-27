@@ -22,7 +22,7 @@ import (
 
 type APIGroupENI interface {
 	// CreateNetworkInterface create a NetworkInterface
-	CreateNetworkInterface(input *vpc.CreateNetworkInterfaceInput) (*vpc.CreateNetworkInterfaceOutput, error)
+	CreateNetworkInterface(input *CreateNetworkInterfaceInput) (*vpc.CreateNetworkInterfaceOutput, error)
 
 	// AttachNetworkInterface attach a NetworkInterface which status is available to ecs instance
 	AttachNetworkInterface(input *vpc.AttachNetworkInterfaceInput) (*vpc.AttachNetworkInterfaceOutput, error)
@@ -65,7 +65,7 @@ type APIGroupECS interface {
 	DescribeInstances(input *ecs.DescribeInstancesInput) (*ecs.DescribeInstancesOutput, error)
 
 	// DescribeInstanceTypes describe InstanceTypes according to input
-	DescribeInstanceTypes(input *ecs.DescribeInstanceTypesInput) (*ecs.DescribeInstanceTypesOutput, error)
+	DescribeInstanceTypes(input *ecs.DescribeInstanceTypesInput) (*DescribeInstanceTypesOutput, error)
 }
 
 type EC2 interface {

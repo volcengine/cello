@@ -191,14 +191,16 @@ func (e *VolcApiImpl) freeENI(eniID string, sleepDelayAfterDetach time.Duration)
 func (e *VolcApiImpl) createENI(subnet string, securityGroups []string, trunk bool, ipv4Cnt, ipv6Cnt int) (string, error) {
 	var eniResponse *vpc.CreateNetworkInterfaceOutput
 	var err error
+	instanceType := ENITypeSecondary
 	if trunk {
-		return "", fmt.Errorf("open api not support trunk")
+		instanceType = ENITypeTrunk
 	}
-	req := &vpc.CreateNetworkInterfaceInput{
+	req := &ec2.CreateNetworkInterfaceInput{
 		SubnetId:         volcengine.String(subnet),
 		SecurityGroupIds: volcengine.StringSlice(securityGroups),
 		Description:      volcengine.String(eniDescription),
 		Tags:             BuildTagsForCreateNetworkInterfaceInput(e.tags),
+		Type:             volcengine.String(instanceType),
 	}
 	// todo: ipv6
 	if ipv4Cnt > 1 {
@@ -787,7 +789,7 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 
 // GetInstanceLimit return IP address limit per ENI.
 func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
-	var resp *ecs.DescribeInstanceTypesOutput
+	var resp *ec2.DescribeInstanceTypesOutput
 	var err error
 	defer func() {
 		if err != nil {
@@ -821,11 +823,11 @@ func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
 
 	limit := &InstanceLimits{
 		InstanceLimitsAttr: InstanceLimitsAttr{
-			ENITotal:       int(volcengine.Int32Value(instance.Network.MaximumNetworkInterfaces)),
+			ENITotal:       int(volcengine.Int32Value(instance.NetworkInterfaceTotalNumQuota)),
 			ENIQuota:       int(volcengine.Int32Value(instance.Network.MaximumNetworkInterfaces)),
 			IPv4MaxPerENI:  int(volcengine.Int32Value(instance.Network.MaximumPrivateIpv4AddressesPerNetworkInterface)),
 			IPv6MaxPerENI:  int(volcengine.Int32Value(instance.Network.MaximumPrivateIpv4AddressesPerNetworkInterface)),
-			TrunkSupported: false,
+			TrunkSupported: volcengine.BoolValue(instance.TrunkNetworkInterfaceSupported),
 		},
 	}
 

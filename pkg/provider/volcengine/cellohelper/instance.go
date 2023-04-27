@@ -106,6 +106,11 @@ func (m *defaultInstanceLimit) Update() {
 func (m *defaultInstanceLimit) UpdateTrunk(trunk *types.ENI) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+	if trunk != nil {
+		log.Infof("Update trunk to %s", trunk.ID)
+	} else {
+		log.Infof("Update trunk to nil")
+	}
 	m.limit.TrunkENI = trunk
 }
 

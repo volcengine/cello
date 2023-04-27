@@ -111,7 +111,7 @@ func NewMetricEC2Wrapper(p ec2.EC2) *MetricEC2Wrapper {
 	return &MetricEC2Wrapper{parent: p}
 }
 
-func (m *MetricEC2Wrapper) CreateNetworkInterface(req *vpc.CreateNetworkInterfaceInput) (*vpc.CreateNetworkInterfaceOutput, error) {
+func (m *MetricEC2Wrapper) CreateNetworkInterface(req *ec2.CreateNetworkInterfaceInput) (*vpc.CreateNetworkInterfaceOutput, error) {
 	start := time.Now()
 	resp, err := m.parent.CreateNetworkInterface(req)
 	duration := MsSince(start)
@@ -233,7 +233,7 @@ func (m *MetricEC2Wrapper) DescribeInstances(req *ecs.DescribeInstancesInput) (*
 	return resp, err
 }
 
-func (m *MetricEC2Wrapper) DescribeInstanceTypes(req *ecs.DescribeInstanceTypesInput) (*ecs.DescribeInstanceTypesOutput, error) {
+func (m *MetricEC2Wrapper) DescribeInstanceTypes(req *ecs.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
 	start := time.Now()
 	resp, err := m.parent.DescribeInstanceTypes(req)
 	duration := MsSince(start)
