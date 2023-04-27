@@ -143,6 +143,7 @@ func newEniResourceManager(cfg *config.Config, subnet helper.SubnetManager, secM
 			return nil, fmt.Errorf("alloc trunk eni failed, %v", err)
 		}
 		m.trunkEni = res.(*types.ENI)
+		limit.UpdateTrunk(m.trunkEni)
 	}
 
 	poolConfig.PreStart = func(pool pool.ResourcePoolOp) error {
