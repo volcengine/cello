@@ -12,15 +12,16 @@ cello:
   ipFamily: "ipv4"
   # All traffic targeting these CIDRs will be redirected to host.
   redirectToHostCIDRs: ["169.254.0.0/16"]
-
-  # VolcEngine OpenAPI address
+  # VolcEngine OpenAPI address.
   openAPIAddress: "open.volcengineapi.com"
-  # VolcEngine OpenAPI secrets
+  # VolcEngine iamRole policy authorization.
+  #iamRole: "KubernetesNodeRoleForECS"
+  # VolcEngine OpenAPI secrets.
   accessKey: ""
   secretKey: ""
-  # Kubernetes service host
+  # Kubernetes service host.
   k8sServiceHost: ""
-  # Kubernetes service port
+  # Kubernetes service port.
   k8sServicePort: ""
 cilium:
   debug: false
