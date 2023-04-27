@@ -95,7 +95,7 @@ func (mr *MockEC2MockRecorder) AttachNetworkInterface(arg0 interface{}) *gomock.
 }
 
 // CreateNetworkInterface mocks base method
-func (m *MockEC2) CreateNetworkInterface(arg0 *vpc.CreateNetworkInterfaceInput) (*vpc.CreateNetworkInterfaceOutput, error) {
+func (m *MockEC2) CreateNetworkInterface(arg0 *ec2.CreateNetworkInterfaceInput) (*vpc.CreateNetworkInterfaceOutput, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateNetworkInterface", arg0)
 	ret0, _ := ret[0].(*vpc.CreateNetworkInterfaceOutput)
@@ -125,10 +125,10 @@ func (mr *MockEC2MockRecorder) DeleteNetworkInterface(arg0 interface{}) *gomock.
 }
 
 // DescribeInstanceTypes mocks base method
-func (m *MockEC2) DescribeInstanceTypes(arg0 *ecs.DescribeInstanceTypesInput) (*ecs.DescribeInstanceTypesOutput, error) {
+func (m *MockEC2) DescribeInstanceTypes(arg0 *ecs.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DescribeInstanceTypes", arg0)
-	ret0, _ := ret[0].(*ecs.DescribeInstanceTypesOutput)
+	ret0, _ := ret[0].(*ec2.DescribeInstanceTypesOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

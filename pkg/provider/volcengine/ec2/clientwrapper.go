@@ -47,16 +47,30 @@ func (c *ClientSet) DescribeInstances(input *ecs.DescribeInstancesInput) (*ecs.D
 	return output, nil
 }
 
-func (c *ClientSet) DescribeInstanceTypes(input *ecs.DescribeInstanceTypesInput) (*ecs.DescribeInstanceTypesOutput, error) {
-	output, err := c.EcsSvc.DescribeInstanceTypesWithContext(context.TODO(), input)
+func (c *ClientSet) DescribeInstanceTypes(input *ecs.DescribeInstanceTypesInput) (*DescribeInstanceTypesOutput, error) {
+	reqInfo := universal.RequestUniversal{
+		Action:      "DescribeInstanceTypes",
+		Version:     "2020-04-01",
+		ServiceName: "ecs",
+		HttpMethod:  universal.GET,
+	}
+	output := &DescribeInstanceTypesOutput{}
+	err := c.universal.DoCallWithType(reqInfo, input, output)
 	if err != nil || output.Metadata.Error != nil {
 		return output, apiErr.NewAPIRequestErr(output.Metadata, err)
 	}
 	return output, nil
 }
 
-func (c *ClientSet) CreateNetworkInterface(input *vpc.CreateNetworkInterfaceInput) (*vpc.CreateNetworkInterfaceOutput, error) {
-	output, err := c.VpcSvc.CreateNetworkInterfaceWithContext(context.TODO(), input)
+func (c *ClientSet) CreateNetworkInterface(input *CreateNetworkInterfaceInput) (*vpc.CreateNetworkInterfaceOutput, error) {
+	reqInfo := universal.RequestUniversal{
+		Action:      "CreateNetworkInterface",
+		Version:     "2020-04-01",
+		ServiceName: "vpc",
+		HttpMethod:  universal.GET,
+	}
+	output := &vpc.CreateNetworkInterfaceOutput{}
+	err := c.universal.DoCallWithType(reqInfo, input, output)
 	if err != nil || output.Metadata.Error != nil {
 		return output, apiErr.NewAPIRequestErr(output.Metadata, err)
 	}

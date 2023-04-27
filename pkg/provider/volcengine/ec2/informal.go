@@ -16,6 +16,7 @@
 package ec2
 
 import (
+	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 	"github.com/volcengine/volcengine-go-sdk/service/vpc"
 	"github.com/volcengine/volcengine-go-sdk/volcengine/response"
 )
@@ -273,4 +274,110 @@ type DescribeSubnetAttributesOutput struct {
 	VpcId *string `type:"string"`
 
 	ZoneId *string `type:"string"`
+}
+
+type DescribeInstanceTypesOutput struct {
+	_ struct{} `type:"structure"`
+
+	Metadata *response.ResponseMetadata
+
+	InstanceTypes []*InstanceTypeForDescribeInstanceTypesOutput `type:"list"`
+
+	NextToken *string `type:"string"`
+
+	PageNumber *int32 `type:"int32"`
+
+	PageSize *int32 `type:"int32"`
+
+	TotalCount *int32 `type:"int32"`
+}
+
+type InstanceTypeForDescribeInstanceTypesOutput struct {
+	_ struct{} `type:"structure"`
+
+	Architecture *string `type:"string"`
+
+	BaselineCredit *int64 `type:"int64"`
+
+	ComputeFactor *int32 `type:"int32"`
+
+	Cpu *int32 `type:"int32"`
+
+	Gpu *ecs.GpuForDescribeInstanceTypesOutput `type:"structure"`
+
+	Id *string `type:"string"`
+
+	InitialCredit *int64 `type:"int64"`
+
+	InstanceTypeFamily *string `type:"string"`
+
+	InstanceTypeId *string `type:"string"`
+
+	IsSupportRiCreate *bool `type:"boolean"`
+
+	IsSupportRiModify *bool `type:"boolean"`
+
+	IsSupportSpot *bool `type:"boolean"`
+
+	LocalVolumes []*ecs.LocalVolumeForDescribeInstanceTypesOutput `type:"list"`
+
+	Mem *int32 `type:"int32"`
+
+	Memory *ecs.MemoryForDescribeInstanceTypesOutput `type:"structure"`
+
+	NetKppsQuota *int32 `type:"int32"`
+
+	NetMbpsQuota *int32 `type:"int32"`
+
+	NetSessionQuota *int32 `type:"int32"`
+
+	Network *ecs.NetworkForDescribeInstanceTypesOutput `type:"structure"`
+
+	NetworkInterfaceNumQuota *int32 `type:"int32"`
+
+	NetworkInterfaceTotalNumQuota *int32 `type:"int32"`
+
+	PrivateIpQuota *int32 `type:"int32"`
+
+	Processor *ecs.ProcessorForDescribeInstanceTypesOutput `type:"structure"`
+
+	Rdma *ecs.RdmaForDescribeInstanceTypesOutput `type:"structure"`
+
+	TrunkNetworkInterfaceSupported *bool `type:"boolean"`
+
+	Type *string `type:"string"`
+
+	Volume *ecs.VolumeForDescribeInstanceTypesOutput `type:"structure"`
+
+	VolumeTypes []*string `type:"list"`
+}
+
+type CreateNetworkInterfaceInput struct {
+	_ struct{} `type:"structure"`
+
+	ClientToken *string `type:"string"`
+
+	Description *string `min:"1" max:"255" type:"string"`
+
+	NetworkInterfaceName *string `min:"1" max:"128" type:"string"`
+
+	PortSecurityEnabled *bool `type:"boolean"`
+
+	PrimaryIpAddress *string `type:"string"`
+
+	PrivateIpAddress []*string `type:"list"`
+
+	ProjectName *string `type:"string"`
+
+	SecondaryPrivateIpAddressCount *int64 `type:"integer"`
+
+	// SecurityGroupIds is a required field
+	SecurityGroupIds []*string `type:"list" required:"true"`
+
+	// SubnetId is a required field
+	SubnetId *string `type:"string" required:"true"`
+
+	Tags []*vpc.TagForCreateNetworkInterfaceInput `type:"list"`
+
+	Type *string `type:"string" enum:"TypeForCreateNetworkInterfaceInput"`
 }
