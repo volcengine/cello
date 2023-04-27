@@ -65,6 +65,8 @@ type InstanceLimitManager interface {
 	GetLimit() InstanceLimits
 	// Update update InstanceLimits of ecs instance
 	Update()
+	// UpdateTrunk update trunk eni to InstanceLimits
+	UpdateTrunk(trunk *types.ENI)
 }
 
 // ENIAvailable get quota minus the custom eni and primary eni.
@@ -99,6 +101,12 @@ func (m *defaultInstanceLimit) Update() {
 	if err := m.update(); err != nil {
 		log.Errorf("Update InstanceLimit failed, %v", err)
 	}
+}
+
+func (m *defaultInstanceLimit) UpdateTrunk(trunk *types.ENI) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	m.limit.TrunkENI = trunk
 }
 
 func (m *defaultInstanceLimit) update() error {

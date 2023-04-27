@@ -154,6 +154,7 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 			return nil, fmt.Errorf("alloc trunk eni failed, %v", err)
 		}
 		m.trunkEni = res.(*types.ENI)
+		limit.UpdateTrunk(m.trunkEni)
 	}
 
 	factory := &eniIPFactory{
