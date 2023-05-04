@@ -1,0 +1,70 @@
+name: PreCommit Check
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - v*
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  golangci-lint:
+    name: ci-lint
+    runs-on: ubuntu-latest
+    steps: 
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: ./go.mod
+        
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3.4.0
+        with:
+          version: latest
+  
+  unit-tests:
+    name: Run unit unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Prepare environment
+        run: docker run --rm --name cello-test -d --privileged -v $(pwd):/cello -v /go/pkg/mod:/go/pkg/mod -v /go/cache:/go/cache -w /cello docker.io/library/golang:latest sleep infinity
+      - run: docker exec cello-test bash -c "apt-get update && apt-get install -y iproute2" 
+      - run: docker exec cello-test go install github.com/containernetworking/plugins/plugins/ipam/host-local@v1.2.0
+      - run: docker exec cello-test sysctl -w net.ipv6.conf.all.disable_ipv6=0 
+      - run: docker exec cello-test ip addr add  FEF6:BDFE:7654:593F:9721:20B0:C3C3:1A66/10 dev eth0
+      - run: docker exec cello-test ip route add default via FEF6:BDFE:7654:593F::1
+
+      - name: Run unit tests
+        run: docker exec cello-test make test
+
+
+  build:
+    name: Build binaries
+    runs-on: ubuntu-latest
+    steps: 
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: ./go.mod
+
+      - name: Mod tidy
+        run: go mod tidy
+
+      - name: Build cello-agent
+        run: make cello-agent
+
+      - name: Build cello-cni
+        run: make cello-cni
+
+      - name: Build cello-cli
+        run: make cello-ctl
+
+      - name: Build cilium-launcher
+        run: make cilium-launcher
