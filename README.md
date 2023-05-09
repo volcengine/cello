@@ -28,7 +28,11 @@ In exclusive mode, Cello assigns the secondary ENI directly to the Pod, pulls th
 
 <img alt="feishu" height="400" src="./docs/images/eni_allocation.jpg"/>
 
-Cello is deployed on each node in the form of daemonset, and each Cello instance will independently apply for secondary ENIs and use them to configure pod network. Each ENI will select one of the subnets configured by the user and all security groups configured by the user. In `eni_exclusive` mode, eni is used directly, the number of pods that can be scheduled on the node is equal to `eni_quota-1`. In `eni_shared` mode,  the number of pods that can be scheduled on the node is equal to `(eni_quota-1)*ip_quota_per_eni`. ENI created by Cello will carry some tags to indicate the creator, and Cello will periodically check and recycle its own leaked ENI according to the tags if it is alive. Deploying An opeartor in the cluster to reclaim the detached ENI when deleting nodes can further avoid ENI leaks, and user intervention is required while cluster is deleted.
+Cello is deployed on each node in the form of daemonset, and each Cello instance will independently apply for secondary ENIs and use them to configure pod network. Each ENI will select one of the subnets configured by the user and all security groups configured by the user.   
+* In `eni_exclusive` mode, eni is used directly, the number of pods that can be scheduled on the node is equal to `eni_quota-1`. 
+* In `eni_shared` mode,  the number of pods that can be scheduled on the node is equal to `(eni_quota-1)*ip_quota_per_eni`.
+
+ENI created by Cello will carry some tags to indicate the creator, and Cello will periodically check and recycle its own leaked ENI according to the tags if it is alive. Deploying an operator in the cluster to reclaim the detached ENI when deleting nodes can further avoid ENI leaks, and user intervention is required while cluster is deleted.
 
 
 
