@@ -27,7 +27,15 @@ BUILD_INFO=-ldflags="-X main.BuildInfo=$(VERSION)@$(BRANCH)_$(DATE)"
 # BUILD FLAGS
 CELLO_META ?=
 
-tidy: 
+BUILD_ARGS =
+ifdef GOPROXY
+	BUILD_ARGS+=--build-arg GOPROXY=$(GOPROXY)
+endif
+ifdef CELLO_META
+	BUILD_ARGS+=--build-arg CELLO_META=$(CELLO_META)
+endif
+
+tidy:
 	go mod tidy
 
 cello-agent:
@@ -39,12 +47,14 @@ cello-ctl:
 		./cmd/cello-cli
 
 cello-cni:
-	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cello-cni $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
-		./cmd/cello-cni
-
-cello-cni-meta:
+ifdef CELLO_META
 	CGO_ENABLED=0 GOOS=linux go build -tags meta -o $(OUTPUT)/cello-cni $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
 		./cmd/cello-cni
+	$(info with meta)
+else
+	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cello-cni $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
+    	./cmd/cello-cni
+endif
 
 cilium-launcher:
 	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cilium-launcher $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
@@ -55,22 +65,14 @@ protobuf: tidy
 
 all: pkg image
 
-bin: cello-cni cello-ctl cello-agent cilium-launcher
-ifdef CELLO_META
-		CGO_ENABLED=0 GOOS=linux go build -tags meta -o $(OUTPUT)/cello-cni $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
-    		./cmd/cello-cni
-endif
+bin: tidy cello-cni cello-ctl cello-agent cilium-launcher
 
 pkg: bin
 	cp ./script/bootstrap/* $(OUTPUT)/
 	chmod +x $(OUTPUT)/*.sh
 
 image:
-ifdef GOPROXY
-	$(ENGINE) build -f ./images/Dockerfile -t $(IMAGE_NAME_TAG) --build-arg GOPROXY=$(GOPROXY) .
-else
-	$(ENGINE) build -f ./images/Dockerfile -t $(IMAGE_NAME_TAG) .
-endif
+	$(ENGINE) build -f ./images/Dockerfile -t $(IMAGE_NAME_TAG) ${BUILD_ARGS} .
 	@echo "Built OCI image \"$(IMAGE_NAME)\""
 
 test:

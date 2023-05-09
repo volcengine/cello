@@ -22,6 +22,7 @@ import (
 )
 
 var (
+	about = "Cello CNI"
 	Add   = cello.CmdAdd
 	Del   = cello.CmdDel
 	Check = cello.CmdCheck
