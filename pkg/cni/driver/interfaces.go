@@ -138,7 +138,9 @@ func TeardownNetwork(netNs string) error {
 		}
 		return nil
 	})
-	log.Log.Errorf("failed to cleanup container network: %v", err)
+	if err != nil {
+		log.Log.Errorf("failed to cleanup container network: %v", err)
+	}
 
 	// Cleanup fast path.
 	for _, fastPath := range fastPaths {
