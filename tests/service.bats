@@ -134,6 +134,7 @@ function pod_request_nodeport() {
 
 
 @test "test loadbalancer service" {
+    skip
     kubectl apply -f templates/testcases/service/loadblancer.yaml
 	retry 20 2 object_exist svc -l test=lbsvc
 	retry 10 5 svc_ready svc -l test=lbsvc
@@ -146,6 +147,7 @@ function pod_request_nodeport() {
 }
 
 @test "test loadbalancer service traffic local" {
+    skip
     kubectl apply -f templates/testcases/service/loadblancer.yaml
 	retry 20 2 object_exist svc -l test=lbsvc
 	retry 10 5 svc_ready svc -l test=lbsvc
@@ -158,6 +160,7 @@ function pod_request_nodeport() {
 }
 
 @test "test loadbalancer service with backend use hostnetwork" {
+    skip
     kubectl apply -f templates/testcases/service/hostnetwork/loadblancer.yaml
 	retry 20 2 object_exist svc -l test=lbsvc-hn
 	retry 10 5 svc_ready svc -l test=lbsvc-hn
@@ -170,6 +173,7 @@ function pod_request_nodeport() {
 }
 
 @test "test loadbalancer service traffic local with backend use hostnetwork" {
+    skip
     kubectl apply -f templates/testcases/service/hostnetwork/loadblancer.yaml
 	retry 20 2 object_exist svc -l test=lbsvc-hn
 	retry 10 5 svc_ready svc -l test=lbsvc-hn

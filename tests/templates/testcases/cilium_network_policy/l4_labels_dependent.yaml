@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cilium-policy-l4-label-dep
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-configmap
+  namespace: cilium-policy-l4-label-dep
+data:
+  nginx.conf: |
+    worker_processes auto;
+    events {
+    }
+    http {
+      server {
+        server_name nginx;
+        listen 80 default_server;
+        location /healthz {
+          add_header Content-Type text/plain;
+          return 200 'ok';
+        }
+      }
+      server {
+        server_name nginx;
+        listen 90;
+        location /healthz {
+          add_header Content-Type text/plain;
+          return 200 'ok';
+        }
+      }          
+    }
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: l4-label-dep
+  namespace: cilium-policy-l4-label-dep
+  labels:
+    case: l4-label-dep
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      role: l4-label-dep-target
+  template:
+    metadata:
+      labels:
+        role: l4-label-dep-target
+        case: l4-label-dep
+    spec:
+      volumes:
+      - name: nginx
+        configMap:
+          name: nginx-configmap
+      containers:
+      - name: nginx
+        # image: docker.io/library/nginx:latest
+        image: cr-cn-guilin-boe.ivolces.com/vke/cello-tools:nginx
+        volumeMounts:
+        - name: nginx
+          mountPath: /etc/nginx
+          readOnly: true
+      - name: netshoot
+        image: cr-cn-guilin-boe.ivolces.com/vke/cello-tools:netshoot-latest
+        command: ["sh", "-c", "sleep 3600000"]
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: l4-rule-label-dep-service1
+  namespace: cilium-policy-l4-label-dep
+spec:
+  type: ClusterIP
+  selector:
+    role: l4-label-dep-target
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: l4-rule-label-dep-service2
+  namespace: cilium-policy-l4-label-dep
+spec:
+  type: ClusterIP
+  selector:
+    role: l4-label-dep-target
+  ports:
+  - protocol: TCP
+    port: 90
+    targetPort: 90
+
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: l4-rule-label-dep
+  namespace: cilium-policy-l4-label-dep
+spec:
+  endpointSelector:
+    matchLabels:
+      role: l4-label-dep-target
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        role: l4-label-dep-source
+    toPorts:
+    - ports:
+      - port: "80"
+        protocol: TCP
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: l4-label-dep-source
+  namespace: cilium-policy-l4-label-dep
+  labels:
+    case: l4-label-dep
+    role: l4-label-dep-source
+spec:
+  restartPolicy: Never
+  initContainers:
+  - name: waiting
+    # After version 1.28.4, the following errors may occur in dns parsing: server can't find policy-svc.policy-test.svc.cluster.local: NXDOMAIN
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
+    command: ["sh", "-c", "for i in `seq 1 120`; do nslookup l4-rule-label-dep-service1.cilium-policy-l4-label-dep && nslookup l4-rule-label-dep-service2.cilium-policy-l4-label-dep && sleep 5 && exit 0; done"]
+  containers:
+  - name: fail
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
+    command: ["sh", "-c", "wget -T 1 l4-rule-label-dep-service2.cilium-policy-l4-label-dep:90/healthz"]
+  - name: success
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
+    command: ["sh", "-c", "wget -T 1 l4-rule-label-dep-service1.cilium-policy-l4-label-dep/healthz"]
+  - name: tool
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-cn-guilin-boe.ivolces.com/vke/cello-tools:netshoot-latest
+    command: ["sh", "-c", "sleep 360000"]

@@ -2,7 +2,7 @@
 
 set -e
 
-# test cello pod ready 
+# test cello pod ready
 bats cni_ready.bats
 
 # test pod connection
@@ -13,3 +13,6 @@ bats service.bats
 
 # test network policy
 bats network_policy.bats
+
+# test cilium network policy
+bats cilium_network_policy.bats

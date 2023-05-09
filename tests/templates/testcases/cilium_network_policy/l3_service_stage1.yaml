@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cilium-policy-l3-service
+
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: "l3-service-policy"
+  namespace: cilium-policy-l3-service
+spec:
+  endpointSelector:
+    matchLabels:
+      role: l3-service-client
+  egress:
+  - toServices:
+    - k8sService:
+        serviceName: l3-policy-service1
+        namespace: cilium-policy-l3-service
+  - toPorts:
+    - ports:
+      - port: "80"
+        protocol: TCP
+---
+#  allow dns
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: "l3-service-policy-coredns"
+  namespace: cilium-policy-l3-service
+spec:
+  endpointSelector:
+    matchLabels:
+      role: l3-service-client
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+    toPorts:
+    - ports:
+      - port: '53'
+        protocol: UDP
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: l3-policy-service1
+  namespace: cilium-policy-l3-service
+spec:
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 11414
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: l3-policy-service2
+  namespace: cilium-policy-l3-service
+spec:
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 11414
+
