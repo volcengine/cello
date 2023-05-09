@@ -372,7 +372,9 @@ func (d *IPVlanDriver) setupFilters(link netlink.Link, srcEgressRedirectCIDRs []
 
 	filtersToDeleted := make([]netlink.Filter, 0)
 	filters, err := netlink.FilterList(link, parent)
-	log.Log.Errorf("failed to get filter list, %v", err)
+	if err != nil {
+		log.Log.Errorf("failed to get filter list, %v", err)
+	}
 	for _, filter := range filters {
 		matchAny := false
 		for rule := range ruleInFilter {
