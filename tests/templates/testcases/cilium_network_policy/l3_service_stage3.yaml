@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: l3-service-client
+  namespace: cilium-policy-l3-service
+  labels:
+    role: l3-service-client
+    case: l3-rule-service
+spec:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: "role1"
+            operator: In
+            values:
+            - l3-policy-service1
+        topologyKey: kubernetes.io/hostname
+  restartPolicy: Never
+  initContainers:
+  - name: waiting
+    # After version 1.28.4, the following errors may occur in dns parsing: server can't find policy-svc.policy-test.svc.cluster.local: NXDOMAIN
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
+    command: ["sh", "-c", "for i in `seq 1 120`; do nslookup l3-policy-service1.cilium-policy-l3-service && nslookup l3-policy-service2.cilium-policy-l3-service && sleep 5 && exit 0; done"]
+  containers:
+  - name: success
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
+    command: ["sh", "-c", "wget -T 1 l3-policy-service1.cilium-policy-l3-service/healthz"]
+  - name: fail
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
+    command: ["sh", "-c", "wget -T 1 l3-policy-service2.cilium-policy-l3-service/healthz"]
+---

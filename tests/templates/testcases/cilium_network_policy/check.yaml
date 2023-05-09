@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-check
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-check
+  namespace: test-check
+  labels:
+    role: test-check
+spec:
+  restartPolicy: Never
+  containers:
+  - name: allow
+    image: cr-cn-guilin-boe.ivolces.com/vke/cello-tools:netshoot-latest
+    command: ["sh", "-c", "sleep 360000"]

@@ -8,7 +8,7 @@ spec:
   containers:
   - name: nginx
     # image: docker.io/library/nginx:latest
-    image: cr-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+    image: cr-cn-guilin-boe.ivolces.com/vke/cello-tools:nginx
 
 ---
 # Cluster Loadbalancer

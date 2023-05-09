@@ -18,7 +18,7 @@ spec:
   containers:
   - name: nginx
     # image: docker.io/library/nginx:latest
-    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:nginx
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -71,7 +71,7 @@ spec:
   containers:
   - name: nginx
     # image: docker.io/library/nginx:latest
-    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:nginx
 
 ---
 apiVersion: v1
@@ -116,16 +116,16 @@ spec:
   - name: waiting
     # After version 1.28.4, the following errors may occur in dns parsing: server can't find policy-svc.policy-test.svc.cluster.local: NXDOMAIN
     # image: docker.io/library/busybox:1.28.4
-    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
     command: ["sh", "-c", "for i in `seq 1 120`; do nslookup policy-svc && nslookup non-policy-svc && wget -T 1 non-policy-svc && sleep 30 && exit 0; sleep 1; done"]
   containers:
   - name: policy
     # image: docker.io/library/busybox:1.28.4
-    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
     command: ["sh", "-c", "wget -T 1 policy-svc"]
   - name: non-policy
     # image: docker.io/library/busybox:1.28.4
-    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
     command: ["sh", "-c", "wget -T 1 non-policy-svc"]
 ---
 
@@ -154,14 +154,14 @@ spec:
   initContainers:
   - name: waiting
     # image: docker.io/library/busybox:1.28.4
-    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
     command: ["sh", "-c", "for i in `seq 1 120`; do nslookup policy-svc && nslookup non-policy-svc && wget -T 1 non-policy-svc && sleep 30 && exit 0; sleep 1; done"]
   containers:
   - name: policy
     # image: docker.io/library/busybox:1.28.4
-    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
     command: ["sh", "-c", "wget -T 1 policy-svc"]
   - name: non-policy
     # image: docker.io/library/busybox:1.28.4
-    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-test:busybox-1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
     command: ["sh", "-c", "wget -T 1 non-policy-svc"]

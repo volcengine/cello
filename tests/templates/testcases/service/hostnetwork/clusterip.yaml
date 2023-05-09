@@ -44,10 +44,10 @@ spec:
       containers:
       - name: nginx
         # image: docker.io/library/nginx:latest
-        image: cr-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+        image: cr-cn-guilin-boe.ivolces.com/vke/cello-tools:nginx
         volumeMounts:
         - name: nginx
-          mountPath: /etc/nginxw
+          mountPath: /etc/nginx
           readOnly: true
 ---
 
@@ -89,8 +89,8 @@ spec:
       containers:
       - name: nginx
         # image: docker.io/library/nginx:latest
-        image: cr-cn-guilin-boe.ivolces.com/vke/cello-test:nginx
+        image: cr-cn-guilin-boe.ivolces.com/vke/cello-tools:nginx
         volumeMounts:
         - name: nginx
-          mountPath: /etc/nginxw
+          mountPath: /etc/nginx
           readOnly: true

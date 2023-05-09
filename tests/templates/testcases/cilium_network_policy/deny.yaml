@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cilium-policy-deny
+
+---
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: deny-rule
+  namespace: cilium-policy-deny
+spec:
+  endpointSelector:
+    matchLabels:
+      env: prod
+  ingressDeny:
+  - fromEndpoints:
+    - matchLabels:
+        role: test
+  ingress:
+    - fromEntities:
+      - "all"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: deny-rule-prod-front
+  namespace: cilium-policy-deny
+  labels:
+    case: deny-rule
+    env: prod
+    role: frontend
+spec:
+  containers:
+  - name: busybox
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
+    command: ["sh", "-c", "sleep 360000"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: deny-rule-prod-backend
+  namespace: cilium-policy-deny
+  labels:
+    case: deny-rule
+    env: prod
+    role: backend
+spec:
+  containers:
+  - name: busybox
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
+    command: ["sh", "-c", "sleep 360000"]
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: deny-rule-prod-test
+  namespace: cilium-policy-deny
+  labels:
+    case: deny-rule
+    env: prod
+    role: test
+spec:
+  containers:
+  - name: busybox
+    # image: docker.io/library/busybox:1.28.4
+    image: cr-inner-cn-guilin-boe.ivolces.com/vke/cello-tools:busybox-1.28.4
+    command: ["sh", "-c", "sleep 360000"]
