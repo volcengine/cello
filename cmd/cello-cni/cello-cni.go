@@ -27,7 +27,7 @@ import (
 )
 
 func main() {
-	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, cniVersion.All, "Cello CNI")
+	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, cniVersion.All, about)
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
