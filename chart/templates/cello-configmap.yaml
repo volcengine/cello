@@ -6,10 +6,6 @@ metadata:
 data:
   conf: |
     {
-      {{- $configmap := (lookup "v1" "ConfigMap" "kube-system" "cello-config") }}
-      {{- if $configmap }}
-      {{- $conf := $configmap.data.conf | fromJson }}
-      {{- else }}
       "subnets": [
         {{- $last := sub (len .Values.cello.subnetIDs) 1}}
         {{- range $idx,$item := .Values.cello.subnetIDs }}
@@ -22,7 +18,6 @@ data:
         {{ quote $item }}{{ if ne $idx $last }},{{end}}
         {{- end}}
       ],
-      {{- end -}}
       {{- if .Values.cello.iamRole }}
       "ramRole": "{{.Values.cello.iamRole | quote }}",
       {{- end }}
