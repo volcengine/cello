@@ -11,7 +11,6 @@ require (
 	github.com/gin-gonic/gin v1.9.0
 	github.com/golang/glog v1.0.0
 	github.com/golang/mock v1.4.4
-	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.4.0
 	github.com/metal-stack/go-ipam v1.12.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
@@ -34,7 +33,6 @@ require (
 	k8s.io/apimachinery v0.22.8
 	k8s.io/client-go v0.22.8
 	k8s.io/kubelet v0.22.4
-	k8s.io/utils v0.0.0-20211116205334-6203023598ed
 )
 
 require (
@@ -125,6 +123,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.9.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20211109043538-20434351676c // indirect
+	k8s.io/utils v0.0.0-20211116205334-6203023598ed // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )

@@ -6,3 +6,13 @@
 *.db
 
 /pkg/utils/logger/log_test.log
+
+# ci files
+ci/playbook/kube
+ci/output
+ci/tf/.terraform
+ci/tf/.terraform.lock.hcl
+ci/tf/*.tfstate
+ci/tf/*.tfstate.backup
+ci/tf/hosts.yaml
+ci/tf/values.yaml

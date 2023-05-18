@@ -1,0 +1,52 @@
+- name: Load br_netfilter kernel module
+  modprobe:
+    name: br_netfilter
+    state: present
+
+- name: Configure sysctl
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/99-kubernetes-cri.conf
+    reload: yes
+  with_items:
+    - { name: net.bridge.bridge-nf-call-iptables, value: 1 }
+    - { name: net.ipv4.ip_forward, value: 1 }
+    - { name: net.bridge.bridge-nf-call-ip6tables, value: 1 }
+
+- name: Populate service facts
+  service_facts:
+
+# https://developer.volcengine.com/articles/7132008672707739662
+- name: Setup docker gpg
+  shell: |
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL http://mirrors.ivolces.com/docker/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] http://mirrors.ivolces.com/docker/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    apt update -y
+  when:  '"containerd" not in services'
+
+- name: Install containerd
+  apt:
+    name:
+      - containerd.io
+    state: present
+  register: containerd
+
+- name: Wait containerd started
+  service:
+    name: containerd
+    state: started
+
+- name: Create containerd daemon configuration from template
+  template:
+    src: templates/containerd.conf.j2
+    dest: /etc/containerd/config.toml
+  register: containerd_config
+
+- name: Restart containerd
+  service:
+    name: containerd
+    state: restarted
+  when: containerd_config.changed

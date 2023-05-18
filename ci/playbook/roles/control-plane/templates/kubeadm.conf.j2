@@ -1,0 +1,12 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+skipPhases:
+- addon/kube-proxy
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+apiServer:
+  certSANs:
+  - "{{ k8s_api_server_ip }}"
+kubernetesVersion: "v1.24.10"
+imageRepository: "cr-cn-beijing.volces.com/cello-k8s"

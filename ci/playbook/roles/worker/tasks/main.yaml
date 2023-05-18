@@ -1,0 +1,26 @@
+- name: Copy the join command from host
+  copy:
+    src: kube/join-command
+    dest: /tmp/join-command.sh
+    mode: 0777
+  register: join_command
+
+- name: Copy kubeconfig from host
+  copy:
+    src: kube/config
+    dest: /tmp/kubeconfig
+
+- name: Compare kubeconfig with existing one
+  command: diff /tmp/kubeconfig ~/.kube/config
+  failed_when: False
+  register: kubeconfig_diff
+  changed_when: kubeconfig_diff.rc != 0
+
+- name: Reset kubeadm if kubeconfig has changed
+  command: kubeadm reset -f
+  when: kubeconfig_diff.changed
+  failed_when: False
+
+- name: Join the node to cluster
+  command: sh /tmp/join-command.sh
+  when: kubeconfig_diff.changed

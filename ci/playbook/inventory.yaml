@@ -1,0 +1,13 @@
+control-plane:
+  hosts:
+    172.16.1.128:
+workers:
+  hosts:
+    172.16.1.127:
+all:
+  vars:
+    ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -W %h:%p -q -i /home/rcao/test/cello-tf/cello-ecs.pem root@180.184.33.145"
+    ansible_ssh_private_key_file: /home/rcao/test/cello-tf/cello-ecs.pem
+    host_key_checking: false
+    ansible_user: root
+    k8s_api_server_ip: 180.184.33.145

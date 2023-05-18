@@ -1,0 +1,9 @@
+---
+- hosts: control-plane
+  gather_facts: no
+  roles:
+    - control-plane
+- hosts: workers
+  gather_facts: no
+  roles:
+    - worker

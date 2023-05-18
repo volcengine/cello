@@ -1,0 +1,10 @@
+---
+- hosts: all
+  gather_facts: no
+  tasks:
+    - name: Copy image to worker
+      copy:
+        src: /tmp/cello.tar
+        dest: /tmp/cello.tar
+    - name: Load image
+      command: ctr -n k8s.io images import /tmp/cello.tar
