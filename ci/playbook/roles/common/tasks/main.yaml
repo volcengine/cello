@@ -1,0 +1,9 @@
+- name: Wait ssh port ready
+  wait_for:
+    host: "{{ k8s_api_server_ip }}"
+    port: 22
+    timeout: 300
+    state: started
+  connection: local
+- import_tasks: containerd.yaml
+- import_tasks: kube.yaml

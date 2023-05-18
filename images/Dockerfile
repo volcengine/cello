@@ -9,6 +9,11 @@ FROM  ${CILIUM_IPROUTE2_IMAGE} as iproute2-dist
 
 FROM ubuntu:20.04 as cello-base
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV HTTP_PROXY $HTTP_PROXY
+ENV HTTPS_PROXY $HTTPS_PROXY
+
 COPY --from=llvm-dist /usr/local/bin/clang /usr/local/bin/llc /bin/
 COPY --from=bpftool-dist /usr/local/bin/bpftool /usr/local/bin/
 COPY --from=iproute2-dist /usr/local/bin/ip /usr/local/bin/ss /usr/local/bin/tc /usr/local/bin/
@@ -26,6 +31,10 @@ RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selectio
 
 # cilium
 FROM quay.io/cilium/cilium-builder:374a7ec10c5cbc5e9afe4cdd376f95ca592bd9ab@sha256:8d59be6168a25a9855707d63596df9903eef32518710a83879efbf9222f07628 as cilium-builder
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV HTTP_PROXY $HTTP_PROXY
+ENV HTTPS_PROXY $HTTPS_PROXY
 ARG GOPROXY
 ENV GOPROXY $GOPROXY
 WORKDIR /go/src/github.com/cilium
@@ -42,6 +51,9 @@ RUN cd cilium &&  make PKG_BUILD=1 SKIP_DOCS=true DESTDIR=/tmp/install clean-con
 
 # cni-plugins
 FROM docker.io/library/golang:1.20-bullseye as cni-plugins-builder
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+
 ARG GOPROXY
 ENV GOPROXY $GOPROXY
 WORKDIR /go/src/containernetworking
@@ -58,6 +70,9 @@ COPY ../.. .
 RUN CELLO_META=$CELLO_META make bin
 
 FROM cello-base
+ENV HTTP_PROXY=""
+ENV HTTPS_PROXY=""
+ENV GOPROXY=""
 # cello & cilium bin
 COPY --from=cello-builder /go/src/cello/output /cello
 COPY --from=cni-plugins-builder /go/src/containernetworking/plugins/bin/loopback /containernetworking/plugins/

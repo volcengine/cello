@@ -1,0 +1,16 @@
+image:
+  repository: "volcstack/cello"
+  tag: "latest"
+  pullPolicy: "IfNotPresent"
+cello:
+  subnetIDs:
+    - "${pod_subnet_id}"
+  securityGroupIDs: ["${pod_sg_id}"]
+  accessKey: "${access_key}"
+  secretKey: "${secret_key}"
+  ipFamily: "ipv4"
+  redirectToHostCIDRs: ["169.254.0.0/16"]
+  openAPIAddress: "open.volcengineapi.com"
+  k8sServiceHost: "${k8s_api_server_ip}"
+  k8sServicePort: "6443"
+  

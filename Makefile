@@ -27,7 +27,7 @@ BUILD_INFO=-ldflags="-X main.BuildInfo=$(VERSION)@$(BRANCH)_$(DATE)"
 # BUILD FLAGS
 CELLO_META ?=
 
-BUILD_ARGS =
+BUILD_ARGS = --build-arg HTTPS_PROXY=$(HTTPS_PROXY) --build-arg GOPROXY=$(GOPROXY)
 ifdef GOPROXY
 	BUILD_ARGS+=--build-arg GOPROXY=$(GOPROXY)
 endif
