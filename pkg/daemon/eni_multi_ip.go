@@ -767,6 +767,7 @@ func (f *eniIPFactory) ReleaseInValid(resource types.NetResource) (types.NetReso
 		}
 		f.Lock()
 		temp.Lock()
+		temp.deleteIPLocked(res)
 		temp.appendIPLocked(&ENIIPRes{
 			ENIIP: newEniIP,
 		})
