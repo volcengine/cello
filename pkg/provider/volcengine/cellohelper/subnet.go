@@ -285,6 +285,10 @@ func (m *subnetManager) updateSubnets(legacy, flush bool, subnetIds ...string) e
 		return err
 	}
 
+	if len(resp.Subnets) == 0 {
+		log.Errorf("Get no result while describe subnets %v in vpc %s, check if they are matched", addSubnets, m.vpcId)
+	}
+
 	for _, subnet := range resp.Subnets {
 		if volcengine.StringValue(subnet.VpcId) != m.vpcId ||
 			volcengine.StringValue(subnet.ZoneId) != m.zoneId {
