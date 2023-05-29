@@ -379,22 +379,33 @@ func (v *APIMockDB) GetENI(mac string) (res *types.ENI, err error) {
 	return
 }
 
-func (v *APIMockDB) GetAttachedENIs(withTrunk bool) (total int, eniList []*types.ENI, err error) {
+func (v *APIMockDB) GetAttachedENIs(withTrunk bool) (eniList []*types.ENI, err error) {
 	if !v.readOnlyRateLimiter.TryAccept() {
-		return 0, nil, errors.New(apiErr.AccountFlowLimitExceeded)
+		return nil, errors.New(apiErr.AccountFlowLimitExceeded)
 	}
 	v.eniCache.Range(func(key, value any) bool {
 		eni := value.(*ENIKeeper)
 		if eni.Trunk && !withTrunk {
 			return true
 		}
-		total++
 		if eni.celloCreated {
 			eniList = append(eniList, &eni.ENI)
 		}
 		return true
 	})
 	return
+}
+
+func (v *APIMockDB) GetTotalAttachedEniCnt() (int, error) {
+	if !v.readOnlyRateLimiter.TryAccept() {
+		return 0, errors.New(apiErr.AccountFlowLimitExceeded)
+	}
+	total := 0
+	v.eniCache.Range(func(key, value any) bool {
+		total++
+		return true
+	})
+	return total, nil
 }
 
 func (v *APIMockDB) GetSecondaryENIMACs() ([]string, error) {

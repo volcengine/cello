@@ -25,8 +25,6 @@ import (
 	"time"
 
 	"github.com/containernetworking/plugins/pkg/ip"
-	"github.com/vishvananda/netlink"
-	"golang.org/x/sys/unix"
 	v1 "k8s.io/api/core/v1"
 	k8sErr "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -71,8 +69,8 @@ type VolcAPI interface {
 	// GetENI get eni by mac from metadata
 	GetENI(mac string) (*types.ENI, error)
 
-	// GetAttachedENIs return counts of attached enis except rdma eni and list of eni created by cello
-	GetAttachedENIs(withTrunk bool) (int, []*types.ENI, error)
+	// GetAttachedENIs return all attached eni created by cello
+	GetAttachedENIs(withTrunk bool) ([]*types.ENI, error)
 
 	GetSecondaryENIMACs() ([]string, error)
 
@@ -87,6 +85,9 @@ type VolcAPI interface {
 
 	// GetInstanceLimit return instance InstanceLimits
 	GetInstanceLimit() (*InstanceLimits, error)
+
+	// GetTotalAttachedEniCnt return count of all eni attached to instance, even across accounts
+	GetTotalAttachedEniCnt() (int, error)
 }
 
 type VolcApiImpl struct {
@@ -359,127 +360,75 @@ func (e *VolcApiImpl) FreeENI(eniID string) error {
 	return e.freeENI(eniID, 2*time.Second)
 }
 
-// filterRdmaWithMac filter out rdma eni.
-func (e *VolcApiImpl) filterRdmaWithMac(macs []string) ([]string, error) {
-	macsMap := make(map[string]struct{})
-	for _, m := range macs {
-		macsMap[m] = struct{}{}
-	}
-	var resp *ecs.DescribeInstancesOutput
-	var err error
-	werr := wait.ExponentialBackoff(backoff.BackOff(backoff.APIFastRetry), func() (bool, error) {
-		resp, err = e.ec2Client.DescribeInstances(&ecs.DescribeInstancesInput{
-			InstanceIds: volcengine.StringSlice([]string{e.GetInstanceId()}),
-		})
-		if err != nil {
-			log.Warnf("DescribeInstances %s failed, %s", e.GetInstanceId(), err.Error())
-			return false, nil
-		}
-		if len(resp.Instances) != 1 ||
-			volcengine.StringValue(resp.Instances[0].InstanceId) != e.GetInstanceId() {
-			return false, fmt.Errorf("DescribeInstances %s failed, %s",
-				e.GetInstanceId(), err.Error())
-		}
-		return true, nil
-	})
-	if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
-		return nil, err
-	}
-
-	rdmaIPAddrs := resp.Instances[0].RdmaIpAddresses
-	var rdmaIPAddrsMap = make(map[string]struct{})
-	for _, ri := range rdmaIPAddrs {
-		rdmaIPAddrsMap[volcengine.StringValue(ri)] = struct{}{}
-	}
-
-	links, err := netlink.LinkList()
+// GetAttachedENIs return all attached eni created by cello
+func (e *VolcApiImpl) GetAttachedENIs(withTrunk bool) (result []*types.ENI, err error) {
+	enis, err := e.getNetworkInterfacesByDescribe(ENIStatusInuse, "", nil, BuildFilterForDescribeNetworkInterfacesInput(e.tags))
 	if err != nil {
-		return nil, fmt.Errorf("list links failed: %s", err)
-	}
-	// filter
-	for _, link := range links {
-		addrs, err := netlink.AddrList(link, unix.AF_INET)
-		if err != nil {
-			return nil, fmt.Errorf("list addrs for %s failed: %s", link.Attrs().Name, err.Error())
-		}
-		for _, addr := range addrs {
-			if _, ok := rdmaIPAddrsMap[addr.IP.String()]; ok {
-				log.Debugf("Found RDMA Card[name:%s ip:%s mac:%s], skipped it.", link.Attrs().Name, addr.IP.String(), link.Attrs().HardwareAddr.String())
-				delete(macsMap, link.Attrs().HardwareAddr.String())
-				break
-			}
-		}
+		return nil, fmt.Errorf("filter eni by tags failed, %v", err)
 	}
 
-	var macRes []string
-	for k := range macsMap {
-		macRes = append(macRes, k)
-	}
-	return macRes, nil
-}
-
-func (e *VolcApiImpl) GetAttachedENIs(withTrunk bool) (int, []*types.ENI, error) {
-	ctx := context.Background()
-	macs, err := e.metadataSvc.GetENIsMacs(ctx)
-	if err != nil {
-		return 0, nil, fmt.Errorf("%s", err.Error())
-	}
-	macs, err = e.filterRdmaWithMac(macs)
-	if err != nil {
-		return 0, nil, fmt.Errorf("filterRdmaWithMac failed: %s", err.Error())
-	}
-	total := len(macs)
-	var eniList []*types.ENI
-	var result []*types.ENI
-	var eniIds []string
-	for _, mac := range macs {
-		eni, err := e.GetENI(mac)
-		if err != nil {
-			return 0, nil, fmt.Errorf("%s", err.Error())
-		}
-		eniList = append(eniList, eni)
-		eniIds = append(eniIds, eni.ID)
-	}
-
-	if len(eniIds) == 0 {
-		return 0, result, nil
-	}
-
-	enis, err := e.getNetworkInterfacesByDescribe(ENIStatusInuse, "", eniIds, BuildFilterForDescribeNetworkInterfacesInput(e.tags))
-	if err != nil {
-		return 0, nil, err
-	}
-	enisMap := map[string]*ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput{}
+	var macs []string
+	celloCreatedEni := map[string]*ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput{}
 	for _, eni := range enis {
-		enisMap[volcengine.StringValue(eni.NetworkInterfaceId)] = eni
+		celloCreatedEni[volcengine.StringValue(eni.NetworkInterfaceId)] = eni
+		macs = append(macs, volcengine.StringValue(eni.MacAddress))
 	}
-	for _, eni := range eniList {
-		if i, exist := enisMap[eni.ID]; exist {
-			eni.Trunk = volcengine.StringValue(i.Type) == ENITypeTrunk
+	log.Infof("Attached eni created by cello(withTrunk: %v): %v", withTrunk, macs)
+
+	for _, mac := range macs {
+		eni, inErr := e.GetENI(mac)
+		if inErr != nil {
+			return nil, inErr
+		}
+		if item, exist := celloCreatedEni[eni.ID]; exist {
+			eni.Trunk = volcengine.StringValue(item.Type) == ENITypeTrunk
 			if eni.Trunk && !withTrunk {
 				continue
 			}
-			if e.ipFamily.EnableIPv6() && len(i.IPv6Sets) > 0 {
-				eni.PrimaryIP.IPv6 = net.ParseIP(volcengine.StringValue(i.IPv6Sets[0]))
+			if e.ipFamily.EnableIPv6() && len(item.IPv6Sets) > 0 {
+				eni.PrimaryIP.IPv6 = net.ParseIP(volcengine.StringValue(item.IPv6Sets[0]))
 			}
 			result = append(result, eni)
 		}
 	}
-	return total, result, nil
+	return
+}
+
+// GetTotalAttachedEniCnt return count of all eni attached to instance, even across accounts
+// contains primary、secondary、trunk
+func (e *VolcApiImpl) GetTotalAttachedEniCnt() (int, error) {
+	var inErr error
+	var output *ecs.DescribeInstancesOutput
+	err := wait.ExponentialBackoff(backoff.BackOff(backoff.APIFastRetry), func() (bool, error) {
+		output, inErr = e.ec2Client.DescribeInstances(&ecs.DescribeInstancesInput{
+			VpcId:       volcengine.String(e.GetVpcId()),
+			InstanceIds: []*string{volcengine.String(e.GetInstanceId())},
+		})
+		if inErr != nil {
+			return false, nil
+		}
+		return true, nil
+	})
+	if err = apiErr.BackoffErrWrapper(err, inErr); err != nil {
+		return 0, fmt.Errorf("desribe instance failed, %v, %v", err, inErr)
+	}
+	if output == nil || len(output.Instances) != 1 {
+		return 0, fmt.Errorf("desribe instance failed, no result")
+	}
+	return len(output.Instances[0].NetworkInterfaces), nil
 }
 
 func (e *VolcApiImpl) GetSecondaryENIMACs() ([]string, error) {
+	// In some subsequent scenarios, such as rdma and cross-accounts,
+	// the full mac obtained from the metadata service also includes non-secondary network interfaces,
+	// so openapi can only be used instead.
 	var result []string
-	primaryMac := e.GetPrimaryENIMac()
-	macs, err := e.metadataSvc.GetENIsMacs(context.Background())
+	enis, err := e.getNetworkInterfacesByDescribe(ENIStatusInuse, ENITypeSecondary, nil, BuildFilterForDescribeNetworkInterfacesInput(e.tags))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("filter eni by tags failed, %v", err)
 	}
-	for _, mac := range macs {
-		if mac == primaryMac {
-			continue
-		}
-		result = append(result, mac)
+	for _, eni := range enis {
+		result = append(result, volcengine.StringValue(eni.MacAddress))
 	}
 	return result, nil
 }
@@ -1040,6 +989,6 @@ func New(apiClient ec2.EC2, ipStack types.IPFamily, subnetMgr SubnetManager, ins
 
 	go wait.Forever(impl.cleanUpLeakedENIs, time.Hour)
 
-	log.Infof("ECS and VPC client created")
+	log.Infof("VolcApiImpl created")
 	return impl, nil
 }
