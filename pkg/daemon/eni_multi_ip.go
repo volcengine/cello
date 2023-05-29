@@ -136,7 +136,7 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 	m := &eniIPResourceManager{}
 	poolConfig := generateIPPoolCfg(cfg, limit.GetLimit())
 
-	_, created, err := volcApi.GetAttachedENIs(false)
+	created, err := volcApi.GetAttachedENIs(false)
 	if err != nil {
 		return nil, fmt.Errorf("get attached enis failed while init, %v", err)
 	}
@@ -1050,7 +1050,7 @@ func (f *eniIPFactory) GC() error {
 		eniId string
 		ip    types.IPSet
 	}{}
-	_, enis, err := f.volcApi.GetAttachedENIs(false)
+	enis, err := f.volcApi.GetAttachedENIs(false)
 	if err != nil {
 		return fmt.Errorf("get attachedENI failed, %v", err)
 	}
