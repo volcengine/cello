@@ -82,6 +82,8 @@ spec:
             - mountPath: /var/run/cilium
               name: host-cilium-run
             - mountPath: /var/run/netns
+              readOnly: true
+              mountPropagation: HostToContainer
               name: host-run-netns
             - mountPath: /opt/cni/bin
               name: host-cni-bin-dir
@@ -152,8 +154,6 @@ spec:
               name: host-bpf-maps
             - mountPath: /var/run/cilium
               name: host-cilium-run
-            - mountPath: /var/run/netns
-              name: host-run-netns
             - mountPath: /host/opt/cni/bin
               name: host-cni-bin-dir
             - mountPath: /host/etc/cni/net.d
