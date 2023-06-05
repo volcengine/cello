@@ -15,18 +15,18 @@ Cello replaces kube-proxy with [Cilium] to implement kubernetes services to achi
 ## Cello mode
 
 ### ENI-Multi-IP
-![eniip_ipvlan](docs/images/eniip_ipvlan.jpg)
+![eniip_ipvlan](docs/images/eniip_ipvlan.png)
 In the ENI-Multi-IP mode, Cello assigns multiple secondary private IPs under the secondary ENI to multiple Pods to achieve higher deployment density. The number of Pods on ECS depends on instance type ([limit]). Since each Pod is assigned an address within the VPC, all Pods and Nodes are almost the same in the VPC perspective. In addition to communicating through VPC, Pod can communicate with its Node through local fast path.
 
 ### Exclusive-ENI
-![eni](docs/images/eni.jpg)
+![eni](docs/images/eni.png)
 In exclusive mode, Cello assigns the secondary ENI directly to the Pod, pulls the secondary ENI into the Pod's NetNs and uses the primary IP of the secondary ENI for communication. From the perspective of VPC, all Pods and Nodes are the same. Limited by the number of secondary ENIs that can be attached on the ECS, the Pod deployment density in this mode is much lower. In addition to communicating through VPC, Pod also can communicate with its Node through the local `veth-pair`.
 
 
 
 ## ENI Allocation
 
-<img alt="feishu" height="400" src="./docs/images/eni_allocation.jpg"/>
+<img alt="feishu" height="400" src="./docs/images/eni_allocation.png"/>
 
 Cello is deployed on each node in the form of daemonset, and each Cello instance will independently apply for secondary ENIs and use them to configure pod network. Each ENI will select one of the subnets configured by the user and all security groups configured by the user.   
 * In `eni_exclusive` mode, eni is used directly, the number of pods that can be scheduled on the node is equal to `eni_quota-1`. 
