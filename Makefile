@@ -1,7 +1,7 @@
 # VERSION is the source revision for binary and image building.
 VERSION ?= $(shell git log -1 --date='format:%Y%m%d' --format='format:%ad').$(shell git describe --always --contains HEAD)
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
-DATE = $(shell date +"%Y-%M-%d_%H:%M:%S")
+DATE = $(shell date +"%Y-%m-%d_%H:%M:%S")
 
 # Information of OS and ARCH
 OS = $(shell uname -s)
