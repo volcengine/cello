@@ -66,7 +66,7 @@ ARG GOPROXY
 ENV GOPROXY $GOPROXY
 ARG CELLO_META
 WORKDIR /go/src/cello/
-COPY ../.. .
+COPY . /go/src/cello
 RUN CELLO_META=$CELLO_META make bin
 
 FROM cello-base
@@ -84,6 +84,6 @@ RUN mv /opt/cni/bin/cilium-cni /containernetworking/plugins/cilium-cni && \
 
 # script
 RUN mkdir -p /script
-COPY ../script/bootstrap/*  /script/
+COPY ./script/bootstrap/*  /script/
 RUN chmod +x /script/*
 
