@@ -19,10 +19,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -219,7 +221,7 @@ func main() {
 			}
 		}
 		if !info.IsDir() {
-			value, err := ioutil.ReadFile(path)
+			value, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
@@ -232,6 +234,7 @@ func main() {
 		log.Fatalf("Read custom cilium config failed, %v", err)
 	}
 
+	policyState := fmt.Sprintf("%v", ciliumArgs["enable-policy"])
 	ciliumExitChan := make(chan struct{})
 	var lock sync.Mutex
 
@@ -256,34 +259,62 @@ func main() {
 		close(ciliumExitChan)
 	}()
 
+	policyCfgPath := path.Join(ciliumConfigPath, "enable-policy")
+	policyEvent := make(chan *ValueEvent, 1)
+	watchPath(policyCfgPath, &policyState, policyEvent, 5*time.Second)
+
 	// press signal
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	select {
-	case sig := <-sigCh:
-		log.Infof("%d signal: %s", os.Getpid(), sig.String())
-		lock.Lock()
-		if ciliumCmd != nil {
-			err = ciliumCmd.Process.Signal(syscall.SIGINT)
-			if err != nil {
-				log.Infof("INT cilium failed: %v", err)
-			}
-
-			t := time.NewTimer(30 * time.Second)
-			select {
-			case <-ciliumExitChan:
-				log.Infof("cilium exited, code: %d", ciliumCmd.ProcessState.ExitCode())
-				os.Exit(ciliumCmd.ProcessState.ExitCode())
-			case <-t.C:
-				t.Stop()
-				log.Infof("wait cilium finish timeout")
-				os.Exit(1)
-			}
+	exitCilium := func() {
+		log.Infof("cilium exiting")
+		err = ciliumCmd.Process.Signal(syscall.SIGINT)
+		if err != nil {
+			log.Infof("INT cilium failed: %v", err)
 		}
-	case <-ciliumExitChan:
-		log.Infof("cilium unexpect exited, code: %d", ciliumCmd.ProcessState.ExitCode())
-		os.Exit(ciliumCmd.ProcessState.ExitCode())
+
+		t := time.NewTimer(30 * time.Second)
+		select {
+		case <-ciliumExitChan:
+			log.Infof("cilium exited, code: %d", ciliumCmd.ProcessState.ExitCode())
+			os.Exit(ciliumCmd.ProcessState.ExitCode())
+		case <-t.C:
+			t.Stop()
+			log.Infof("wait cilium finish timeout")
+			os.Exit(1)
+		}
+	}
+
+	for {
+		select {
+		case sig := <-sigCh:
+			log.Infof("%d signal: %s", os.Getpid(), sig.String())
+			lock.Lock()
+			if ciliumCmd != nil {
+				exitCilium()
+			}
+		case pe := <-policyEvent:
+			lock.Lock()
+			if ciliumCmd != nil {
+				if pe.err != nil {
+					log.Errorf("watch policy state failed, %v", pe.err)
+					exitCilium()
+				}
+				if pe.value != "default" && pe.value != "always" && pe.value != "never" {
+					log.Errorf("Invalid value '%s' for enable-policy", pe.value)
+				} else {
+					if err = setPolicyState(pe.value); err != nil {
+						log.Errorf("Switch enable-policy to %s failed, %v", pe.value, err)
+						exitCilium()
+					}
+				}
+			}
+			lock.Unlock()
+		case <-ciliumExitChan:
+			log.Infof("cilium unexpect exited, code: %d", ciliumCmd.ProcessState.ExitCode())
+			os.Exit(ciliumCmd.ProcessState.ExitCode())
+		}
 	}
 }
 
@@ -327,4 +358,45 @@ func isBpfMountExist() bool {
 		return true
 	}
 	return false
+}
+
+func setPolicyState(value string) error {
+	log.Infof("Switch enable-policy to %s", value)
+	cfg := fmt.Sprintf("PolicyEnforcement=%s", value)
+	policyCmd := exec.Command("cilium", "config", cfg)
+	output, err := policyCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cmd execute failed, output: %v, err: %v", output, err)
+	}
+	log.Infof("Switch enable-policy to %s success", value)
+	return nil
+}
+
+type ValueEvent struct {
+	value string
+	err   error
+}
+
+func watchPath(path string, oldValue *string, valueEvent chan<- *ValueEvent, period time.Duration) {
+	go wait.Forever(func() {
+		value, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			return
+		}
+		if err != nil {
+			event := &ValueEvent{
+				value: "",
+				err:   fmt.Errorf("read %s failed, %v", path, err),
+			}
+			valueEvent <- event
+			return
+		}
+		newValue := string(value)
+		if newValue != *oldValue {
+			*oldValue = newValue
+			valueEvent <- &ValueEvent{
+				value: newValue,
+			}
+		}
+	}, period)
 }
