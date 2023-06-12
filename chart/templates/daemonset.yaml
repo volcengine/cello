@@ -141,8 +141,6 @@ spec:
           securityContext:
             privileged: true
           volumeMounts:
-            - mountPath: /host
-              name: host-root
             - mountPath: /lib/modules
               name: host-lib-modules
             - mountPath: /etc/cni/net.d
@@ -155,10 +153,6 @@ spec:
               name: host-cilium-run
             - mountPath: /var/run/netns
               name: host-run-netns
-            - mountPath: /host/opt/cni/bin
-              name: host-cni-bin-dir
-            - mountPath: /host/etc/cni/net.d
-              name: host-cni-conf-dir
             - mountPath: /run/xtables.lock
               name: host-xtables-lock
             - mountPath: /etc/cilium/cilium-config
@@ -210,10 +204,6 @@ spec:
         - name: host-lib-modules
           hostPath:
             path: /lib/modules
-        - name: host-root
-          hostPath:
-            path: /
-            type: Directory
         - name: host-cilium-run
           hostPath:
             path: /var/run/cilium
