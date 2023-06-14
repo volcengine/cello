@@ -26,8 +26,16 @@ import (
 	"github.com/volcengine/cello/types"
 )
 
-// UpdateLocalPodDB migrate local Pod persistence DB to the current version.
-func UpdateLocalPodDB() error {
+func PreHookAction() error {
+	err := updateLocalPodDB()
+	if err != nil {
+		return fmt.Errorf("update local pod db failed, %v", err)
+	}
+	return nil
+}
+
+// updateLocalPodDB migrate local Pod persistence DB to the current version.
+func updateLocalPodDB() error {
 	log.Infof("Start convert pod format in persistence db")
 
 	ipNsMapping := map[string]string{}
