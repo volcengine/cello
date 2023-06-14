@@ -27,8 +27,8 @@ import (
 )
 
 func Execute() {
-	if err := UpdateLocalPodDB(); err != nil {
-		log.Fatalf("Convert pod format in persistence db before build daemon failed, %v", err)
+	if err := PreHookAction(); err != nil {
+		log.Fatalf("PreHook action execute failed, %v", err)
 	}
 
 	d, err := NewDaemon()
