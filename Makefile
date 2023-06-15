@@ -2,6 +2,7 @@
 VERSION ?= $(shell git log -1 --date='format:%Y%m%d' --format='format:%ad').$(shell git describe --always --contains HEAD)
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 DATE = $(shell date +"%Y-%m-%d_%H:%M:%S")
+COMMIT = $(shell git rev-parse HEAD | head -c 8)
 
 # Information of OS and ARCH
 OS = $(shell uname -s)
@@ -21,7 +22,7 @@ IMAGE_NAME_TAG ?= $(IMAGE_NAME):$(IMAGE_TAG)
 # GO FLAGS
 GOPROXY ?=
 GO_FLAGS=-ldflags="-s -w"
-CNI_VERSION_LD_FLAG=-ldflags="-X github.com/volcengine/cello/pkg/version.Version=$(VERSION)@$(BRANCH)"
+CNI_VERSION_LD_FLAG=-ldflags="-X github.com/volcengine/cello/pkg/version.Version=$(VERSION)@$(BRANCH) -X github.com/volcengine/cello/pkg/version.GitCommit=$(COMMIT)"
 BUILD_INFO=-ldflags="-X main.BuildInfo=$(VERSION)@$(BRANCH)_$(DATE)"
 
 # BUILD FLAGS
