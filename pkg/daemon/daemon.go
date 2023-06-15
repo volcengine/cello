@@ -58,6 +58,7 @@ import (
 	"github.com/volcengine/cello/pkg/utils/logger"
 	"github.com/volcengine/cello/pkg/utils/math"
 	"github.com/volcengine/cello/pkg/utils/netns"
+	"github.com/volcengine/cello/pkg/version"
 	"github.com/volcengine/cello/types"
 )
 
@@ -707,6 +708,8 @@ func NewKubernetesClient() (*kubernetes.Clientset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create incluster config failed: %v", err)
 	}
+	c.UserAgent = version.UserAgent()
+
 	return kubernetes.NewForConfig(c)
 }
 
