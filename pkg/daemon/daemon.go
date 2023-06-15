@@ -84,7 +84,7 @@ type daemon struct {
 	eniManager            *eniResourceManager
 	eniIPManager          *eniIPResourceManager
 	managers              map[string]ResourceManager // NetResourceType - ResourceManager
-	devicePlugin          deviceplugin.Manager
+	devicePluginManager   deviceplugin.Manager
 	cfg                   *config.Config
 	lastGC                time.Time
 	pbrpc.UnimplementedCelloServer
@@ -150,11 +150,11 @@ func NewDaemon() (*daemon, error) {
 		return nil, err
 	}
 
-	return newDaemon(k8sService, cfg, apiClient, podPersist, instanceMeta, nil, deviceplugin.NewPluginManagerOption())
+	return newDaemon(k8sService, cfg, apiClient, podPersist, instanceMeta, nil)
 }
 
 func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, podPersist PodPersistenceManager,
-	instanceMeta helper.InstanceMetadataGetter, volcApi helper.VolcAPI, pluginManagerOption *deviceplugin.PluginManagerOption) (*daemon, error) {
+	instanceMeta helper.InstanceMetadataGetter, volcApi helper.VolcAPI) (*daemon, error) {
 	// register metrics
 	metrics.PrometheusRegister()
 
@@ -220,14 +220,15 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 			return nil, fmt.Errorf("create eni resource manager failed, %v", err)
 		}
 		d.managers[types.NetResourceTypeEni] = d.eniManager
-		pluginManagerOption.UseExclusiveENI().WithENILister(func() int {
-			return math.Max(0, d.eniManager.GetResourceLimit()-d.GetStockPodCount())
-		})
+		d.devicePluginManager = deviceplugin.NewResourcePluginManager(context.TODO(),
+			deviceplugin.NewENIDevicePlugin(deviceplugin.ENIResourceName,
+				math.Max(0, d.eniManager.GetResourceLimit()-d.GetStockPodCount())))
 		if d.eniManager.SupportTrunk() {
-			pluginManagerOption.UseBranchENI().WithBranchENILister(func() int {
-				return d.eniManager.GetTrunkBranchLimit()
-			})
+			d.devicePluginManager.AddPlugin(deviceplugin.NewENIDevicePlugin(
+				deviceplugin.BranchENIResourceName,
+				d.eniManager.GetTrunkBranchLimit()))
 		}
+
 	case config.NetworkModeENIShare:
 		d.eniIPManager, err = newEniIPResourceManager(cfg, subnetManager, secGrpManager,
 			volcApi, allocatedResMap[types.NetResourceTypeEniIp], k8sService)
@@ -235,19 +236,17 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 			return nil, fmt.Errorf("create eniIP resource manager failed, %v", err)
 		}
 		d.managers[types.NetResourceTypeEniIp] = d.eniIPManager
-		pluginManagerOption.UseSharedENI().WithIPLister(func() int {
-			return math.Max(0, d.eniIPManager.GetResourceLimit()-d.GetStockPodCount())
-		})
+		d.devicePluginManager = deviceplugin.NewResourcePluginManager(context.TODO(),
+			deviceplugin.NewENIDevicePlugin(deviceplugin.ENIIPResourceName,
+				math.Max(0, d.eniIPManager.GetResourceLimit()-d.GetStockPodCount())))
 		if d.eniIPManager.SupportTrunk() {
-			pluginManagerOption.UseBranchENI().WithBranchENILister(func() int {
-				return d.eniIPManager.GetTrunkBranchLimit()
-			})
+			d.devicePluginManager.AddPlugin(deviceplugin.NewENIDevicePlugin(
+				deviceplugin.BranchENIResourceName,
+				d.eniIPManager.GetTrunkBranchLimit()))
 		}
 	default:
 		return nil, fmt.Errorf("no support network mode %s", d.networkMode)
 	}
-
-	d.devicePlugin = pluginManagerOption.BuildManager()
 
 	if datatype.StringValue(cfg.Source) == config.SourceClusterConfigMap {
 		d.k8s.AddConfigMapEventHandler(cache.ResourceEventHandlerFuncs{
@@ -755,11 +754,11 @@ func (d *daemon) syncPodPersistence() error {
 func (d *daemon) startServers(stopCh chan struct{}) error {
 	log.Infof("Cello daemon ready, start service")
 
-	err := d.devicePlugin.Serve(stopCh)
+	err := d.devicePluginManager.Serve(stopCh)
 	if err != nil {
 		return fmt.Errorf("device plugin start failed: %v", err)
 	}
-	defer d.devicePlugin.Stop()
+	defer d.devicePluginManager.Stop()
 
 	grpcServer, err := d.startEndpointGrpcServer()
 	if err != nil {
@@ -1033,4 +1032,26 @@ func hasRequestAndLimitsFields(pod *v1.Pod) bool {
 		}
 	}
 	return false
+}
+
+func updateResourceNum(ctx context.Context, pluginManger deviceplugin.Manager, resName string, lister func() int, updateSignal <-chan struct{}) {
+	// A ticker for resync resourceNum
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	var err error
+	for {
+		select {
+		case <-ticker.C:
+			err = pluginManger.Update(resName, lister())
+		case <-updateSignal:
+			err = pluginManger.Update(resName, lister())
+		case <-ctx.Done():
+			return
+		}
+		if err != nil {
+			log.Errorf("resource")
+		}
+	}
+
+	return
 }
