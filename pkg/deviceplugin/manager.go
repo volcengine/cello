@@ -17,6 +17,7 @@ package deviceplugin
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path"
@@ -27,72 +28,32 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 
-	"github.com/volcengine/cello/pkg/deviceplugin/mock"
 	"github.com/volcengine/cello/pkg/utils/logger"
 )
 
 var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "deviceplugin"})
 
-// Manager is the interface of device plugin manager.
-type Manager interface {
-	Serve(stopCh chan struct{}) error
-	Stop()
-	Update(count int)
-}
-
 // PluginManager manages all device plugins.
 type PluginManager struct {
-	plugins []*ENIDevicePlugin
-	res     *resource
+	plugins map[string]Plugin
 	cancel  context.CancelFunc
 	ctx     context.Context
 }
 
-type PluginManagerOption struct {
-	useExclusiveENI bool
-	useSharedENI    bool
-	useBranchENI    bool
-	ctx             context.Context
-	eniLister       func() int
-	eniIPLister     func() int
-	branchENILister func() int
-	dryRun          bool
+func (manager *PluginManager) Plugin(resourceName string) Plugin {
+	plugin, _ := manager.plugins[resourceName]
+	return plugin
 }
 
-// NewPluginManagerWithOptions creates a new PluginManager with given options.
-func NewPluginManagerWithOptions(option *PluginManagerOption) *PluginManager {
-	var ctx context.Context
-	var cancel context.CancelFunc
-	if option.ctx == nil {
-		ctx, cancel = context.WithCancel(context.Background())
-	} else {
-		ctx, cancel = context.WithCancel(option.ctx)
+func NewResourcePluginManager(ctx context.Context, plugins ...Plugin) *PluginManager {
+	mgr := PluginManager{}
+	mgr.ctx, mgr.cancel = context.WithCancel(ctx)
+	mgr.plugins = make(map[string]Plugin)
+	for _, plugin := range plugins {
+		plugin.SetContext(mgr.ctx)
+		mgr.plugins[plugin.ResourceName()] = plugin
 	}
-	manager := PluginManager{
-		plugins: []*ENIDevicePlugin{},
-		cancel:  cancel,
-		res:     &resource{},
-	}
-	if option.useExclusiveENI {
-		manager.res.updateSignal = make(chan struct{})
-		manager.plugins = append(manager.plugins, NewENIDevicePlugin(Exclusive, manager.res, option.eniLister))
-		manager.ctx = ctx
-	}
-	if option.useSharedENI {
-		manager.res.updateSignal = make(chan struct{})
-		manager.plugins = append(manager.plugins, NewENIDevicePlugin(Shared, manager.res, option.eniIPLister))
-		manager.ctx = ctx
-	}
-
-	if option.useBranchENI {
-		resNumCh := resource{
-			updateSignal: make(chan struct{}),
-		}
-		manager.plugins = append(manager.plugins, NewENIDevicePlugin(Trunk, &resNumCh, option.branchENILister))
-		manager.ctx = ctx
-	}
-
-	return &manager
+	return &mgr
 }
 
 // register registers device plugins grpc endpoints to kubelet
@@ -107,8 +68,8 @@ func (manager *PluginManager) register() error {
 	for _, plugin := range manager.plugins {
 		_, err = client.Register(manager.ctx, &pluginapi.RegisterRequest{
 			Version:      pluginapi.Version,
-			Endpoint:     path.Base(plugin.endPoint),
-			ResourceName: plugin.name,
+			Endpoint:     path.Base(plugin.Endpoint()),
+			ResourceName: path.Join(VolcNameSpace, plugin.ResourceName()),
 		})
 
 		if err != nil {
@@ -146,19 +107,17 @@ func (manager *PluginManager) Serve(stopCh chan struct{}) error {
 			select {
 			case event, ok := <-watcher.Events:
 				if !ok {
+					log.Error("Watch kubelet failed.")
 					return
 				}
 				if event.Name == KubeletSocket && event.Has(fsnotify.Create) {
-					log.Infof(" %s created, restarting.", pluginapi.KubeletSocket)
+					log.Infof(" %s created, restarting.", KubeletSocket)
 					manager.Stop()
 					manager.ctx, manager.cancel = context.WithCancel(context.Background())
 					_ = manager.start()
 					err = manager.register()
 					if err != nil {
 						log.Errorf("Register failed after kubelet restart", err)
-					}
-					if err != nil {
-						log.Errorf("register failed after kubelet restart")
 					}
 				} else if event.Name == "kubelet.sock" && event.Op&fsnotify.Remove == fsnotify.Remove {
 					log.Infof("Kubelet stopped")
@@ -186,18 +145,18 @@ func (manager *PluginManager) Stop() {
 }
 
 // Update will emit count to res channel asynchronously.
-func (manager *PluginManager) Update(count int) {
-	go func() {
-		t := time.NewTimer(5 * time.Second)
-		manager.res.count = count
-		select {
-		case manager.res.updateSignal <- struct{}{}:
-			return
-		case <-t.C:
-			log.Errorf("Failed to update resource count: %v ", count)
-			return
-		}
-	}()
+func (manager *PluginManager) Update(resName string, count int) error {
+	plugin, ok := manager.plugins[resName]
+	if !ok {
+		return fmt.Errorf("plugin not found")
+	}
+	plugin.Update(count)
+	return nil
+}
+
+func (manager *PluginManager) AddPlugin(plugin Plugin) {
+	plugin.SetContext(manager.ctx)
+	manager.plugins[plugin.ResourceName()] = plugin
 }
 
 // start will boot grpc service and listen on /var/lib/kubelet/device-plugin/<res>.sock.
@@ -205,23 +164,23 @@ func (manager *PluginManager) start() error {
 	if err := manager.cleanUp(); err != nil {
 		return err
 	}
-	for _, eniPlugin := range manager.plugins {
-		sock, err := net.Listen("unix", eniPlugin.endPoint)
+	for _, plugin := range manager.plugins {
+		sock, err := net.Listen("unix", plugin.Endpoint())
 		if err != nil {
 			return err
 		}
-		eniPlugin.server = grpc.NewServer()
-		eniPlugin.ctx = manager.ctx
-		pluginapi.RegisterDevicePluginServer(eniPlugin.server, eniPlugin)
+		plugin.ResetServer()
+		plugin.SetContext(manager.ctx)
+		pluginapi.RegisterDevicePluginServer(plugin.Server(), plugin)
 
 		go func() {
-			err := eniPlugin.server.Serve(sock)
+			err := plugin.Server().Serve(sock)
 			if err != nil {
 				log.Errorf("Failed to serve deviceplugin grpc server.")
 			}
 		}()
 
-		conn, err := dailUnix(manager.ctx, eniPlugin.endPoint)
+		conn, err := dailUnix(manager.ctx, plugin.Endpoint())
 		if err != nil {
 			return err
 		}
@@ -229,7 +188,7 @@ func (manager *PluginManager) start() error {
 		if err != nil {
 			return err
 		}
-		log.Infof("Start device plugin for %v", eniPlugin.name)
+		log.Infof("Start device plugin for %v", VolcNameSpace+plugin.ResourceName())
 	}
 	return nil
 }
@@ -238,72 +197,21 @@ func (manager *PluginManager) start() error {
 func (manager *PluginManager) stop() {
 	manager.cancel()
 	for _, eniPlugin := range manager.plugins {
-		if eniPlugin.server == nil {
+		if eniPlugin.Server() == nil {
 			return
 		}
-		eniPlugin.server.Stop()
-		eniPlugin.server = nil
+		eniPlugin.Server().Stop()
 	}
 }
 
 // cleanUp delete all resource.
 func (manager *PluginManager) cleanUp() error {
 	for _, res := range manager.plugins {
-		if err := os.Remove(res.endPoint); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(res.Endpoint()); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
 	return nil
-}
-
-func NewPluginManagerOption() *PluginManagerOption {
-	return &PluginManagerOption{}
-}
-
-func (option *PluginManagerOption) WithDryRun() *PluginManagerOption {
-	option.dryRun = true
-	return option
-}
-
-func (option *PluginManagerOption) UseExclusiveENI() *PluginManagerOption {
-	option.useExclusiveENI = true
-	return option
-}
-
-func (option *PluginManagerOption) WithENILister(lister func() int) *PluginManagerOption {
-	option.eniLister = lister
-	return option
-}
-
-func (option *PluginManagerOption) UseSharedENI() *PluginManagerOption {
-	option.useSharedENI = true
-	return option
-}
-
-func (option *PluginManagerOption) WithIPLister(lister func() int) *PluginManagerOption {
-	option.eniIPLister = lister
-	return option
-}
-
-func (option *PluginManagerOption) UseBranchENI() *PluginManagerOption {
-	option.useBranchENI = true
-	return option
-}
-
-func (option *PluginManagerOption) WithBranchENILister(lister func() int) *PluginManagerOption {
-	option.branchENILister = lister
-	return option
-}
-func (option *PluginManagerOption) WithContext(ctx context.Context) *PluginManagerOption {
-	option.ctx = ctx
-	return option
-}
-
-func (option *PluginManagerOption) BuildManager() Manager {
-	if option.dryRun {
-		return mock.New()
-	}
-	return NewPluginManagerWithOptions(option)
 }
 
 func dailUnix(ctx context.Context, path string) (*grpc.ClientConn, error) {

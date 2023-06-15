@@ -45,7 +45,7 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/volcengine/response"
 
 	"github.com/volcengine/cello/pkg/config"
-	"github.com/volcengine/cello/pkg/deviceplugin"
+	mockDeiveplugin "github.com/volcengine/cello/pkg/deviceplugin/mock"
 	"github.com/volcengine/cello/pkg/k8s"
 	"github.com/volcengine/cello/pkg/pbrpc"
 	helper "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper"
@@ -995,7 +995,11 @@ func newMockDaemon() (*daemon, error) {
 		return nil, fmt.Errorf("create persistence db failed: %w", err)
 	}
 
-	return newDaemon(k8sService, cfg, ec2MockClient, podPersist, instanceMetaGetter, volcApi, deviceplugin.NewPluginManagerOption().WithDryRun())
+	d, err := newDaemon(k8sService, cfg, ec2MockClient, podPersist, instanceMetaGetter, volcApi)
+	if err == nil {
+		d.devicePluginManager = mockDeiveplugin.PluginManager{}
+	}
+	return d, err
 }
 
 func TestDaemon(t *testing.T) {
