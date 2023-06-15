@@ -236,11 +236,6 @@ func main() {
 	var lock sync.Mutex
 
 	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Errorf("Cilium panic, %v", err)
-			}
-		}()
 		log.Infof("Run cilium-agent with args: %v", ciliumArgs.ToArgs())
 		lock.Lock()
 		ciliumCmd = exec.Command("cilium-agent", ciliumArgs.ToArgs()...)
