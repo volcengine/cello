@@ -22,6 +22,7 @@ require (
 	github.com/vishvananda/netlink v1.2.1-beta.2
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f
 	github.com/volcengine/volcengine-go-sdk v1.0.61
+	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/net v0.9.0
 	golang.org/x/sys v0.7.0
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac

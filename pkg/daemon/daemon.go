@@ -58,6 +58,7 @@ import (
 	"github.com/volcengine/cello/pkg/utils/logger"
 	"github.com/volcengine/cello/pkg/utils/math"
 	"github.com/volcengine/cello/pkg/utils/netns"
+	"github.com/volcengine/cello/pkg/utils/runtime"
 	"github.com/volcengine/cello/pkg/version"
 	"github.com/volcengine/cello/types"
 )
@@ -453,6 +454,7 @@ func (d *daemon) CreateEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRe
 	})
 	lg.Infof("Handle CreateEndpoint")
 
+	defer runtime.HandleCrash(lg)
 	defer func() {
 		if err != nil {
 			lg.Warnf("Fail to handle CreateEndpoint: %v", err)
@@ -608,6 +610,7 @@ func (d *daemon) DeleteEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRe
 		"SandboxContainerId": req.InfraContainerId,
 	})
 	lg.Infof("Handle DeleteEndpoint")
+	defer runtime.HandleCrash(lg)
 	defer func() {
 		if err != nil {
 			lg.Warnf("Fail to handle DeleteEndpoint: %s", err.Error())
@@ -678,6 +681,7 @@ func (d *daemon) DeleteEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRe
 
 // GetPodMetaInfo returns Pod metadata.
 func (d *daemon) GetPodMetaInfo(ctx context.Context, request *pbrpc.GetPodMetaRequest) (*pbrpc.GetPodMetaResponse, error) {
+	defer runtime.HandleCrash(log)
 	pod, err := d.k8s.GetCachedPod(request.GetNamespace(), request.GetName())
 	if err != nil {
 		return nil, err
@@ -693,6 +697,7 @@ func (d *daemon) GetPodMetaInfo(ctx context.Context, request *pbrpc.GetPodMetaRe
 
 // PatchPodAnnotation patches pod annotation.
 func (d *daemon) PatchPodAnnotation(ctx context.Context, request *pbrpc.PatchPodAnnotationRequest) (*pbrpc.PatchPodAnnotationResponse, error) {
+	defer runtime.HandleCrash(log)
 	return &pbrpc.PatchPodAnnotationResponse{}, d.k8s.PatchPodAnnotation(ctx, request.GetNamespace(), request.GetName(), request.GetAnnotations())
 }
 
@@ -853,11 +858,7 @@ func (d *daemon) startDebugServer() (*http.Server, error) {
 	}
 
 	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Errorf("DebugServer panic, %v", err)
-			}
-		}()
+		defer runtime.HandleCrash(log)
 		log.Infof("Start debug server")
 		err := server.ListenAndServe()
 		if err != nil {

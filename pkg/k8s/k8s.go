@@ -43,6 +43,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"github.com/volcengine/cello/pkg/utils/logger"
+	utilruntime "github.com/volcengine/cello/pkg/utils/runtime"
 	"github.com/volcengine/cello/types"
 )
 
@@ -189,11 +190,7 @@ func (k *k8sManager) initPodInformer() {
 		c := make(chan os.Signal, 2)
 		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 		go func() {
-			defer func() {
-				if err := recover(); err != nil {
-					log.Errorf("SignalHandler panic, %v", err)
-				}
-			}()
+			defer utilruntime.HandleCrash(log)
 			<-c
 			cancel()
 			<-c
@@ -236,11 +233,7 @@ func (k *k8sManager) initConfigMapInformer() {
 		c := make(chan os.Signal, 2)
 		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 		go func() {
-			defer func() {
-				if err := recover(); err != nil {
-					log.Errorf("SignalHandler panic, %v", err)
-				}
-			}()
+			defer utilruntime.HandleCrash(log)
 			<-c
 			cancel()
 			<-c
