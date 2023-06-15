@@ -15,4 +15,15 @@
 
 package version
 
+import (
+	"fmt"
+	"runtime"
+)
+
 var Version = "v1.6.2"
+var ComponentName = "cello-agent"
+var GitCommit = "unset"
+
+func UserAgent() string {
+	return fmt.Sprintf("%s/%s (%s/%s)/%s", ComponentName, Version, runtime.GOOS, runtime.GOARCH, GitCommit)
+}
