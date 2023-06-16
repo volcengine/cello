@@ -124,7 +124,7 @@ func newEniResourceManager(cfg *config.Config, subnet helper.SubnetManager, secM
 		return nil, err
 	}
 	poolConfig := generateENIPoolCfg(cfg, limit.GetLimit())
-	_, created, err := volcApi.GetAttachedENIs(false)
+	created, err := volcApi.GetAttachedENIs(false)
 	if err != nil {
 		return nil, fmt.Errorf("get attached enis failed while init, %v", err)
 	}
@@ -265,7 +265,7 @@ func (f *eniFactory) Valid(resource types.NetResource) error {
 
 // List lists all NetResources.
 func (f *eniFactory) List() (map[types.ResStatus]map[string]types.NetResource, error) {
-	_, enis, err := f.volcApi.GetAttachedENIs(false)
+	enis, err := f.volcApi.GetAttachedENIs(false)
 	if err != nil {
 		return nil, err
 	}

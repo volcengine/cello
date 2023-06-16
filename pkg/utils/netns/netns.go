@@ -16,10 +16,13 @@
 package netns
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/vishvananda/netns"
 )
+
+const nsRootPath = "/var/run/netns"
 
 // CheckNetNsExist check if netns exists,
 // if there is an error, return false and error.
@@ -35,4 +38,19 @@ func CheckNetNsExist(nsPath string) (bool, error) {
 		_ = h.Close()
 	}(&h)
 	return true, nil
+}
+
+func ListAllNetNs() ([]string, error) {
+	var namespaces []string
+	files, err := os.ReadDir(nsRootPath)
+	if err != nil {
+		return namespaces, fmt.Errorf("read dir %s failed: %v", nsRootPath, err)
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		namespaces = append(namespaces, fmt.Sprintf("%s/%s", nsRootPath, f.Name()))
+	}
+	return namespaces, nil
 }

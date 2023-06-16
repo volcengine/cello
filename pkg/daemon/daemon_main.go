@@ -27,7 +27,7 @@ import (
 )
 
 func Execute() {
-	if err := MigrateLocalPodDB(); err != nil {
+	if err := UpdateLocalPodDB(); err != nil {
 		log.Fatalf("Convert pod format in persistence db before build daemon failed, %v", err)
 	}
 

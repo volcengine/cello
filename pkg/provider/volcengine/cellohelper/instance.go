@@ -134,7 +134,11 @@ func (m *defaultInstanceLimit) update() error {
 			fmt.Sprintf("ECS instance quota updated from %v to %v", oldLimit, *limit))
 	}
 
-	total, created, err := m.api.GetAttachedENIs(true)
+	created, err := m.api.GetAttachedENIs(true)
+	if err != nil {
+		return err
+	}
+	total, err := m.api.GetTotalAttachedEniCnt()
 	if err != nil {
 		return err
 	}

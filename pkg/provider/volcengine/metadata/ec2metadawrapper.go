@@ -77,6 +77,8 @@ func (meta EC2MetadataWrapper) GetAvailabilityZone(ctx context.Context) (string,
 }
 
 // GetENIsMacs get all macs of ENIs which attached the instance from metadata.
+// NOTICE: this will get all interfaces macs include rdma which unable to get any information,
+// and other interfaces not created by cello, even cross-account interfaces
 func (meta EC2MetadataWrapper) GetENIsMacs(ctx context.Context) ([]string, error) {
 	start := time.Now()
 	data, err := meta.GetMetadata(ctx, enisMacsPath)
