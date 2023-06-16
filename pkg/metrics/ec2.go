@@ -293,3 +293,17 @@ func (m *MetricEC2Wrapper) UnassignIpv6Addresses(req *ec2.UnassignIpv6AddressesI
 	}
 	return resp, err
 }
+
+func (m *MetricEC2Wrapper) TagResources(req *vpc.TagResourcesInput) (*vpc.TagResourcesOutput, error) {
+	start := time.Now()
+	resp, err := m.parent.TagResources(req)
+	duration := MsSince(start)
+	OpenAPILatency.WithLabelValues(fmt.Sprintf("TagResources[%s]", volcengine.StringValue(req.ResourceType)),
+		fmt.Sprint(err != nil), CelloReqErrCode(err), CelloReqId(err)).Observe(duration)
+	if err != nil {
+		OpenAPIErrInc(fmt.Sprintf("TagResources[%s]", volcengine.StringValue(req.ResourceType)), err)
+		apiErr.RecordOpenAPIErrEvent(err,
+			apiErr.EventInfoField{Key: "API", Value: fmt.Sprintf("TagResources[%s]", volcengine.StringValue(req.ResourceType))})
+	}
+	return resp, err
+}

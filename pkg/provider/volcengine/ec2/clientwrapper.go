@@ -208,6 +208,14 @@ func (c *ClientSet) DescribeSubnetAttributes(input *vpc.DescribeSubnetAttributes
 	return output, nil
 }
 
+func (c *ClientSet) TagResources(input *vpc.TagResourcesInput) (*vpc.TagResourcesOutput, error) {
+	output, err := c.VpcSvc.TagResourcesWithContext(context.TODO(), input)
+	if err != nil || output.Metadata.Error != nil {
+		return output, apiErr.NewAPIRequestErr(output.Metadata, err)
+	}
+	return output, nil
+}
+
 func NewClient(region, endpoint string, credentialProvider credential.Provider) *ClientSet {
 	config := volcengine.NewConfig().
 		WithRegion(region).

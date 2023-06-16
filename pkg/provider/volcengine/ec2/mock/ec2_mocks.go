@@ -229,6 +229,21 @@ func (mr *MockEC2MockRecorder) DetachNetworkInterface(arg0 interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DetachNetworkInterface", reflect.TypeOf((*MockEC2)(nil).DetachNetworkInterface), arg0)
 }
 
+// TagResources mocks base method
+func (m *MockEC2) TagResources(arg0 *vpc.TagResourcesInput) (*vpc.TagResourcesOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TagResources", arg0)
+	ret0, _ := ret[0].(*vpc.TagResourcesOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TagResources indicates an expected call of TagResources
+func (mr *MockEC2MockRecorder) TagResources(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TagResources", reflect.TypeOf((*MockEC2)(nil).TagResources), arg0)
+}
+
 // UnAssignPrivateIpAddress mocks base method
 func (m *MockEC2) UnAssignPrivateIpAddress(arg0 *vpc.UnassignPrivateIpAddressesInput) (*vpc.UnassignPrivateIpAddressesOutput, error) {
 	m.ctrl.T.Helper()
