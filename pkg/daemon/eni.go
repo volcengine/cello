@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	"github.com/volcengine/cello/pkg/config"
 	"github.com/volcengine/cello/pkg/k8s"
 	"github.com/volcengine/cello/pkg/metrics"
@@ -27,6 +29,7 @@ import (
 	helper "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper"
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 	"github.com/volcengine/cello/pkg/utils/math"
+	"github.com/volcengine/cello/pkg/utils/runtime"
 	"github.com/volcengine/cello/types"
 )
 
@@ -156,6 +159,7 @@ func newEniResourceManager(cfg *config.Config, subnet helper.SubnetManager, secM
 		}
 		return nil
 	}
+	factory.monitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second, time.Duration(*cfg.ReconcileIntervalSec)*time.Second)
 
 	p, err := pool.NewResourcePool(poolConfig)
 	if err != nil {
@@ -194,7 +198,7 @@ func (f *eniFactory) Name() string {
 	return types.NetResourceTypeEni
 }
 
-// Create while create count eni without ip count,
+// Create while create count eni with one ip,
 // it will ignore some errors while partially request successful.
 func (f *eniFactory) Create(count int) (res []types.NetResource, err error) {
 	for i := 0; i < count; i++ {
@@ -220,8 +224,10 @@ func (f *eniFactory) CreateWithIPCount(ipCnt int, trunk bool) (types.NetResource
 	}()
 	subnet := f.subnets.SelectSubnet(f.ipFamily, helper.WithAging(subnetAging))
 	if subnet == nil {
+		f.limit.CordonCreate("eniFactory create eni")
 		return nil, fmt.Errorf("no available subnet, please check subnets and available ip of subnets")
 	}
+	f.limit.UnCordonCreate("eniFactory create eni")
 
 	eni, err := f.volcApi.AllocENI(subnet.SubnetId, f.secManager.GetSecurityGroups(), trunk, ipCnt)
 	if err != nil {
@@ -287,6 +293,21 @@ func (f *eniFactory) GC() error {
 func (f *eniFactory) GetResourceLimit() int {
 	limit := f.limit.GetLimit()
 	return limit.ENIAvailable()
+}
+
+func (f *eniFactory) monitor(subnetPeriod, limitPeriod time.Duration) {
+	go wait.Forever(func() {
+		log.Debugf("Monitor check subnet")
+		defer runtime.HandleCrash(log)
+		if subnet := f.subnets.SelectSubnet(f.ipFamily, helper.WithAging(subnetAging)); subnet != nil {
+			f.limit.UnCordonCreate("eniFactory subnet monitor")
+		}
+	}, subnetPeriod)
+	go wait.Forever(func() {
+		log.Debugf("Monitor check limit")
+		defer runtime.HandleCrash(log)
+		f.limit.Update()
+	}, limitPeriod)
 }
 
 func newEniFactory(secManager helper.SecurityGroupManager, subnetManager helper.SubnetManager, api helper.VolcAPI, limit helper.InstanceLimitManager, ipFamily types.IPFamily) (*eniFactory, error) {

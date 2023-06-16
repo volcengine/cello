@@ -43,11 +43,14 @@ type InstanceLimits struct {
 	ENICustomer int
 	// currently support only one
 	TrunkENI *types.ENI
+
+	Created int
+	Cordon  bool
 }
 
 func (l *InstanceLimits) String() string {
-	return fmt.Sprintf("{ENITotal: %d, ENIQuota: %d, IPv4MaxPerENI: %d, IPv6MaxPerENI: %d, TrunkSupported: %t, ENICustomer: %d}",
-		l.ENITotal, l.ENIQuota, l.IPv4MaxPerENI, l.IPv6MaxPerENI, l.TrunkSupported, l.ENICustomer)
+	return fmt.Sprintf("{ENITotal: %d, ENIQuota: %d, IPv4MaxPerENI: %d, IPv6MaxPerENI: %d, TrunkSupported: %t, ENICustomer: %d, Created: %d, Cordon: %t}",
+		l.ENITotal, l.ENIQuota, l.IPv4MaxPerENI, l.IPv6MaxPerENI, l.TrunkSupported, l.ENICustomer, l.Created, l.Cordon)
 }
 
 // SupportTrunk support trunk or not.
@@ -67,11 +70,22 @@ type InstanceLimitManager interface {
 	Update()
 	// UpdateTrunk update trunk eni to InstanceLimits
 	UpdateTrunk(trunk *types.ENI)
+	// WatchUpdate watch update event
+	WatchUpdate(name string, watcher chan<- struct{})
+	// CordonCreate cordon create eni
+	CordonCreate(name string)
+	// UnCordonCreate unCordon create eni
+	UnCordonCreate(name string)
+	// NotifyWatcher send a signal to all instance limit watcher
+	NotifyWatcher()
 }
 
 // ENIAvailable get quota minus the custom eni and primary eni.
 func (l *InstanceLimits) ENIAvailable() int {
 	cnt := l.ENIQuota - 1 - l.ENICustomer
+	if l.Cordon {
+		cnt = l.Created
+	}
 	if l.TrunkENI != nil {
 		cnt -= 1
 	}
@@ -83,10 +97,11 @@ func (l *InstanceLimits) BranchENI() int {
 }
 
 type defaultInstanceLimit struct {
-	lock       sync.RWMutex
-	api        VolcAPI
-	limit      InstanceLimits
-	lastUpdate time.Time
+	lock          sync.RWMutex
+	api           VolcAPI
+	limit         InstanceLimits
+	lastUpdate    time.Time
+	eventWatchers []chan<- struct{}
 }
 
 var instanceLimitManager *defaultInstanceLimit
@@ -114,6 +129,69 @@ func (m *defaultInstanceLimit) UpdateTrunk(trunk *types.ENI) {
 	m.limit.TrunkENI = trunk
 }
 
+func (m *defaultInstanceLimit) WatchUpdate(name string, watcher chan<- struct{}) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	log.Infof("Component %s watch update", name)
+	m.eventWatchers = append(m.eventWatchers, watcher)
+}
+
+func (m *defaultInstanceLimit) NotifyWatcher() {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	m.notifyWatcherLocked()
+}
+
+func (m *defaultInstanceLimit) notifyWatcherLocked() {
+	log.Infof("Notify watcher due to limit update")
+	for _, watcher := range m.eventWatchers {
+		select {
+		case watcher <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (m *defaultInstanceLimit) updateLocked() error {
+	log.Infof("InstanceLimit Updating")
+	newLimit, err := m.api.GetInstanceLimit()
+	if err != nil {
+		return err
+	}
+
+	oldLimit := m.limit.InstanceLimitsAttr
+	emptyLimit := InstanceLimitsAttr{}
+	if oldLimit != emptyLimit && oldLimit != newLimit.InstanceLimitsAttr {
+		_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventInstanceQuotaUpdated,
+			fmt.Sprintf("ECS instance quota updated from %v to %v", oldLimit, *newLimit))
+	}
+
+	created, err := m.api.GetAttachedENIs(true)
+	if err != nil {
+		return err
+	}
+
+	m.limit.Created = len(created)
+
+	total, err := m.api.GetTotalAttachedEniCnt()
+	if err != nil {
+		return err
+	}
+	m.limit.ENICustomer = total - len(created) - 1 // contains primary eni
+	for _, e := range created {
+		if e.Trunk {
+			m.limit.TrunkENI = e
+			break
+		}
+	}
+
+	m.limit.InstanceLimitsAttr = newLimit.InstanceLimitsAttr
+	log.Infof("InstanceLimit Updated %s", m.limit.String())
+	m.lastUpdate = time.Now()
+	m.notifyWatcherLocked()
+	return nil
+}
+
 func (m *defaultInstanceLimit) update() error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
@@ -121,39 +199,37 @@ func (m *defaultInstanceLimit) update() error {
 	if time.Since(m.lastUpdate) < time.Minute {
 		return nil
 	}
-	log.Infof("InstanceLimit Updating")
-	limit, err := m.api.GetInstanceLimit()
-	if err != nil {
+	if err := m.updateLocked(); err != nil {
 		return err
 	}
-
-	oldLimit := m.limit.InstanceLimitsAttr
-	emptyLimit := InstanceLimitsAttr{}
-	if oldLimit != emptyLimit && oldLimit != limit.InstanceLimitsAttr {
-		_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventInstanceQuotaUpdated,
-			fmt.Sprintf("ECS instance quota updated from %v to %v", oldLimit, *limit))
-	}
-
-	created, err := m.api.GetAttachedENIs(true)
-	if err != nil {
-		return err
-	}
-	total, err := m.api.GetTotalAttachedEniCnt()
-	if err != nil {
-		return err
-	}
-	limit.ENICustomer = total - len(created) - 1 // contains primary eni
-	for _, e := range created {
-		if e.Trunk {
-			limit.TrunkENI = e
-			break
-		}
-	}
-
-	log.Infof("InstanceLimit Updated %v", limit)
-	m.limit = *limit
-	m.lastUpdate = time.Now()
 	return nil
+}
+
+func (m *defaultInstanceLimit) CordonCreate(name string) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	if m.limit.Cordon {
+		return
+	}
+	log.Infof("Cordon eni create by %s", name)
+	if err := m.updateLocked(); err != nil {
+		log.Errorf("Update InstanceLimit failed, %v", err)
+		return
+	}
+
+	m.limit.Cordon = true
+}
+
+func (m *defaultInstanceLimit) UnCordonCreate(name string) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	if !m.limit.Cordon {
+		return
+	}
+	log.Infof("UnCordon eni create by %s", name)
+	m.limit.Cordon = false
+	m.notifyWatcherLocked()
 }
 
 func NewInstanceLimitManager(api VolcAPI) (InstanceLimitManager, error) {
@@ -162,8 +238,9 @@ func NewInstanceLimitManager(api VolcAPI) (InstanceLimitManager, error) {
 	}
 
 	instanceLimitManager = &defaultInstanceLimit{
-		lock: sync.RWMutex{},
-		api:  api,
+		lock:          sync.RWMutex{},
+		api:           api,
+		eventWatchers: []chan<- struct{}{},
 	}
 	if err := instanceLimitManager.update(); err != nil {
 		return nil, err
