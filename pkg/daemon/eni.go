@@ -17,9 +17,10 @@ package daemon
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/volcengine/cello/pkg/config"
 	"github.com/volcengine/cello/pkg/k8s"

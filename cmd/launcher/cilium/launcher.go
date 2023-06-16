@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"net/http"
 	"os"
 	"os/exec"
@@ -33,6 +32,7 @@ import (
 
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/volcengine/cello/pkg/config"
 	"github.com/volcengine/cello/pkg/utils/datatype"
