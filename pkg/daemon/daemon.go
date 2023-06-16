@@ -229,6 +229,11 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 				deviceplugin.BranchENIResourceName,
 				d.eniManager.GetTrunkBranchLimit()))
 		}
+		sigChannel := make(chan struct{}, 1)
+		d.instanceLimit.WatchUpdate(sigChannel)
+		go watchResourceNum(context.TODO(), d.devicePluginManager, deviceplugin.ENIResourceName, func() int {
+			return math.Max(0, d.eniManager.GetResourceLimit()-d.GetStockPodCount())
+		}, sigChannel)
 
 	case config.NetworkModeENIShare:
 		d.eniIPManager, err = newEniIPResourceManager(cfg, subnetManager, secGrpManager,
@@ -245,6 +250,11 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 				deviceplugin.BranchENIResourceName,
 				d.eniIPManager.GetTrunkBranchLimit()))
 		}
+		sigChannel := make(chan struct{}, 1)
+		d.instanceLimit.WatchUpdate(sigChannel)
+		go watchResourceNum(context.TODO(), d.devicePluginManager, deviceplugin.ENIIPResourceName, func() int {
+			return math.Max(0, d.eniIPManager.GetResourceLimit()-d.GetStockPodCount())
+		}, sigChannel)
 	default:
 		return nil, fmt.Errorf("no support network mode %s", d.networkMode)
 	}
@@ -1035,7 +1045,7 @@ func hasRequestAndLimitsFields(pod *v1.Pod) bool {
 	return false
 }
 
-func updateResourceNum(ctx context.Context, pluginManger deviceplugin.Manager, resName string, lister func() int, updateSignal <-chan struct{}) {
+func watchResourceNum(ctx context.Context, pluginManger deviceplugin.Manager, resName string, lister func() int, updateSignal <-chan struct{}) {
 	// A ticker for resync resourceNum
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
@@ -1050,9 +1060,7 @@ func updateResourceNum(ctx context.Context, pluginManger deviceplugin.Manager, r
 			return
 		}
 		if err != nil {
-			log.Errorf("resource")
+			log.Errorf("update resource for %s failed, %v", resName, err)
 		}
 	}
-
-	return
 }

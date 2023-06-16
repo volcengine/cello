@@ -17,6 +17,7 @@ package daemon
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"strings"
 	"time"
 
@@ -156,6 +157,7 @@ func newEniResourceManager(cfg *config.Config, subnet helper.SubnetManager, secM
 		}
 		return nil
 	}
+	factory.monitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second, time.Duration(*cfg.ReconcileIntervalSec)*time.Second)
 
 	p, err := pool.NewResourcePool(poolConfig)
 	if err != nil {
@@ -194,7 +196,7 @@ func (f *eniFactory) Name() string {
 	return types.NetResourceTypeEni
 }
 
-// Create while create count eni without ip count,
+// Create while create count eni with one ip,
 // it will ignore some errors while partially request successful.
 func (f *eniFactory) Create(count int) (res []types.NetResource, err error) {
 	for i := 0; i < count; i++ {
@@ -220,8 +222,10 @@ func (f *eniFactory) CreateWithIPCount(ipCnt int, trunk bool) (types.NetResource
 	}()
 	subnet := f.subnets.SelectSubnet(f.ipFamily, helper.WithAging(subnetAging))
 	if subnet == nil {
+		f.limit.BlockadeCreate()
 		return nil, fmt.Errorf("no available subnet, please check subnets and available ip of subnets")
 	}
+	f.limit.UnBlockadeCreate()
 
 	eni, err := f.volcApi.AllocENI(subnet.SubnetId, f.secManager.GetSecurityGroups(), trunk, ipCnt)
 	if err != nil {
@@ -287,6 +291,27 @@ func (f *eniFactory) GC() error {
 func (f *eniFactory) GetResourceLimit() int {
 	limit := f.limit.GetLimit()
 	return limit.ENIAvailable()
+}
+
+func (f *eniFactory) monitor(subnetPeriod, limitPeriod time.Duration) {
+	go wait.Forever(func() {
+		defer func() {
+			if rErr := recover(); rErr != nil {
+				log.Errorf("monitor subnet panic, %v", rErr)
+			}
+		}()
+		if subnet := f.subnets.SelectSubnet(f.ipFamily, helper.WithAging(subnetAging)); subnet != nil {
+			f.limit.UnBlockadeCreate()
+		}
+	}, subnetPeriod)
+	go wait.Forever(func() {
+		defer func() {
+			if rErr := recover(); rErr != nil {
+				log.Errorf("monitor limit panic, %v", rErr)
+			}
+		}()
+		f.limit.Update()
+	}, limitPeriod)
 }
 
 func newEniFactory(secManager helper.SecurityGroupManager, subnetManager helper.SubnetManager, api helper.VolcAPI, limit helper.InstanceLimitManager, ipFamily types.IPFamily) (*eniFactory, error) {
