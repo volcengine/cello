@@ -280,7 +280,7 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		}
 		return nil
 	}
-	go factory.subnetMonitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second,
+	factory.subnetMonitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second,
 		time.Duration(*cfg.SubnetStatAgingSec)*time.Second)
 	p, err := pool.NewResourcePool(poolConfig)
 	if err != nil {
