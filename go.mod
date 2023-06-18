@@ -11,6 +11,8 @@ require (
 	github.com/gin-gonic/gin v1.9.0
 	github.com/golang/glog v1.0.0
 	github.com/golang/mock v1.4.4
+	github.com/google/renameio v0.1.0
+	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.4.0
 	github.com/metal-stack/go-ipam v1.12.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
