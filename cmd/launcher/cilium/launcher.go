@@ -18,7 +18,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -133,8 +133,8 @@ func main() {
 			log.Warnf("Cello agent not ready, err: %v", err)
 			continue
 		}
-		bodyText, err := ioutil.ReadAll(response.Body)
-		response.Body.Close()
+		bodyText, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
 		if err != nil {
 			time.Sleep(1 * time.Second)
 			log.Warnf("Cello agent not ready, err: %v", err)
@@ -261,7 +261,7 @@ func main() {
 
 	policyCfgPath := path.Join(ciliumConfigPath, "enable-policy")
 	policyEvent := make(chan *ValueEvent, 1)
-	watchPath(policyCfgPath, &policyState, policyEvent, 5*time.Second)
+	watchPath(policyCfgPath, &policyState, policyEvent, 10*time.Second)
 
 	// press signal
 	sigCh := make(chan os.Signal, 1)
