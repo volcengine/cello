@@ -71,7 +71,7 @@ type InstanceLimitManager interface {
 	// UpdateTrunk update trunk eni to InstanceLimits
 	UpdateTrunk(trunk *types.ENI)
 	// WatchUpdate watch update event
-	WatchUpdate(watcher chan<- struct{})
+	WatchUpdate(name string, watcher chan<- struct{})
 	// BlockadeCreate blockade create eni
 	BlockadeCreate()
 	// UnBlockadeCreate unBlockade create eni
@@ -127,14 +127,15 @@ func (m *defaultInstanceLimit) UpdateTrunk(trunk *types.ENI) {
 	m.limit.TrunkENI = trunk
 }
 
-func (m *defaultInstanceLimit) WatchUpdate(watcher chan<- struct{}) {
+func (m *defaultInstanceLimit) WatchUpdate(name string, watcher chan<- struct{}) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-
+	log.Infof("Component %s watch update")
 	m.eventWatchers = append(m.eventWatchers, watcher)
 }
 
 func (m *defaultInstanceLimit) notifyWatcherLocked() {
+	log.Infof("Notify watcher due to limit update")
 	for _, watcher := range m.eventWatchers {
 		select {
 		case watcher <- struct{}{}:
@@ -203,7 +204,7 @@ func (m *defaultInstanceLimit) BlockadeCreate() {
 	if m.limit.Blockade {
 		return
 	}
-
+	log.Infof("Blockade eni create")
 	if err := m.updateLocked(); err != nil {
 		log.Errorf("Update InstanceLimit failed, %v", err)
 		return
@@ -215,6 +216,7 @@ func (m *defaultInstanceLimit) BlockadeCreate() {
 func (m *defaultInstanceLimit) UnBlockadeCreate() {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+	log.Infof("UnBlockade eni create")
 	m.limit.Blockade = false
 }
 
