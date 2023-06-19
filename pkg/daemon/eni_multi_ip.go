@@ -157,6 +157,8 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		limit.UpdateTrunk(m.trunkEni)
 	}
 
+	eniFact.monitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second, time.Duration(*cfg.ReconcileIntervalSec)*time.Second)
+
 	factory := &eniIPFactory{
 		eniFactory:    eniFact,
 		RWMutex:       sync.RWMutex{},

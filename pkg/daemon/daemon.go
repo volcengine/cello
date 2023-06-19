@@ -1028,15 +1028,15 @@ func isHostNetwork(pod *v1.Pod) bool {
 func hasRequestAndLimitsFields(pod *v1.Pod) bool {
 	for _, c := range pod.Spec.Containers {
 		if c.Resources.Requests != nil {
-			_, ok := c.Resources.Requests[deviceplugin.ENIResourceName]
+			_, ok := c.Resources.Requests[deviceplugin.VolcNameSpace+deviceplugin.ENIResourceName]
 			if ok {
 				return true
 			}
-			_, ok = c.Resources.Requests[deviceplugin.ENIIPResourceName]
+			_, ok = c.Resources.Requests[deviceplugin.VolcNameSpace+deviceplugin.ENIIPResourceName]
 			if ok {
 				return true
 			}
-			_, ok = c.Resources.Requests[deviceplugin.BranchENIResourceName]
+			_, ok = c.Resources.Requests[deviceplugin.VolcNameSpace+deviceplugin.BranchENIResourceName]
 			if ok {
 				return true
 			}
