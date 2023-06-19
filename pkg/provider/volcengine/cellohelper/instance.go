@@ -44,13 +44,13 @@ type InstanceLimits struct {
 	// currently support only one
 	TrunkENI *types.ENI
 
-	Created  int
-	Blockade bool
+	Created int
+	Cordon  bool
 }
 
 func (l *InstanceLimits) String() string {
-	return fmt.Sprintf("{ENITotal: %d, ENIQuota: %d, IPv4MaxPerENI: %d, IPv6MaxPerENI: %d, TrunkSupported: %t, ENICustomer: %d, Created: %d, Blockade: %t}",
-		l.ENITotal, l.ENIQuota, l.IPv4MaxPerENI, l.IPv6MaxPerENI, l.TrunkSupported, l.ENICustomer, l.Created, l.Blockade)
+	return fmt.Sprintf("{ENITotal: %d, ENIQuota: %d, IPv4MaxPerENI: %d, IPv6MaxPerENI: %d, TrunkSupported: %t, ENICustomer: %d, Created: %d, Cordon: %t}",
+		l.ENITotal, l.ENIQuota, l.IPv4MaxPerENI, l.IPv6MaxPerENI, l.TrunkSupported, l.ENICustomer, l.Created, l.Cordon)
 }
 
 // SupportTrunk support trunk or not.
@@ -72,16 +72,16 @@ type InstanceLimitManager interface {
 	UpdateTrunk(trunk *types.ENI)
 	// WatchUpdate watch update event
 	WatchUpdate(name string, watcher chan<- struct{})
-	// BlockadeCreate blockade create eni
-	BlockadeCreate()
-	// UnBlockadeCreate unBlockade create eni
-	UnBlockadeCreate()
+	// CordonCreate cordon create eni
+	CordonCreate(name string)
+	// UnCordonCreate unCordon create eni
+	UnCordonCreate(name string)
 }
 
 // ENIAvailable get quota minus the custom eni and primary eni.
 func (l *InstanceLimits) ENIAvailable() int {
 	cnt := l.ENIQuota - 1 - l.ENICustomer
-	if l.Blockade {
+	if l.Cordon {
 		cnt = l.Created
 	}
 	if l.TrunkENI != nil {
@@ -130,7 +130,7 @@ func (m *defaultInstanceLimit) UpdateTrunk(trunk *types.ENI) {
 func (m *defaultInstanceLimit) WatchUpdate(name string, watcher chan<- struct{}) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	log.Infof("Component %s watch update")
+	log.Infof("Component %s watch update", name)
 	m.eventWatchers = append(m.eventWatchers, watcher)
 }
 
@@ -197,27 +197,27 @@ func (m *defaultInstanceLimit) update() error {
 	return nil
 }
 
-func (m *defaultInstanceLimit) BlockadeCreate() {
+func (m *defaultInstanceLimit) CordonCreate(name string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	if m.limit.Blockade {
+	if m.limit.Cordon {
 		return
 	}
-	log.Infof("Blockade eni create")
+	log.Infof("Cordon eni create by %s", name)
 	if err := m.updateLocked(); err != nil {
 		log.Errorf("Update InstanceLimit failed, %v", err)
 		return
 	}
 
-	m.limit.Blockade = true
+	m.limit.Cordon = true
 }
 
-func (m *defaultInstanceLimit) UnBlockadeCreate() {
+func (m *defaultInstanceLimit) UnCordonCreate(name string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	log.Infof("UnBlockade eni create")
-	m.limit.Blockade = false
+	log.Infof("UnCordon eni create by %s", name)
+	m.limit.Cordon = false
 }
 
 func NewInstanceLimitManager(api VolcAPI) (InstanceLimitManager, error) {

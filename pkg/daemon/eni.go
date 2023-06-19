@@ -29,6 +29,7 @@ import (
 	helper "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper"
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 	"github.com/volcengine/cello/pkg/utils/math"
+	"github.com/volcengine/cello/pkg/utils/runtime"
 	"github.com/volcengine/cello/types"
 )
 
@@ -223,10 +224,10 @@ func (f *eniFactory) CreateWithIPCount(ipCnt int, trunk bool) (types.NetResource
 	}()
 	subnet := f.subnets.SelectSubnet(f.ipFamily, helper.WithAging(subnetAging))
 	if subnet == nil {
-		f.limit.BlockadeCreate()
+		f.limit.CordonCreate("eniFactory create eni")
 		return nil, fmt.Errorf("no available subnet, please check subnets and available ip of subnets")
 	}
-	f.limit.UnBlockadeCreate()
+	f.limit.UnCordonCreate("eniFactory create eni")
 
 	eni, err := f.volcApi.AllocENI(subnet.SubnetId, f.secManager.GetSecurityGroups(), trunk, ipCnt)
 	if err != nil {
@@ -296,21 +297,13 @@ func (f *eniFactory) GetResourceLimit() int {
 
 func (f *eniFactory) monitor(subnetPeriod, limitPeriod time.Duration) {
 	go wait.Forever(func() {
-		defer func() {
-			if rErr := recover(); rErr != nil {
-				log.Errorf("monitor subnet panic, %v", rErr)
-			}
-		}()
+		defer runtime.HandleCrash(log)
 		if subnet := f.subnets.SelectSubnet(f.ipFamily, helper.WithAging(subnetAging)); subnet != nil {
-			f.limit.UnBlockadeCreate()
+			f.limit.UnCordonCreate("eniFactory subnet monitor")
 		}
 	}, subnetPeriod)
 	go wait.Forever(func() {
-		defer func() {
-			if rErr := recover(); rErr != nil {
-				log.Errorf("monitor limit panic, %v", rErr)
-			}
-		}()
+		defer runtime.HandleCrash(log)
 		f.limit.Update()
 	}, limitPeriod)
 }
