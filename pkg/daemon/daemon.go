@@ -230,7 +230,7 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 				d.eniManager.GetTrunkBranchLimit()))
 		}
 		sigChannel := make(chan struct{}, 1)
-		d.instanceLimit.WatchUpdate(sigChannel)
+		d.instanceLimit.WatchUpdate("device-plugin-eni", sigChannel)
 		go watchResourceNum(context.TODO(), d.devicePluginManager, deviceplugin.ENIResourceName, func() int {
 			return math.Max(0, d.eniManager.GetResourceLimit()-d.GetStockPodCount())
 		}, sigChannel)
@@ -251,7 +251,7 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 				d.eniIPManager.GetTrunkBranchLimit()))
 		}
 		sigChannel := make(chan struct{}, 1)
-		d.instanceLimit.WatchUpdate(sigChannel)
+		d.instanceLimit.WatchUpdate("device-plugin-eniip", sigChannel)
 		go watchResourceNum(context.TODO(), d.devicePluginManager, deviceplugin.ENIIPResourceName, func() int {
 			return math.Max(0, d.eniIPManager.GetResourceLimit()-d.GetStockPodCount())
 		}, sigChannel)
