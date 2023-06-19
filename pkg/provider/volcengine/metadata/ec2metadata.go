@@ -61,7 +61,7 @@ func (c *EC2Metadata) GetMetadata(ctx context.Context, path string) (info string
 		if err != nil {
 			fmtErr := fmt.Sprintf("Call metadata failed, path: %s, err: %v", url, err)
 			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventMetadataServiceAbnormal, fmtErr)
-			log.Errorf(fmtErr)
+			log.ErrorS(err, "Call metadata failed", "path", url)
 		}
 	}()
 

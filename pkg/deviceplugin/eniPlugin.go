@@ -69,9 +69,9 @@ func (eniPlugin *ENIDevicePlugin) ListAndWatch(_ *pluginapi.Empty, stream plugin
 			Devices: res,
 		}
 		err := stream.Send(resp)
-		log.Infof("Report resources: %v of %v", eniPlugin.resourceName, count)
+		log.InfoS("Report resources", "resourceName", eniPlugin.resourceName, "count", count)
 		if err != nil {
-			log.Errorf("Send devices error: %v", err)
+			log.ErrorS(err, "Send devices error")
 			return err
 		}
 		return nil
@@ -163,7 +163,7 @@ func (eniPlugin *ENIDevicePlugin) Update(count int) {
 	case <-eniPlugin.updateSignal:
 		eniPlugin.updateSignal <- count
 		eniPlugin.count = count
-		log.Errorf("Failed to update resource count: %v ", count)
+		log.ErrorS(nil, "Failed to update resource count", "count", count)
 		return
 	}
 }

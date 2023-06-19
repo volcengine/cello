@@ -127,7 +127,7 @@ func (d *VlanDriver) SetupNetwork(cfg *types.SetupConfig) (err error) {
 	if err != nil {
 		return fmt.Errorf("setup network error, %s", err.Error())
 	}
-	log.Log.Infof("Container ns setup success")
+	log.Log.InfoS("Container ns setup success")
 	// 3. fast path to pod
 	tableId := utils.GetPolicyRouteTableID(cfg.HostLink.Attrs().Index)
 	if cfg.LocalFastPath {
@@ -161,7 +161,7 @@ func (d *VlanDriver) SetupNetwork(cfg *types.SetupConfig) (err error) {
 			return fmt.Errorf("setup veth link %s in host ns failed, %s", vethLink.Attrs().Name, err.Error())
 		}
 	}
-	log.Log.Infof("Setup veth in host ns success")
+	log.Log.InfoS("Setup veth in host ns success")
 
 	if !cfg.LocalFastPath {
 		for _, c := range cfg.RedirectToHostCIDRs {
@@ -175,7 +175,7 @@ func (d *VlanDriver) SetupNetwork(cfg *types.SetupConfig) (err error) {
 			}
 		}
 	}
-	log.Log.Infof("Setup filters")
+	log.Log.InfoS("Setup filters")
 	// 4. check tc in parent device
 	return d.setupFilters(cfg, parentENI)
 }

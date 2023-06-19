@@ -115,7 +115,7 @@ func (m *defaultInstanceLimit) GetLimit() InstanceLimits {
 
 func (m *defaultInstanceLimit) Update() {
 	if err := m.update(); err != nil {
-		log.Errorf("Update InstanceLimit failed, %v", err)
+		log.ErrorS(err, "Update InstanceLimit failed")
 	}
 }
 
@@ -123,9 +123,9 @@ func (m *defaultInstanceLimit) UpdateTrunk(trunk *types.ENI) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	if trunk != nil {
-		log.Infof("Update trunk to %s", trunk.ID)
+		log.InfoS("Update trunk", "trunkID", trunk.ID)
 	} else {
-		log.Infof("Update trunk to nil")
+		log.InfoS("Update trunk to nil")
 	}
 	m.limit.TrunkENI = trunk
 }
@@ -133,7 +133,7 @@ func (m *defaultInstanceLimit) UpdateTrunk(trunk *types.ENI) {
 func (m *defaultInstanceLimit) WatchUpdate(name string, watcher chan<- struct{}) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	log.Infof("Component %s watch update", name)
+	log.InfoS("Component watch update", "name", name)
 	m.eventWatchers = append(m.eventWatchers, watcher)
 }
 
@@ -144,7 +144,7 @@ func (m *defaultInstanceLimit) NotifyWatcher() {
 }
 
 func (m *defaultInstanceLimit) notifyWatcherLocked() {
-	log.Infof("Notify watcher due to limit update")
+	log.InfoS("Notify watcher due to limit update")
 	for _, watcher := range m.eventWatchers {
 		select {
 		case watcher <- struct{}{}:
@@ -154,7 +154,7 @@ func (m *defaultInstanceLimit) notifyWatcherLocked() {
 }
 
 func (m *defaultInstanceLimit) updateLocked() error {
-	log.Infof("InstanceLimit Updating")
+	log.InfoS("InstanceLimit Updating")
 	newLimit, err := m.api.GetInstanceLimit()
 	if err != nil {
 		return err
@@ -187,7 +187,7 @@ func (m *defaultInstanceLimit) updateLocked() error {
 	}
 
 	m.limit.InstanceLimitsAttr = newLimit.InstanceLimitsAttr
-	log.Infof("InstanceLimit Updated %s", m.limit.String())
+	log.InfoS("InstanceLimit Updated", "limit", m.limit.String())
 	m.lastUpdate = time.Now()
 	m.notifyWatcherLocked()
 	return nil
@@ -213,9 +213,9 @@ func (m *defaultInstanceLimit) CordonCreate(name string) {
 	if m.limit.Cordon {
 		return
 	}
-	log.Infof("Cordon eni create by %s", name)
+	log.InfoS("Cordon eni create", "component", name)
 	if err := m.updateLocked(); err != nil {
-		log.Errorf("Update InstanceLimit failed, %v", err)
+		log.ErrorS(err, "Update InstanceLimit")
 		return
 	}
 
@@ -228,7 +228,7 @@ func (m *defaultInstanceLimit) UnCordonCreate(name string) {
 	if !m.limit.Cordon {
 		return
 	}
-	log.Infof("UnCordon eni create by %s", name)
+	log.InfoS("UnCordon eni create", "name", name)
 	m.limit.Cordon = false
 	m.notifyWatcherLocked()
 }

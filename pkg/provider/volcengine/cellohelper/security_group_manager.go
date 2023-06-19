@@ -45,7 +45,7 @@ func (m *securityGroupManager) UpdateSecurityGroups(sec []string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	m.securityGroups = sec
-	log.Infof("SecurityGroups update to %v", m.securityGroups)
+	log.InfoS("SecurityGroups update", "securityGroups", m.securityGroups)
 	return nil
 }
 

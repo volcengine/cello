@@ -25,11 +25,11 @@ var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "fake_tracing"})
 func NewFakeTracker() *tracing.Tracer {
 	t := tracing.NewTracer()
 	podEventRecord := func(podName, podNamespace, eventType, reason, message string) error {
-		log.Infof("%s  %s  From %s/%s  %s", eventType, reason, podNamespace, podName, message)
+		log.InfoS("show trace in podEventRecord", "eventType", eventType, "reason", reason, "ns", podNamespace, "name", podName, "message", message)
 		return nil
 	}
 	nodeEventRecord := func(eventType, reason, message string) {
-		log.Infof("%s  %s  %s", eventType, reason, message)
+		log.InfoS("show trace in nodeEventRecord", "eventType", eventType, "reason", reason, "message", message)
 	}
 	t.RegisterEventRecorder(nodeEventRecord, podEventRecord)
 	return t

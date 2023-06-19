@@ -126,39 +126,58 @@ func main() {
 		response, err := http.Get(fmt.Sprintf("http://localhost:%d/healthz", c.PreHealthPort))
 		if err != nil || response.StatusCode != http.StatusOK {
 			time.Sleep(1 * time.Second)
-			log.Warnf("Cello agent not ready, err: %v", err)
+			log.ErrorS(err, "Cello agent not ready")
 			continue
 		}
 		bodyText, err := io.ReadAll(response.Body)
 		_ = response.Body.Close()
 		if err != nil {
 			time.Sleep(1 * time.Second)
-			log.Warnf("Cello agent not ready, err: %v", err)
+			log.ErrorS(err, "Cello agent not ready")
 			continue
 		}
 		if string(bodyText) == "ok" {
 			break
 		}
 	}
-	log.Infof("Cello ready, launch cilium...")
+	log.InfoS("Cello ready, launch cilium...")
+
+	// kernel version must equal and above 4.19
+	if !kernel.CheckKernelVersion(4, 19, 0) {
+		log.FatalS(nil, "Linux kernel version < 4.19, skipping load cilium")
+	}
+
+	// ensure bpf mount
+	err := ensureBpfFsMounted()
+	if err != nil {
+		log.FatalS(err, "BPF filesystem not mount")
+	}
 
 	// disable rp_filter
 	err := sysctl.Disable("net.ipv4.conf.eth0.rp_filter")
 	if err != nil {
-		log.Fatalf("Disable rp_filter for eth0 failed, %v", err)
+		log.FatalS(err, "Disable rp_filter for eth0 failed")
 	}
+
+	// modprobe ipvlan
+	cmd := exec.Command("modprobe", "ipvlan")
+	_, err = cmd.Output()
+	if err != nil {
+		log.FatalS(err, "Modprobe ipvlan failed")
+	}
+	log.InfoS("Node init success")
 
 	// check apiServer info
 	host := os.Getenv("KUBERNETES_SERVICE_HOST")
 	if host == "" {
-		log.Fatalf("Cilium need k8s datastore, but can not found [KUBERNETES_SERVICE_HOST] env, exit.")
+		log.FatalS(nil, "Cilium need k8s datastore, but can not found [KUBERNETES_SERVICE_HOST] env, exit.")
 	}
 
 	// launch cilium
 	var ciliumCmd *exec.Cmd
 	celloConfigFile, err := os.Open(celloConfigPath)
 	if err != nil {
-		log.Fatalf("Get cello config failed, %v", err)
+		log.FatalS(err, "Get cello config failed")
 	}
 	defer celloConfigFile.Close()
 
@@ -166,7 +185,7 @@ func main() {
 	var celloConfig config.Config
 	err = decoder.Decode(&celloConfig)
 	if err != nil {
-		log.Fatalf("Decode cello config failed, %v", err)
+		log.FatalS(err, "Decode cello config failed")
 	}
 	ipFamily := types.IPFamily(datatype.StringValue(celloConfig.IPFamily))
 	ciliumArgs := ciliumBaseArgs
@@ -208,7 +227,7 @@ func main() {
 		return nil
 	})
 	if err != nil {
-		log.Fatalf("Read custom cilium config failed, %v", err)
+		log.FatalS(err, "Read custom cilium config failed")
 	}
 
 	policyState := fmt.Sprintf("%v", ciliumArgs["enable-policy"])
@@ -216,7 +235,7 @@ func main() {
 	var lock sync.Mutex
 
 	go func() {
-		log.Infof("Run cilium-agent with args: %v", ciliumArgs.ToArgs())
+		log.InfoS("Run cilium-agent with args: %v", ciliumArgs.ToArgs())
 		lock.Lock()
 		ciliumCmd = exec.Command("cilium-agent", ciliumArgs.ToArgs()...)
 		ciliumCmd.Stdin = os.Stdin
@@ -224,14 +243,14 @@ func main() {
 		ciliumCmd.Stderr = os.Stderr
 		err = ciliumCmd.Start()
 		if err != nil {
-			log.Fatalf("Launch cilium failed, %v", err)
+			log.FatalS(err, "Launch cilium failed")
 		}
 		lock.Unlock()
 
-		log.Infof("Cilium launched")
+		log.InfoS("Cilium launched")
 		err = ciliumCmd.Wait()
 		if err != nil {
-			log.Errorf("Wait failed: %v", err)
+			log.ErrorS(err, "Wait failed")
 		}
 		close(ciliumExitChan)
 	}()
@@ -245,20 +264,20 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	exitCilium := func() {
-		log.Infof("cilium exiting")
+		log.InfoS("cilium exiting")
 		err = ciliumCmd.Process.Signal(syscall.SIGINT)
 		if err != nil {
-			log.Infof("INT cilium failed: %v", err)
+			log.ErrorS(err, "INT cilium failed")
 		}
 
 		t := time.NewTimer(30 * time.Second)
 		select {
 		case <-ciliumExitChan:
-			log.Infof("cilium exited, code: %d", ciliumCmd.ProcessState.ExitCode())
+			log.InfoS("cilium exited", "code", ciliumCmd.ProcessState.ExitCode())
 			os.Exit(ciliumCmd.ProcessState.ExitCode())
 		case <-t.C:
 			t.Stop()
-			log.Infof("wait cilium finish timeout")
+			log.InfoS("wait cilium finish timeout")
 			os.Exit(1)
 		}
 	}
@@ -266,7 +285,7 @@ func main() {
 	for {
 		select {
 		case sig := <-sigCh:
-			log.Infof("%d signal: %s", os.Getpid(), sig.String())
+			log.InfoS("show pid and signal", "pid", os.Getpid(), "signal", sig.String())
 			lock.Lock()
 			if ciliumCmd != nil {
 				exitCilium()
@@ -275,35 +294,77 @@ func main() {
 			lock.Lock()
 			if ciliumCmd != nil {
 				if pe.err != nil {
-					log.Errorf("watch policy state failed, %v", pe.err)
+					log.ErrorS(pe.err, "watch policy state failed")
 					exitCilium()
 				}
 				if pe.value != "default" && pe.value != "always" && pe.value != "never" {
-					log.Errorf("Invalid value '%s' for enable-policy", pe.value)
+					log.ErrorS(nil, "Invalid value for enable-policy", "value", pe.value)
 				} else {
 					if err = setPolicyState(pe.value); err != nil {
-						log.Errorf("Switch enable-policy to %s failed, %v", pe.value, err)
+						log.ErrorS(err, "Switch enable-policy failed", "value", pe.value)
 						exitCilium()
 					}
 				}
 			}
 			lock.Unlock()
 		case <-ciliumExitChan:
-			log.Infof("cilium unexpect exited, code: %d", ciliumCmd.ProcessState.ExitCode())
+			log.InfoS("cilium unexpect exited", "code", ciliumCmd.ProcessState.ExitCode())
 			os.Exit(ciliumCmd.ProcessState.ExitCode())
 		}
 	}
 }
 
+func ensureBpfFsMounted() error {
+	initNs, err := ns.GetNS("/proc/1/ns/net")
+	if err != nil {
+		return fmt.Errorf("nsenter pid 1 failed, %w", err)
+	}
+
+	err = initNs.Do(func(netNS ns.NetNS) error {
+		// not mount
+		if !isBpfMountExist() {
+			// mount
+			log.InfoS("Mounting BPF filesystem...")
+			inErr := syscall.Mount("bpffs", bpfFsPath, "bpf", 0, "")
+			if inErr != nil {
+				return fmt.Errorf("mount bpf filesystem failed, %w", err)
+			}
+			log.InfoS("BPF filesystem mounted")
+		} else {
+			log.InfoS("BPF filesystem has mounted")
+		}
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("ensure bpf filesystem mount failed, %w", err)
+	}
+
+	return nil
+}
+
+func isBpfMountExist() bool {
+	cmd := exec.Command("mount", "-t", "bpf")
+	output, err := cmd.Output()
+	if err != nil {
+		log.ErrorS(err, "exec mount command failed")
+		return false
+	}
+	if strings.Contains(string(output), bpfFsPath) {
+		return true
+	}
+	return false
+}
+
 func setPolicyState(value string) error {
-	log.Infof("Switch enable-policy to %s", value)
+	log.InfoS("Switch enable-policy", "value", value)
 	cfg := fmt.Sprintf("PolicyEnforcement=%s", value)
 	policyCmd := exec.Command("cilium", "config", cfg)
 	output, err := policyCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("cmd execute failed, output: %v, err: %v", output, err)
 	}
-	log.Infof("Switch enable-policy to %s success", value)
+	log.InfoS("Switch enable-policy success", "value", value)
 	return nil
 }
 

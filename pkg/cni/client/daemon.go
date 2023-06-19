@@ -42,7 +42,7 @@ func NewCelloClient(ctx context.Context) (pbrpc.CelloClient, *grpc.ClientConn, e
 				return d.DialContext(ctx, "unix", unixAddr.String())
 			}))
 	if err != nil {
-		log.Log.Errorf("dial to grpc server failed: %v", err)
+		log.Log.ErrorS(err, "Dial to grpc server failed")
 		return nil, nil, fmt.Errorf("error dial cello grpc server: %w", err)
 	}
 

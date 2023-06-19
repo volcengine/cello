@@ -208,7 +208,7 @@ func (p *poolImpl) Name() string {
 func (p *poolImpl) AddInuse(res types.NetResource, owner string) {
 	p.lock()
 	defer p.unlock()
-	p.Debugf("Add resource %s to pool inuse", res.GetID())
+	p.DebugS("Add resource to pool inuse", "eniID", res.GetID())
 	p.inUse[res.GetID()] = poolItem{
 		owner:   owner,
 		res:     res,
@@ -220,7 +220,7 @@ func (p *poolImpl) AddInuse(res types.NetResource, owner string) {
 func (p *poolImpl) AddInvalid(res types.NetResource) {
 	p.lock()
 	defer p.unlock()
-	p.Debugf("Add resource %s to pool invalid", res.GetID())
+	p.DebugS("Add resource to pool invalid", "eniID", res.GetID())
 	p.invalid[res.GetID()] = poolItem{
 		res: res,
 	}
@@ -230,7 +230,7 @@ func (p *poolImpl) AddInvalid(res types.NetResource) {
 func (p *poolImpl) AddAvailable(res types.NetResource) {
 	p.lock()
 	defer p.unlock()
-	p.Debugf("Add resource %s to pool available", res.GetID())
+	p.DebugS("Add resource to pool available", "eniID", res.GetID())
 	p.available.Push(&poolItem{
 		res:           res,
 		reserveBefore: time.Now(),
@@ -279,14 +279,13 @@ func (p *poolImpl) allocateFromPool(prefer, owner string) (types.NetResource, er
 			res:     res,
 		}
 		p.metricAvailable.Dec()
-		lg.Infof("Allocate resource from pool success: %s", res.GetID())
+		lg.InfoS("Allocate resource from pool success", "resID", res.GetID())
 		p.notifyScale()
 		return res, nil
 	}
 
 	if curCap := p.capWithLocked(); curCap >= p.getMaxCap() {
-		lg.Warnf("Allocate resource from pool failed: %s (current cap: %d, max cap: %d)",
-			ErrNoResourceAvailable, curCap, p.getMaxCap())
+		lg.WarnS("Allocate resource from pool failed", "ErrNoResourceAvailable", ErrNoResourceAvailable, "curCap", curCap, "MaxCap", p.getMaxCap())
 		return nil, ErrNoResourceAvailable
 	}
 
@@ -307,7 +306,7 @@ func (p *poolImpl) Allocate(ctx context.Context, prefer, owner string) (types.Ne
 
 		select {
 		case <-ctx.Done():
-			lg.Infof("Allocate resource return because %s", ErrContextDone)
+			lg.InfoS("Allocate resource return", "ErrContextDone", ErrContextDone)
 			return nil, ErrContextDone
 		case <-p.ticket:
 			exec := func() (types.NetResource, error) {
@@ -316,11 +315,11 @@ func (p *poolImpl) Allocate(ctx context.Context, prefer, owner string) (types.Ne
 				resources, err := p.factory.Create(1)
 				if err != nil || len(resources) == 0 {
 					p.productTicket()
-					lg.Errorf("Factory create resource err: %v", err)
+					lg.ErrorS(err, "Factory create resource err")
 					return nil, fmt.Errorf("factory create resource err: %v", err)
 				}
 				p.AddInuse(resources[0], owner)
-				lg.Infof("Allocate resource from pool success after create: %s", resources[0].GetID())
+				lg.InfoS("Allocate resource from pool success after create", "resID", resources[0].GetID())
 				return resources[0], nil
 			}
 			return exec()
@@ -336,7 +335,7 @@ func (p *poolImpl) Release(resID string) error {
 
 	item, exist := p.inUse[resID]
 	if !exist {
-		p.Errorf("Find resource %s not exist in pool", resID)
+		p.ErrorS(nil, "Find resource not exist in pool", "resID", resID)
 		return ErrResourceInvalid
 	}
 	delete(p.inUse, resID)
@@ -352,7 +351,7 @@ func (p *poolImpl) Release(resID string) error {
 			return nil
 		}
 		if temp != nil {
-			p.Warnf("Convert invalid resource %s to valid %s", resID, temp.GetID())
+			p.WarnS("Convert invalid resource to valid", "resID", resID, "validID", temp.GetID())
 			p.available.Push(&poolItem{
 				res:           temp,
 				reserveBefore: time.Now(),
@@ -360,11 +359,11 @@ func (p *poolImpl) Release(resID string) error {
 			p.metricAvailable.Inc()
 			return nil
 		}
-		p.Warnf("Destroy resource %v failed: %v", item.res, err)
+		p.ErrorS(err, "Destroy resource failed", "resource", item.res)
 		p.invalid[resID] = item
 		return nil
 	}
-	p.Infof("Release resource to pool %s success", resID)
+	p.InfoS("Release resource to pool success", "resID", resID)
 	p.available.Push(&poolItem{
 		res:           item.res,
 		reserveBefore: time.Now(),
@@ -433,7 +432,7 @@ func (p *poolImpl) shouldIncrease() int {
 }
 
 func (p *poolImpl) tryIncreasePool() {
-	p.Debugf("Try Increase pool")
+	p.DebugS("Try Increase pool")
 	toIncrease := p.shouldIncrease()
 	if toIncrease <= 0 {
 		return
@@ -448,11 +447,11 @@ func (p *poolImpl) tryIncreasePool() {
 			continue
 		}
 	}
-	p.Infof("Try create %d resource", toCreate)
+	p.InfoS("Try create resource", "toCreate", toCreate)
 	if toCreate > 0 {
 		res, err := p.factory.Create(toCreate)
 		if err != nil {
-			p.Errorf("Create resource failed: %v, backoff: %v", err, p.backoff)
+			p.ErrorS(err, "Create resource failed", "backoff", p.backoff)
 			defer func() {
 				p.backoffCallFactory()
 				time.Sleep(p.backoff)
@@ -461,7 +460,7 @@ func (p *poolImpl) tryIncreasePool() {
 		if len(res) == toCreate {
 			p.backoffReset()
 		} else {
-			p.Warnf("Resource created: %d, expected: %d", len(res), toCreate)
+			p.WarnS("Resource created", "created", len(res), "expected", toCreate)
 		}
 		releaseTickets := math.Max(0, toCreate-len(res))
 		for i := 0; i < releaseTickets; i++ {
@@ -473,7 +472,7 @@ func (p *poolImpl) tryIncreasePool() {
 		for _, item := range res {
 			p.AddAvailable(item)
 		}
-		p.Infof("%d resource increased", len(res))
+		p.InfoS("resource increased", "count", len(res))
 	}
 }
 
@@ -494,7 +493,7 @@ func (p *poolImpl) popOverflow() *poolItem {
 }
 
 func (p *poolImpl) tryReducePool() {
-	p.Debugf("Try Reduce pool")
+	p.DebugS("Try Reduce pool")
 	var reAvailable []types.NetResource
 	for {
 		item := p.popOverflow()
@@ -505,13 +504,13 @@ func (p *poolImpl) tryReducePool() {
 		p.metricAvailable.Dec()
 		err := p.factory.Release(item.res)
 		if err == nil {
-			p.Infof("Destroy resource %v succeed", item.res)
+			p.InfoS("Destroy resource succeed", "res", item.res)
 			p.productTicket()
 			p.backoffReset()
 		} else if errors.Is(err, apiErr.ErrInvalidDeletionPrimaryIP) {
 			reAvailable = append(reAvailable, item.res)
 		} else {
-			p.Warnf("Destroy resource %v failed: %v, backoff: %v", item.res, err, p.backoff)
+			p.ErrorS(err, "Destroy resource failed", "res", item.res, "backoff", p.backoff)
 			p.backoffCallFactory()
 			p.AddAvailable(item.res)
 			time.Sleep(p.backoff)
@@ -534,7 +533,7 @@ func (p *poolImpl) checkInvalid() {
 		})
 		ret, err := p.factory.ReleaseInValid(invalid.res)
 		if err != nil {
-			lg.Warnf("Release invalid resource %v failed, %v", invalid.res, err)
+			lg.ErrorS(err, "Release invalid resource failed", "res", invalid.res)
 			continue
 		}
 		delete(p.invalid, id)
@@ -544,11 +543,11 @@ func (p *poolImpl) checkInvalid() {
 				reserveBefore: time.Now(),
 			})
 			p.metricAvailable.Inc()
-			lg.Infof("Release invalid resource succeed and get new one: %s", ret.GetID())
+			lg.InfoS("Release invalid resource succeed and get new one", "retID", ret.GetID())
 		} else {
 			p.metricTotal.Dec()
 			p.productTicket()
-			lg.Infof("Release invalid resource succeed")
+			lg.InfoS("Release invalid resource succeed")
 		}
 	}
 }
@@ -666,7 +665,7 @@ func (p *poolImpl) GC(getAllocatedResMap func() (map[string]types.NetResourceAll
 	if err != nil {
 		return err
 	}
-	p.Debugf("GC start, usedResource: %v", usedResource)
+	p.DebugS("GC start", "usedResource", usedResource)
 	err = p.factory.GC()
 	if err != nil {
 		return fmt.Errorf("factory gc failed, %v", err)
@@ -677,15 +676,13 @@ func (p *poolImpl) GC(getAllocatedResMap func() (map[string]types.NetResourceAll
 		return fmt.Errorf("factory list failed, %v", err)
 	}
 
-	p.WithFields(logger.Fields{"phase": "before gc"}).Debugf("Factory items: %v", list)
-	p.WithFields(logger.Fields{"phase": "before gc"}).Debugf("Inuse items in pool: %v", p.inUse)
-	p.WithFields(logger.Fields{"phase": "before gc"}).Debugf("Available items in pool: %v", p.available.Dump())
-	p.WithFields(logger.Fields{"phase": "before gc"}).Debugf("Invalid items in pool: %v", p.invalid)
+	p.DebugS("show pool before gc", "list", list, "inUse", p.inUse, "available", p.available.Dump(), "invalid", p.invalid)
+
 	// sync resource member
 	for id, item := range p.inUse {
 		if local, exist := usedResource[id]; !exist {
 			if time.Since(item.lastUse) > p.getGcProtectPeriod() {
-				p.Warnf("Release %v which used by %s once", item.res.GetVPCResource(), item.owner)
+				p.WarnS("Release which used by once", "VPCResource", item.res.GetVPCResource(), "owner", item.owner)
 				delete(p.inUse, id)
 			}
 		} else {
@@ -740,14 +737,12 @@ func (p *poolImpl) GC(getAllocatedResMap func() (map[string]types.NetResourceAll
 	p.metricTotal.Set(float64(p.capWithLocked()))
 	p.resetTicketWithLocked()
 
-	p.WithFields(logger.Fields{"phase": "after gc"}).Debugf("Inuse items in pool: %v", p.inUse)
-	p.WithFields(logger.Fields{"phase": "after gc"}).Debugf("Available items in pool: %v", p.available.Dump())
-	p.WithFields(logger.Fields{"phase": "after gc"}).Debugf("Invalid items in pool: %v", p.invalid)
+	p.DebugS("show pool after gc", "inUse", p.inUse, "available", p.available.Dump(), "invalid", p.invalid)
 	return nil
 }
 
 func (p *poolImpl) ReCfgCache(target, targetMin int) {
-	p.Infof("ReConfig pool target and targetMin to %d, %d", target, targetMin)
+	p.InfoS("ReConfig pool target and targetMin", "target", target, "targetMin", targetMin)
 	p.setTarget(target)
 	p.setTargetMin(targetMin)
 	p.notifyScale()
@@ -793,6 +788,6 @@ func NewResourcePool(config Config) (ResourcePool, error) {
 		"Target":          config.Target,
 		"TargetMin":       config.TargetMin,
 		"MonitorInterval": config.MonitorInterval,
-	}).Infof("Resource pool %s start", config.Name)
+	}).InfoS("Resource pool start", "name", config.Name)
 	return impl, nil
 }

@@ -315,7 +315,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if err != nil {
 		return err
 	}
-	log.Log.Infof("cmdAdd, cniConfig:%+v, k8sConfig: %+v", cniConfig, k8sConfig)
+	log.Log.InfoS("cmdAdd", "cniConfig", cniConfig, "k8sConfig", k8sConfig)
 
 	// set log level
 	if len(cniConfig.LogLevel) != 0 {
@@ -357,10 +357,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 			return cErr
 		}
 
-		log.Log.Infof("add Delegate, name:%s, ifName:%s, index:%d", d.Name, ifName, d.Index)
+		log.Log.InfoS("add Delegate", "name", d.Name, "ifName", ifName, "Index", d.Index)
 		tmpResult, err = DelegateAdd(rt, d, cniConfig)
 		if err != nil {
-			log.Log.Errorf("add Delegate error, err:%s, name:%s, ifName:%s, index:%d", err.Error(), d.Name, ifName, d.Index)
+			log.Log.ErrorS(err, "add Delegate error", err.Error(), "Name", d.Name, "ifName", ifName, "Index", d.Index)
 			_ = delPlugins(args, k8sConfig, cniConfig, delegates, idx)
 			return err
 		}
@@ -381,7 +381,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		// construct NetNsConfigs
 		res, resErr := cni100.NewResultFromResult(tmpResult)
 		if resErr != nil {
-			log.Log.Errorf("DelegateAdd: error converting result: %v", resErr)
+			log.Log.ErrorS(resErr, "DelegateAdd: error converting result")
 			return fmt.Errorf("DelegateAdd: error converting result: %v", resErr)
 		}
 		netInfo := NetNsConfig{
@@ -394,7 +394,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 
 		if d.PodNetwork.Traffic != nil {
 			if len(d.PodNetwork.Traffic.Routes.ExtraRoutes) != 0 {
-				log.Log.Infof("add traffic route, name:%s", d.Name)
+				log.Log.InfoS("add traffic route", "name", d.Name)
 				netInfo.ExtraRoutes = append(netInfo.ExtraRoutes, d.PodNetwork.Traffic.Routes.ExtraRoutes...)
 			}
 
@@ -420,14 +420,14 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 
 	if patchStatus {
-		log.Log.Infof("patch status:%+v", netStatus)
+		log.Log.InfoS("patch status", "netStatus", netStatus)
 		// call rpc to patch network status
 		start := time.Now()
 		if err = patchNetworkStatus(ctx, k8sConfig, netStatus); err != nil {
 			return err
 		}
 		duration := metrics.MsSince(start)
-		log.Log.Debugf("patchNetworkStatus time cost:%f Millisecond", duration)
+		log.Log.DebugS("show patchNetworkStatus time(Millisecond)", "cost", fmt.Sprintf("%f", duration))
 	}
 
 	return result.Print()
@@ -438,7 +438,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 	if err != nil {
 		return err
 	}
-	log.Log.Infof("setup Routes, NetNsConfig:%+v", netInfos)
+	log.Log.InfoS("setup Routes", "NetNsConfig", netInfos)
 
 	defer func(netNs ns.NetNS) {
 		inErr := netNs.Close()
@@ -455,7 +455,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 		err = netNs.Do(func(netNS ns.NetNS) error {
 			link, nErr := netlink.LinkByName(netInfo.DeviceName)
 			if nErr != nil {
-				log.Log.Errorf("link port failed: %s", nErr.Error())
+				log.Log.ErrorS(nErr, "link port failed")
 				return err
 			}
 			tmpLink = link
@@ -484,7 +484,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 					Table:     netInfo.TableId,
 				})
 				if err != nil {
-					log.Log.Errorf("link add ipv4 default route failed:%s", err.Error())
+					log.Log.ErrorS(err, "link add ipv4 default route failed")
 					return err
 				}
 
@@ -504,7 +504,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 					}
 				}
 
-				log.Log.Infof("add policy-route, show ip:%s", netIp.Address.String())
+				log.Log.InfoS("add policy-route", "ip", netIp.Address.String())
 				err = netlink.RuleAdd(&netlink.Rule{
 					Src: &net.IPNet{
 						IP:   netIp.Address.IP,
@@ -521,7 +521,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 					Table:             netInfo.TableId,
 				})
 				if err != nil {
-					log.Log.Errorf("link add ipv4 rule failed:%s", err.Error())
+					log.Log.ErrorS(err, "link add ipv4 rule failed")
 					return err
 				}
 			}
@@ -541,7 +541,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 						Family:    family,
 					})
 					if err != nil && !os.IsExist(err) {
-						log.Log.Errorf("set default route failed:%s", err.Error())
+						log.Log.ErrorS(err, "set default route failed")
 						return fmt.Errorf("set default route failed: %v", err)
 					}
 				}
@@ -571,7 +571,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 			realRoute := RealRoute{}
 			_, ipSet, parseErr := net.ParseCIDR(route.Dst)
 			if parseErr != nil {
-				log.Log.Errorf("parse dst:%s error:%s", route.Dst, parseErr.Error())
+				log.Log.ErrorS(parseErr, "parse dst error", "Dst", route.Dst)
 				return fmt.Errorf("parse dst error, dst:%s, err:%s", route.Dst, parseErr.Error())
 			}
 			cidr := route.Dst
@@ -579,7 +579,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 			if len(route.Gw) != 0 {
 				gw = net.ParseIP(route.Gw)
 				if gw == nil {
-					log.Log.Errorf("gw:%s ParseIP error", route.Gw)
+					log.Log.ErrorS(nil, "gw ParseIP error", "Gw", route.Gw)
 					return fmt.Errorf("gw:%s ParseIP error", route.Gw)
 				}
 			}
@@ -615,7 +615,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 				family = netlink.FAMILY_V6
 			}
 			if len(routes) == 1 {
-				log.Log.Infof("add ExtraRoute:%s, gw:%s", cidr, r.Gw.String())
+				log.Log.InfoS("add ExtraRoute", "cidr", cidr, "gw", r.Gw.String())
 				rt := &netlink.Route{
 					LinkIndex: r.Dev.Attrs().Index,
 					Scope:     netlink.SCOPE_UNIVERSE,
@@ -627,7 +627,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 
 				if replaceErr := netlink.RouteReplace(rt); replaceErr != nil {
 					if !os.IsExist(replaceErr) {
-						log.Log.Errorf("add route(dst:%s) error:%s", cidr, replaceErr.Error())
+						log.Log.ErrorS(replaceErr, "add route(dst) error", "cidr", cidr)
 						return replaceErr
 					}
 				}
@@ -642,7 +642,7 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 						Family:    family,
 					})
 					if err != nil {
-						log.Log.Errorf("add route  failed:%s", err.Error())
+						log.Log.ErrorS(err, "add route  failed")
 						return err
 					}
 				}
@@ -686,7 +686,7 @@ func tryLoadDelegateNetConfFromAnno(ctx context.Context, cniConfig *MetaNetConf,
 		}
 
 		// TODO wait for pod-networks annotation
-		log.Log.Infof("call celloClient GetPodMetaInfo rpc method")
+		log.Log.InfoS("call celloClient GetPodMetaInfo rpc method")
 		response, getErr := celloClient.GetPodMetaInfo(ctx, &pbrpc.GetPodMetaRequest{
 			Name:             string(k8sConfig.K8S_POD_NAME),
 			Namespace:        string(k8sConfig.K8S_POD_NAMESPACE),
@@ -694,7 +694,7 @@ func tryLoadDelegateNetConfFromAnno(ctx context.Context, cniConfig *MetaNetConf,
 		})
 		if getErr != nil {
 			if strings.Contains(getErr.Error(), "not found") {
-				log.Log.Infof("pod no found")
+				log.Log.InfoS("pod no found")
 				return []*DelegateNetConf{}, nil
 			}
 			return nil, fmt.Errorf("cello GetPodMetaInfo from daemon failed: %w", getErr)
@@ -707,8 +707,8 @@ func tryLoadDelegateNetConfFromAnno(ctx context.Context, cniConfig *MetaNetConf,
 	var podNetworks []*PodNetwork
 	// 1. first check if pod's annotation have pod-networks-definition
 	if len(podAnno) != 0 && len(podAnno[podNetworkDefinitionKey]) != 0 {
-		log.Log.Infof("load annotation, podNetworksDefinitions:%s, podNetworks:%s",
-			podAnno[podNetworkDefinitionKey], podAnno[PodNetworksKey])
+		log.Log.InfoS("load annotation", "podNetworksDefinitions",
+			podAnno[podNetworkDefinitionKey], "podNetworks", podAnno[PodNetworksKey])
 		podNetworksDefinitions := make([]*PodNetworkDefinition, 0)
 		if err = json.Unmarshal([]byte(podAnno[podNetworkDefinitionKey]), &podNetworksDefinitions); err != nil {
 			return nil, fmt.Errorf("unmarshal PodNetworkDefinition failed:%w", err)
@@ -800,7 +800,7 @@ func verifyAndCompleteDelegateNetConfForCNIDel(ds []*DelegateNetConf) error {
 	for _, d := range ds {
 		if len(d.MetaRequest.IPRangesSource) != 0 && len(d.MetaConfig.IPRanges) == 0 {
 			_, fake, _ := net.ParseCIDR(fakeIPRangesForDelete)
-			log.Log.Infof("Inject fake ipRanges %s for delegate %s ipRangesSource %s to delete", fake, d.Name, d.MetaRequest.IPRangesSource)
+			log.Log.InfoS("Inject fake ipRanges for delegate ipRangesSource to delete", "fake", fake, "name", d.Name, "IPRangesSource", d.MetaRequest.IPRangesSource)
 			d.MetaConfig.IPRanges = append(d.MetaConfig.IPRanges, RangeSet{
 				{
 					Subnet: cniTypes.IPNet(*fake),
@@ -839,7 +839,7 @@ func createNetworkStatus(r cniTypes.Result, delegate *DelegateNetConf) (*Network
 
 func patchNetworkStatus(ctx context.Context, k8sArgs *types2.K8SArgs, netStatus []*NetworkStatus) error {
 	if len(netStatus) == 0 {
-		log.Log.Infof("netStatus is nil")
+		log.Log.InfoS("netStatus is nil")
 		return nil
 	}
 
@@ -859,7 +859,7 @@ func patchNetworkStatus(ctx context.Context, k8sArgs *types2.K8SArgs, netStatus 
 		return fmt.Errorf("meta addCmd create cello rpc client failed: %w", err)
 	}
 
-	log.Log.Infof("call celloClient PatchPodAnnotation rpc method, networkStatus:%+v", networkStatus)
+	log.Log.InfoS("call celloClient PatchPodAnnotation rpc method", "networkStatus", networkStatus)
 	_, err = celloClient.PatchPodAnnotation(ctx, &pbrpc.PatchPodAnnotationRequest{
 		Name:      string(k8sArgs.K8S_POD_NAME),
 		Namespace: string(k8sArgs.K8S_POD_NAMESPACE),
@@ -1003,7 +1003,7 @@ func createCNIRuntimeConf(args *skel.CmdArgs, k8sArgs *types2.K8SArgs, netConf *
 	}
 	rc.CapabilityArgs = buildCapabilityArgs(runtimeConfig)
 
-	log.Log.Infof("Create cni runtimeConf: %+v", rc)
+	log.Log.InfoS("Create cni runtimeConf", "runtimeConf", rc)
 	return rc, nil
 }
 
@@ -1196,7 +1196,7 @@ func loadDelegateNetConf(podNamespace, podName string, pn *PodNetwork) (*Delegat
 		return nil, err
 	}
 
-	log.Log.Debugf("Load DelegateNetConf %v", delegateConf)
+	log.Log.DebugS("Load DelegateNetConf", "delegateConf", delegateConf)
 	return delegateConf, nil
 }
 
@@ -1207,23 +1207,23 @@ func buildMetaConfigForDelegateNetConf(podNamespace, podName string, delegate *D
 		// get device id from kubelet
 		if podName != "" && podNamespace != "" {
 			// ResourceName annotation is found; try to get device info from resourceMap
-			log.Log.Debugf("Found resourceName annotation : %s", delegate.MetaRequest.ResourceName)
+			log.Log.DebugS("show Found resourceName annotation", "annotation", delegate.MetaRequest.ResourceName)
 			resourceMap, err := getPodResourceMap(podNamespace, podName)
 			if err != nil {
 				return fmt.Errorf("get pod resource map failed, %v", err)
 			}
-			log.Log.Debugf("Got resourceMap instance: %+v", resourceMap)
+			log.Log.DebugS("show resourceMap instance", "resourceMap", resourceMap)
 
 			entry, ok := resourceMap[delegate.MetaRequest.ResourceName]
 			if ok {
-				log.Log.Infof("Found device entry: %+v", entry)
+				log.Log.InfoS("Found device entry", "entry", entry)
 				if idCount := len(entry.DeviceIDs); idCount > 0 && idCount > entry.Index {
 					delegate.MetaConfig.DeviceID = entry.DeviceIDs[entry.Index]
-					log.Log.Infof("Got podName: %s deviceID: %s", podName, delegate.MetaConfig.DeviceID)
+					log.Log.InfoS("show podName and deviceID", "podName", podName, "DeviceID", delegate.MetaConfig.DeviceID)
 					if strings.Contains(delegate.MetaConfig.DeviceID, "@") {
 						old := delegate.MetaConfig.DeviceID
 						delegate.MetaConfig.DeviceID = strings.Split(delegate.MetaConfig.DeviceID, "@")[0]
-						log.Log.Infof("Normalize deviceID %s to %s", old, delegate.MetaConfig.DeviceID)
+						log.Log.InfoS("Normalize deviceID", "oldDevice", old, "newDeviceID", delegate.MetaConfig.DeviceID)
 					}
 					entry.Index++ // increment Index for next delegate
 				}
@@ -1236,7 +1236,7 @@ func buildMetaConfigForDelegateNetConf(podNamespace, podName string, delegate *D
 		case IpRangeSourceNetDeviceSubnet, IPRangeSourceNetDeviceSelf:
 			if delegate.MetaConfig.DeviceID == "" {
 				// todo: support get device id from other config
-				log.Log.Errorf("Delegate meta ipRangesSource got device id empty, ignore")
+				log.Log.ErrorS(nil, "Delegate meta ipRangesSource got device id empty, ignore")
 				break
 			}
 			var err error
@@ -1245,7 +1245,7 @@ func buildMetaConfigForDelegateNetConf(podNamespace, podName string, delegate *D
 			}
 		case IPRangeSourceNone:
 		default:
-			log.Log.Errorf("Delegate meta ipRangesSource unknown: %s, ignored", delegate.MetaRequest.IPRangesSource)
+			log.Log.ErrorS(nil, "Delegate meta ipRangesSource unknown, ignored", "IPRangesSource", delegate.MetaRequest.IPRangesSource)
 		}
 	}
 
@@ -1310,7 +1310,7 @@ func cmdDel(args *skel.CmdArgs) error {
 		log.Log.SetLogLevel(cniConfig.LogLevel)
 	}
 
-	log.Log.Infof("cmdDel, cniConfig:%+v, k8sConfig: %+v", cniConfig, k8sConfig)
+	log.Log.InfoS("cmdDel", "cniConfig", cniConfig, "k8sConfig", k8sConfig)
 	defer func() {
 		if conn != nil {
 			_ = conn.Close()
@@ -1321,7 +1321,7 @@ func cmdDel(args *skel.CmdArgs) error {
 	var delegates []*DelegateNetConf
 	delegates, err = tryLoadDelegateNetConfFromCache(args.ContainerID, defaultCNIDir)
 	if err != nil {
-		log.Log.Infof("try LoadDelegateNetConf From Cache error, err:%s", err.Error())
+		log.Log.ErrorS(err, "try LoadDelegateNetConf From Cache error")
 	}
 
 	if len(delegates) == 0 {
@@ -1345,7 +1345,7 @@ func cmdDel(args *skel.CmdArgs) error {
 	}
 
 	path := filepath.Join(defaultCNIDir, args.ContainerID)
-	log.Log.Infof("cmdDel, del path:%s", path)
+	log.Log.InfoS("cmdDel", "path", path)
 	_ = os.Remove(path)
 
 	return nil
@@ -1360,10 +1360,10 @@ func delPlugins(args *skel.CmdArgs, k8sArgs *types2.K8SArgs, netConf *MetaNetCon
 			errorstrings = append(errorstrings, err.Error())
 			continue
 		}
-		log.Log.Infof("DelegateDel, name:%s, ifName:%s, index:%d", delegates[idx].Name, ifName, idx)
+		log.Log.InfoS("DelegateDel", "name", delegates[idx].Name, "ifName", ifName, "idx", idx)
 		// Attempt to delete all but do not error out, instead, collect all errors.
 		if err = DelegateDel(rt, delegates[idx], netConf); err != nil {
-			log.Log.Infof("DelegateDel error, err:%s, name:%s, ifName:%s, index:%d", err.Error(), delegates[idx].Name, ifName, idx)
+			log.Log.ErrorS(err, "DelegateDel error", "name", delegates[idx].Name, "ifName", ifName, "idx", idx)
 			errorstrings = append(errorstrings, err.Error())
 		}
 	}

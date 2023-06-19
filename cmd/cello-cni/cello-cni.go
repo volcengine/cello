@@ -16,6 +16,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/containernetworking/cni/pkg/skel"
@@ -34,12 +35,12 @@ func cmdAdd(args *skel.CmdArgs) error {
 	start := time.Now()
 	defer func() {
 		duration := metrics.MsSince(start)
-		cniLog.Log.Infof("CmdAdd time cost:%f Millisecond", duration)
+		cniLog.Log.InfoS("CmdAdd time cost Millisecond", "cost", fmt.Sprintf("%f", duration))
 	}()
 	cniLog.Log.WithFields(logger.Fields{
 		"ContainerId": args.ContainerID,
 		"Netns":       args.Netns},
-	).Infof("Handle cmd add")
+	).InfoS("Handle cmd add")
 
 	err := Add(args)
 	if err != nil {
@@ -47,7 +48,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 			"Command":     "Add",
 			"ContainerId": args.ContainerID,
 			"Netns":       args.Netns},
-		).Errorf("Handle cmd add failed: %v", err)
+		).ErrorS(err, "Handle cmd add failed")
 	}
 
 	return err
@@ -57,12 +58,12 @@ func cmdDel(args *skel.CmdArgs) error {
 	start := time.Now()
 	defer func() {
 		duration := metrics.MsSince(start)
-		cniLog.Log.Infof("CmdDel time cost:%f Millisecond", duration)
+		cniLog.Log.InfoS("CmdDel time cost Millisecond", "cost", fmt.Sprintf("%f", duration))
 	}()
 	cniLog.Log.WithFields(logger.Fields{
 		"ContainerId": args.ContainerID,
 		"Netns":       args.Netns},
-	).Infof("Handle cmd del")
+	).InfoS("Handle cmd del")
 	err := Del(args)
 	if err != nil {
 		cniLog.Log.WithFields(
@@ -70,7 +71,7 @@ func cmdDel(args *skel.CmdArgs) error {
 				"Command":     "Del",
 				"ContainerId": args.ContainerID,
 				"Netns":       args.Netns,
-			}).Infof("Handle cmd del failed: %s", err.Error())
+			}).ErrorS(err, "Handle cmd del failed")
 	}
 	return err
 }
@@ -83,7 +84,7 @@ func cmdCheck(args *skel.CmdArgs) error {
 				"Command":     "Check",
 				"ContainerId": args.ContainerID,
 				"Netns":       args.Netns,
-			}).Infof("Handle cmd del failed: %s", err.Error())
+			}).ErrorS(err, "Handle cmd del failed")
 	}
 	return err
 }

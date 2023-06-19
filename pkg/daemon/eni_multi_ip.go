@@ -61,10 +61,10 @@ func (m *eniIPResourceManager) Name() string {
 func (m *eniIPResourceManager) Allocate(ctx *netContext, prefer string) (types.NetResource, error) {
 	res, err := m.pool.Allocate(ctx, prefer, types.PodKey(ctx.pod.Namespace, ctx.pod.Name))
 	if err != nil {
-		ctx.Log().Errorf("Allocate failed, %v", err)
+		ctx.Log().ErrorS(err, "Allocate failed")
 		return nil, err
 	}
-	ctx.Log().Infof("Allocate succeed: %v", res)
+	ctx.Log().InfoS("Allocate succeed", "res", res)
 	return res, nil
 }
 
@@ -72,10 +72,10 @@ func (m *eniIPResourceManager) Allocate(ctx *netContext, prefer string) (types.N
 func (m *eniIPResourceManager) Release(ctx *netContext, resource *types.VPCResource) error {
 	err := m.pool.Release(resource.ID)
 	if err != nil {
-		ctx.Log().Errorf("Release %v failed, %v", resource, err)
+		ctx.Log().ErrorS(err, "Release failed", "resource", resource, err)
 		return err
 	}
-	ctx.Log().Infof("Release %v succeed", resource)
+	ctx.Log().InfoS("Release succeed", "resource", resource)
 	return nil
 }
 
@@ -128,7 +128,7 @@ func generateIPPoolCfg(cfg *config.Config, limits helper.InstanceLimits) pool.Co
 }
 
 func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, secManager helper.SecurityGroupManager, volcApi helper.VolcAPI, allocatedResource map[string]types.NetResourceAllocated, k8s k8s.Service) (*eniIPResourceManager, error) {
-	log.Infof("Creating EniIPResourceManager")
+	log.InfoS("Creating EniIPResourceManager")
 	limit, err := helper.NewInstanceLimitManager(volcApi)
 	if err != nil {
 		return nil, err
@@ -377,10 +377,10 @@ func (e *ENI) worker(resultCache chan<- *ENIIPRes) {
 			}
 		}
 
-		log.Debugf("Begin assign %d ips on eni %s", toAssign, e.ID)
+		log.DebugS("Begin assign ips on eni", "toAssign", toAssign, "eniID", e.ID)
 		v4, v6, err := e.volcApi.AllocIPAddresses(e.ID, e.Mac.String(), toAssign, toAssign)
 		if err != nil {
-			log.Errorf("Assign ip failed on eni %s, %v", e.ID, err)
+			log.ErrorS(err, "Assign ip failed on eni", "ID", e.ID)
 			for i := 0; i < toAssign; i++ {
 				resultCache <- &ENIIPRes{
 					ENIIP: &types.ENIIP{
@@ -474,27 +474,27 @@ func (f *eniIPFactory) submitOrder() error {
 
 	for _, eni := range f.enis {
 		if eni.ENI == nil {
-			log.Debugf("Skip initializing eni")
+			log.DebugS("Skip initializing eni")
 			continue
 		}
 		eni.Lock()
 		subnet := f.eniFactory.subnets.GetPodSubnet(eni.Subnet.ID)
 		subnetIPFamily := subnet.IPFamily()
 		if !subnetIPFamily.Support(f.ipFamily) {
-			log.Warnf("Skip submit order to eni %s because subnet ipFamily %s not support %s", eni.ID, subnetIPFamily, f.ipFamily)
+			log.WarnS("Skip submit order to eni because subnet ipFamily not support", "eniID", eni.ID, "subnetIPFamily", subnetIPFamily, "ipFamily", f.ipFamily)
 			eni.forbidAssign = true
 			eni.Unlock()
 			continue
 		}
 		if eni.forbidAssign {
-			log.Debugf("Skip submit order to eni %v because forbidAssign", eni.GetID())
+			log.DebugS("Skip submit order to eni because forbidAssign", "eniId", eni.GetID())
 			eni.Unlock()
 			continue
 		}
 
 		if eni.getCurrentIPCountLocked() < f.getLimit().IPv4MaxPerENI {
 			if err := eni.submitOrderLocked(); err != nil {
-				log.Warnf("Submit order failed, %v", err)
+				log.ErrorS(err, "Submit order failed")
 				eni.Unlock()
 				continue
 			}
@@ -546,29 +546,27 @@ func (f *eniIPFactory) initENI(eni *ENI) {
 		var ok bool
 		eni.ENI, ok = vpcEni.(*types.ENI)
 		if !ok {
-			err = fmt.Errorf("net resource created by factory is not expect type, get %+v, try release it", vpcEni)
-			log.Error(err)
-			releaseErr := f.eniFactory.Release(vpcEni)
-			if releaseErr != nil {
-				log.Errorf("Release unexpect resource %+v failed, %v", vpcEni, releaseErr)
+			log.ErrorS(nil, "Net resource created by factory is not expect type eni, try release it")
+			err = f.eniFactory.Release(vpcEni)
+			if err != nil {
+				log.ErrorS(err, "Release unexpect resource failed", "vpcEni", vpcEni, err)
 			}
 		} else {
 			ipv4s, ipv6s, err = f.volcApi.GetENIIPList(eni.Mac.String())
 			if err != nil {
-				log.Errorf("Get ip list on eni failed, %v, try release it", err)
-				releaseErr := f.eniFactory.Release(vpcEni)
-				if releaseErr != nil {
-					log.Errorf("Release eni %+v failed, %v", vpcEni, releaseErr)
+				log.ErrorS(err, "Get ip list on eni failed, try release it")
+				err = f.eniFactory.Release(vpcEni)
+				if err != nil {
+					log.ErrorS(err, "Release eni failed", "vpcEni", vpcEni)
 				}
 			}
 			if f.ipFamily.EnableIPv4() && f.ipFamily.EnableIPv6() {
 				// check ip pairs
 				if len(ipv4s) != len(ipv6s) {
-					err = fmt.Errorf("the number of ipv4 and ipv6 not equal on eni %+v, try release it", vpcEni)
-					log.Error(err)
-					releaseErr := f.eniFactory.Release(vpcEni)
-					if releaseErr != nil {
-						log.Errorf("Release eni %+v failed, %v", vpcEni, releaseErr)
+					log.ErrorS(nil, "The number of ipv4 and ipv6 not equal on eni, try release it", "vpcEni", vpcEni)
+					err = f.eniFactory.Release(vpcEni)
+					if err != nil {
+						log.ErrorS(err, "Release eni failed", "vpcEni", vpcEni)
 					}
 				}
 			}
@@ -662,7 +660,7 @@ func (f *eniIPFactory) Create(count int) ([]types.NetResource, error) {
 	if lackIP > 0 {
 		_, err = f.createEniAsync(lackIP)
 		if err != nil {
-			log.Errorf("Create eni async failed, %v", err)
+			log.ErrorS(err, "Create eni async failed")
 		} else {
 			submitted += lackIP
 		}
@@ -676,7 +674,7 @@ func (f *eniIPFactory) Create(count int) ([]types.NetResource, error) {
 	for ; submitted > 0; submitted-- { // receive allocate result
 		eniIP, err = f.receiveRes()
 		if err != nil {
-			log.Errorf("Receive allocated ip address failed, %+v", err)
+			log.ErrorS(err, "Receive allocated ip address failed")
 		} else {
 			allocatedIP = append(allocatedIP, eniIP)
 		}
@@ -719,7 +717,7 @@ func (f *eniIPFactory) ReleaseInValid(resource types.NetResource) (types.NetReso
 	f.RUnlock()
 
 	if temp == nil {
-		log.Warnf("ENI %v not exist in this instance", eni)
+		log.WarnS("ENI not exist in this instance", "eniID", eni.ID)
 		return nil, nil
 	}
 
@@ -992,7 +990,7 @@ func (f *eniIPFactory) subnetMonitor(updateInterval, aging time.Duration) {
 	go wait.JitterUntil(func() {
 		err := f.eniFactory.subnets.UpdateSubnetsStatus(helper.WithAging(aging))
 		if err != nil {
-			log.Errorf("SubnetMonitor reconcile failed, %v", err)
+			log.ErrorS(err, "SubnetMonitor reconcile failed")
 			return
 		}
 		f.Lock()
@@ -1003,7 +1001,7 @@ func (f *eniIPFactory) subnetMonitor(updateInterval, aging time.Duration) {
 			}
 			subnet := f.eniFactory.subnets.GetPodSubnet(eni.Subnet.ID)
 			if subnet == nil {
-				log.Errorf("Get subnet %s from subnetManager failed, not found")
+				log.ErrorS(nil, "Get subnet from subnetManager failed, not found")
 				continue
 			}
 			if subnet.IPFamily().Support(f.ipFamily) && subnet.GetAvailableIpAddressCount() > 0 {
@@ -1040,11 +1038,11 @@ func (f *eniIPFactory) GC() error {
 	f.Lock()
 	defer f.Unlock()
 	if len(f.eniPending) > 0 {
-		log.Infof("Skip gc for eniIPFactory due to eni pending")
+		log.InfoS("Skip gc for eniIPFactory due to eni pending")
 		return nil
 	}
 
-	log.Debugf("Start gc for eniIPFactory")
+	log.DebugS("Start gc for eniIPFactory")
 	ipKey := func(eniId, ip string) string {
 		return fmt.Sprintf("%s/%s", eniId, ip)
 	}
@@ -1206,7 +1204,7 @@ func (f *eniIPFactory) GC() error {
 			v6s := item.v6s[pairCnt:]
 			err = f.volcApi.DeallocIPAddresses(item.ID, item.Mac.String(), v4s, v6s)
 			if err != nil {
-				log.Errorf("Dealloc extra ip addresses:{%v, %v} failed, %v", v4s, v6s, err)
+				log.ErrorS(err, "Dealloc extra ip addresses failed", "v4s", v4s, "v6s", v6s)
 			}
 		}
 		if fEni == temp {

@@ -53,7 +53,7 @@ func randomIPVlanIfName() (string, error) {
 func (c *IPVlanConf) Setup(netNS ns.NetNS) error {
 	masterLink, err := netlink.LinkByName(c.MasterName)
 	if err != nil {
-		log.Log.Errorf("LinkByName error, err:%s", err.Error())
+		log.Log.ErrorS(err, "LinkByName error")
 		return err
 	}
 
@@ -74,7 +74,7 @@ func (c *IPVlanConf) Setup(netNS ns.NetNS) error {
 
 	err = netlink.LinkAdd(link)
 	if err != nil {
-		log.Log.Errorf("LinkAdd error, err:%s", err.Error())
+		log.Log.ErrorS(err, "LinkAdd error")
 		return err
 	}
 
@@ -89,7 +89,7 @@ func (c *IPVlanConf) Setup(netNS ns.NetNS) error {
 		return netlink.LinkSetName(link, c.IfName)
 	})
 	if err != nil {
-		log.Log.Errorf("LinkSetName error, err:%s", err.Error())
+		log.Log.ErrorS(err, "LinkSetName error")
 	}
 	return err
 }

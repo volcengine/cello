@@ -33,7 +33,7 @@ type setLogLevel struct{}
 func (l *setLogLevel) Handle(c *gin.Context) {
 	logLevel := c.Query("logLevel")
 	log.SetLogLevel(logLevel)
-	log.Infof("Set logLevel to %s", logLevel)
+	log.InfoS("Set logLevel", "logLevel", logLevel)
 	c.JSON(http.StatusOK, fmt.Sprintf("set log to level %s\n", logLevel))
 }
 

@@ -281,12 +281,12 @@ func (m *subnetManager) updateSubnets(legacy, flush bool, subnetIds ...string) e
 		return err == nil, nil
 	})
 	if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
-		log.Errorf("DescribeSubnets %s failed: %s", addSubnets, err.Error())
+		log.ErrorS(err, "DescribeSubnets failed", "subnets", addSubnets)
 		return err
 	}
 
 	if len(resp.Subnets) == 0 {
-		log.Errorf("Get no result while describe subnets %v in vpc %s, check if they are matched", addSubnets, m.vpcId)
+		log.ErrorS(nil, "Get no result while describe subnets in vpc, check if they are matched", "subnets", addSubnets, "vpcId", m.vpcId)
 	}
 
 	for _, subnet := range resp.Subnets {
@@ -328,7 +328,7 @@ func (m *subnetManager) FlushSubnets(subnetIds ...string) error {
 	defer m.lock.Unlock()
 	err := m.updateSubnets(false, true, subnetIds...)
 	if err == nil {
-		log.Infof("Flush subnets list: %v", subnetIds)
+		log.InfoS("Flush subnets list", "subnetIds", subnetIds)
 	}
 	return err
 }
@@ -393,7 +393,7 @@ func (m *subnetManager) UpdateSubnetsStatus(options ...UpdateSubnetsStatusOption
 		return err == nil, nil
 	})
 	if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
-		log.Errorf("DescribeSubnets %s failed: %s", subnetIds, err.Error())
+		log.ErrorS(err, "DescribeSubnets failed", "subnetIds", subnetIds)
 		return err
 	}
 
@@ -446,7 +446,7 @@ func (m *subnetManager) GetUpdatedPodSubnet(subnetId string) (subnet *PodSubnet,
 	})
 
 	if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
-		log.Errorf("DescribeSubnetAttributes %s failed: %s", subnetId, err.Error())
+		log.ErrorS(err, "DescribeSubnetAttributes failed", "subnetId", subnetId)
 		return
 	}
 
@@ -515,7 +515,7 @@ func (m *subnetManager) SelectSubnet(ipFamily types.IPFamily, options ...UpdateS
 	// update subnets status first
 	err := m.UpdateSubnetsStatus(options...)
 	if err != nil {
-		log.Errorf("UpdateSubnetsStatus failed, %s", err.Error())
+		log.ErrorS(err, "UpdateSubnetsStatus failed")
 		return nil
 	}
 

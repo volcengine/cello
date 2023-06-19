@@ -29,11 +29,15 @@ type Logger interface {
 
 	DebugWithFields(fields Fields, args ...interface{})
 
+	DebugS(msg string, kvList ...interface{})
+
 	Infof(format string, args ...interface{})
 
 	Info(args ...interface{})
 
 	InfoWithFields(fields Fields, args ...interface{})
+
+	InfoS(msg string, kvList ...interface{})
 
 	Warnf(format string, args ...interface{})
 
@@ -41,15 +45,23 @@ type Logger interface {
 
 	WarnWithFields(fields Fields, args ...interface{})
 
+	WarnS(msg string, kvList ...interface{})
+
 	Errorf(format string, args ...interface{})
 
 	Error(args ...interface{})
 
 	ErrorWithFields(fields Fields, args ...interface{})
 
+	ErrorS(err error, msg string, kvList ...interface{})
+
 	Fatalf(format string, args ...interface{})
 
+	FatalS(err error, msg string, kvList ...interface{})
+
 	Panicf(format string, args ...interface{})
+
+	PanicS(err error, msg string, kvList ...interface{})
 
 	WithFields(fields Fields) Logger
 

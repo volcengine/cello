@@ -121,7 +121,7 @@ func (e *VolcApiImpl) deleteENI(eniID string) error {
 			return true, nil
 		}
 		if errCodes.WithErrCodes(apiErr.InvalidEniIdNotFound, apiErr.InvalidEniInstanceMismatch).ErrChainEqual(err) {
-			log.Warnf("DeleteNetworkInterface %s occur err: %v, ignore", eniID, err.(apiErr.APIRequestError).ErrorCode())
+			log.WarnS("DeleteNetworkInterface occur err, ignore", "eniID", eniID, "ErrorCode", err.(apiErr.APIRequestError).ErrorCode())
 			return true, nil
 		}
 		errCodes = &apiErr.OpenApiErrCodeChain{}
@@ -134,18 +134,18 @@ func (e *VolcApiImpl) deleteENI(eniID string) error {
 	if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
 		return err
 	}
-	log.Infof("Deleted eni %s", eniID)
+	log.InfoS("Deleted eni", "eniID", eniID)
 	return nil
 }
 
 // freeENI detach and delete an ENI.
 func (e *VolcApiImpl) freeENI(eniID string, sleepDelayAfterDetach time.Duration) error {
-	log.Debugf("free ENI")
+	log.DebugS("free ENI")
 	var err error
 
 	defer func() {
 		if err != nil {
-			log.Errorf("Free eni failed, %v", err)
+			log.ErrorS(err, "Free eni failed")
 		}
 	}()
 
@@ -161,7 +161,7 @@ func (e *VolcApiImpl) freeENI(eniID string, sleepDelayAfterDetach time.Duration)
 			return true, nil
 		}
 		if errCodes.ErrChainEqual(err) {
-			log.Warnf("Detach networkInterface %s occur err: %s, ignore", eniID, err.(apiErr.APIRequestError).ErrorCode())
+			log.WarnS("Detach networkInterface occur err, ignore", "eniID", eniID, "ErrorCode", err.(apiErr.APIRequestError).ErrorCode())
 			return true, nil
 		}
 		errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus,
@@ -174,7 +174,7 @@ func (e *VolcApiImpl) freeENI(eniID string, sleepDelayAfterDetach time.Duration)
 	})
 
 	if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
-		log.Errorf("FreeENI: detach network interface failed: %s", err.Error())
+		log.ErrorS(err, "FreeENI: detach network interface failed")
 		fmtErr := fmt.Sprintf("detach eni failed, %v", err)
 		_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventReleaseResourceFailed, fmtErr)
 		return fmt.Errorf("free ENI failed while detach: %s", err.Error())
@@ -217,7 +217,7 @@ func (e *VolcApiImpl) createENI(subnet string, securityGroups []string, trunk bo
 	})
 
 	if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
-		log.Errorf("Failed to CreateNetworkInterface %s", err.Error())
+		log.ErrorS(err, "Failed to CreateNetworkInterface")
 		return "", fmt.Errorf("failed to create network interface: %s", err.Error())
 	}
 
@@ -238,7 +238,7 @@ func (e *VolcApiImpl) createENI(subnet string, securityGroups []string, trunk bo
 		if err != nil {
 			err = e.deleteENI(eniID)
 			if err != nil {
-				log.Errorf("rollback create eni due to %v", err)
+				log.ErrorS(err, "rollback create eni")
 			}
 		}
 	}()
@@ -268,7 +268,7 @@ func (e *VolcApiImpl) attachENI(eniID string) (*ec2.DescribeNetworkInterfaceAttr
 	})
 
 	if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
-		log.Errorf("Attach ENI %s failed: %s", eniID, err.Error())
+		log.ErrorS(err, "Attach ENI failed", "eniID", eniID)
 		return nil, fmt.Errorf("attach ENI %s failed: %s", eniID, err.Error())
 	}
 
@@ -296,7 +296,7 @@ func (e *VolcApiImpl) AllocENI(subnetId string, securityGroups []string, trunk b
 		"SecurityGroups": securityGroups,
 		"IPCnt":          ipCnt,
 	})
-	lg.Infof("Creating eni")
+	lg.InfoS("Creating eni")
 
 	ipv4Cnt, ipv6Cnt := 0, 0
 	if e.ipFamily.EnableIPv4() {
@@ -316,10 +316,10 @@ func (e *VolcApiImpl) AllocENI(subnetId string, securityGroups []string, trunk b
 	lg = lg.WithFields(logger.Fields{"EniId": eniId})
 	eniAttr, err := e.attachENI(eniId)
 	if err != nil {
-		lg.Errorf("Attach eni failed, deleting")
+		lg.ErrorS(nil, "Attach eni failed, deleting")
 		delErr := e.deleteENI(eniId)
 		if delErr != nil {
-			lg.Errorf("Failed to delete newly created ENI %s: %v", eniId, delErr)
+			lg.ErrorS(delErr, "Failed to delete newly created ENI", "eniId", eniId)
 		}
 		return nil, fmt.Errorf("alloc ENI: error attaching ENI: %s", err.Error())
 	}
@@ -330,7 +330,7 @@ func (e *VolcApiImpl) AllocENI(subnetId string, securityGroups []string, trunk b
 			if rollErr != nil {
 				fmtErr := fmt.Sprintf("Free eni failed while rollback AllocENI, %v", rollErr)
 				_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventAllocateResourceFailed, fmtErr)
-				lg.Errorf(fmtErr)
+				lg.ErrorS(rollErr, "Free eni failed while rollback AllocENI")
 			}
 		}
 	}()
@@ -371,7 +371,7 @@ func (e *VolcApiImpl) GetAttachedENIs(withTrunk bool) (result []*types.ENI, err 
 		celloCreatedEni[volcengine.StringValue(eni.NetworkInterfaceId)] = eni
 		macs = append(macs, volcengine.StringValue(eni.MacAddress))
 	}
-	log.Infof("Attached eni created by cello(withTrunk: %v): %v", withTrunk, macs)
+	log.InfoS("Attached eni created by cello", "withTrunk", withTrunk, "macs", macs)
 
 	for _, mac := range macs {
 		eni, inErr := e.GetENI(mac)
@@ -487,13 +487,13 @@ func (e *VolcApiImpl) AllocIPAddresses(eniID, eniMac string, v4Cnt, v6Cnt int) (
 		if err != nil {
 			fmtErr := fmt.Sprintf("AllocIPAddresses failed, %v", err)
 			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventAllocateResourceFailed, fmtErr)
-			log.Warnf("Rollback AllocIPAddresses due to %s", fmtErr)
+			log.ErrorS(err, "Rollback AllocIPAddresses failed")
 			// rollback
 			err = e.deallocIPAddressesWithLocked(eniID, eniMac, ipv4s, ipv6s)
 			if err != nil {
 				fmtErr = fmt.Sprintf("DeallocIPAddress failed while rollback AllocIPAddresses, %v", err)
 				_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventAllocateResourceFailed, fmtErr)
-				log.Errorf(fmtErr)
+				log.ErrorS(err, "DeallocIPAddress failed while rollback AllocIPAddresses")
 			}
 		}
 	}()
@@ -605,7 +605,7 @@ func (e *VolcApiImpl) AllocIPAddresses(eniID, eniMac string, v4Cnt, v6Cnt int) (
 	if err != nil {
 		return nil, nil, err
 	}
-	log.Infof("Successfully assigned IP address on ENI %s, ipv4s: %s, ipv6s: %s", eniID, ip2.ToStringSlice(ipv4s), ip2.ToStringSlice(ipv6s))
+	log.InfoS("Successfully assigned IP address on ENI", "eniID", eniID, "ipv4s", ip2.ToStringSlice(ipv4s), "ipv6s", ip2.ToStringSlice(ipv6s))
 	return ipv4s, ipv6s, nil
 }
 
@@ -631,14 +631,14 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 		"IPv4s": ip2.ToStringSlice(ipv4s),
 		"IPv6s": ip2.ToStringSlice(ipv6s),
 	})
-	lg.Infof("Deallocating ipaddress")
+	lg.InfoS("Deallocating ipaddress")
 
 	defer func() {
 		if err != nil {
 			fmtErr := fmt.Sprintf("DeallocIPAddresses for eni %s failed, %v", eniID, err)
 			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventReleaseResourceFailed, fmtErr)
 		} else {
-			lg.Infof("UnAssigned ipaddress")
+			lg.InfoS("UnAssigned ipaddress")
 		}
 	}()
 
@@ -661,7 +661,7 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 			if errCodes.WithErrCodes(apiErr.InvalidPrivateIpMalformed, apiErr.InvalidEniIdNotFound).ErrChainEqual(err) {
 				return true, nil
 			}
-			lg.Warnf("UnAssignPrivateIpAddress failed: %s", err.Error())
+			lg.ErrorS(err, "UnAssignPrivateIpAddress failed")
 			return false, nil
 		})
 
@@ -688,7 +688,7 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 			if errCodes.WithErrCodes(apiErr.InvalidIpv6Malformed, apiErr.InvalidEniIdNotFound).ErrChainEqual(err) {
 				return true, nil
 			}
-			lg.Warnf("UnassignIpv6Addresses failed: %v", err)
+			lg.ErrorS(err, "UnassignIpv6Addresses failed")
 			return false, nil
 		})
 
@@ -744,14 +744,14 @@ func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
 			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventGetInstanceQuotaFailed, fmtErr)
 		}
 	}()
-	log.Info("Waiting to get the maximum number of ip on an eni")
+	log.InfoS("Waiting to get the maximum number of ip on an eni")
 	werr := wait.ExponentialBackoff(backoff.BackOff(backoff.APIFastRetry), func() (bool, error) {
 		resp, err = e.ec2Client.DescribeInstanceTypes(&ecs.DescribeInstanceTypesInput{
 			InstanceTypes: volcengine.StringSlice([]string{e.GetInstanceType()}),
 		})
 		if err != nil {
-			log.Warnf("DescribeInstanceType %s failed, %v [requestId: %s]",
-				e.GetInstanceType(), err, resp.Metadata.RequestId)
+			log.ErrorS(err, "DescribeInstanceType failed",
+				"InstanceType", e.GetInstanceType(), "RequestId", resp.Metadata.RequestId)
 			return false, nil
 		}
 		if len(resp.InstanceTypes) != 1 ||
@@ -763,7 +763,7 @@ func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
 	})
 
 	if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
-		log.Errorf("Get instance limits failed: %s", err.Error())
+		log.ErrorS(err, "Get instance limits failed")
 		return nil, err
 	}
 	instance := resp.InstanceTypes[0]
@@ -786,7 +786,7 @@ func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
 		return nil, fmt.Errorf("limits of instance %s invalid, %s", e.GetInstanceId(), limit.String())
 	}
 	log.WithFields(logger.Fields{"InstanceID": e.GetInstanceId(), "RequestID": resp.Metadata.RequestId}).
-		Infof("Limits: %s", limit.String())
+		InfoS("Limits", "limit", limit.String())
 	return limit, nil
 }
 
@@ -796,19 +796,19 @@ func (e *VolcApiImpl) cleanUpLeakedENIs() {
 	back := time.Duration(rand.Intn(300)) * time.Second
 	time.Sleep(back)
 
-	log.Debug("Checking for leaked ENIs.")
+	log.DebugS("Checking for leaked ENIs.")
 	leakedENIs, err := e.getLeakedENIs()
 
 	if err != nil {
-		log.Errorf("Unable to get leaked ENI: %v", err)
+		log.ErrorS(err, "Unable to get leaked ENI")
 		return
 	}
 	for _, eni := range leakedENIs {
 		err := e.deleteENI(eni)
 		if err != nil {
-			log.Warnf("Failed to clean up leaked ENI %s: %v", eni, err)
+			log.ErrorS(err, "Failed to clean up leaked ENI")
 		} else {
-			log.Infof("Cleaned up leaked ENI %s", eni)
+			log.InfoS("Cleaned up leaked ENI", "eni", eni)
 		}
 	}
 }
@@ -849,7 +849,7 @@ func (e *VolcApiImpl) getNetworkInterfacesByDescribe(status string, eniType stri
 	for i := 1; i <= pages; i++ {
 		resp, err := e.describeNetworkInterfacesWithPage(i, status, eniType, eniIDs, inputFilter)
 		if err != nil {
-			log.Errorf("describeNetworkInterfacesWithPage failed: %s", err.Error())
+			log.ErrorS(err, "describeNetworkInterfacesWithPage failed")
 			return result, err
 		}
 		total := int(volcengine.Int64Value(resp.TotalCount))
@@ -863,7 +863,7 @@ func (e *VolcApiImpl) getNetworkInterfacesByDescribe(status string, eniType stri
 				pages += 1
 			}
 			first = false
-			log.Debugf("Pages: %d", pages)
+			log.DebugS("show Pages", "pages", pages)
 		}
 	}
 	return result, nil
@@ -884,7 +884,7 @@ func (e *VolcApiImpl) getLeakedENIs() ([]string, error) {
 	for _, eni := range enis {
 		updateTime, err := time.Parse(time.RFC3339, volcengine.StringValue(eni.UpdatedAt))
 		if err != nil {
-			log.Errorf("parse eni create time error: %s", err.Error())
+			log.ErrorS(err, "parse eni create time error")
 			continue
 		}
 		if time.Since(updateTime) > eniLeakedTime {
@@ -919,7 +919,7 @@ func (e *VolcApiImpl) GetENI(mac string) (*types.ENI, error) {
 
 	primaryIP, err := e.metadataSvc.GetENIPrimaryIP(ctx, mac)
 	if err != nil {
-		log.Errorf("Get primary ip failed: %s", err.Error())
+		log.ErrorS(err, "Get primary ip failed")
 		return nil, fmt.Errorf("get primary ip failed: %s", err.Error())
 	}
 
@@ -990,6 +990,6 @@ func New(apiClient ec2.EC2, ipStack types.IPFamily, subnetMgr SubnetManager, ins
 
 	go wait.Forever(impl.cleanUpLeakedENIs, time.Hour)
 
-	log.Infof("VolcApiImpl created")
+	log.InfoS("VolcApiImpl created")
 	return impl, nil
 }

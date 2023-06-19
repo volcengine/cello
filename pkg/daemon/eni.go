@@ -52,10 +52,10 @@ func (e *eniResourceManager) Name() string {
 func (e *eniResourceManager) Allocate(ctx *netContext, prefer string) (types.NetResource, error) {
 	res, err := e.pool.Allocate(ctx, prefer, types.PodKey(ctx.pod.Namespace, ctx.pod.Name))
 	if err != nil {
-		ctx.Log().Errorf("Allocate failed, %v", err)
+		ctx.Log().ErrorS(err, "Allocate failed")
 		return nil, err
 	}
-	ctx.Log().Infof("Allocate succeed: %v", res)
+	ctx.Log().InfoS("Allocate succeed", "res", res)
 	return res, nil
 }
 
@@ -63,10 +63,10 @@ func (e *eniResourceManager) Allocate(ctx *netContext, prefer string) (types.Net
 func (e *eniResourceManager) Release(ctx *netContext, resource *types.VPCResource) error {
 	err := e.pool.Release(resource.ID)
 	if err != nil {
-		ctx.Log().Errorf("Release %v failed, %v", resource, err)
+		ctx.Log().ErrorS(err, "Release failed", "resource", resource)
 		return err
 	}
-	ctx.Log().Infof("Release %v succeed", resource)
+	ctx.Log().InfoS("Release succeed", "resource", resource)
 	return nil
 }
 
@@ -120,7 +120,7 @@ func generateENIPoolCfg(cfg *config.Config, limits helper.InstanceLimits) pool.C
 }
 
 func newEniResourceManager(cfg *config.Config, subnet helper.SubnetManager, secManager helper.SecurityGroupManager, volcApi helper.VolcAPI, allocatedResource map[string]types.NetResourceAllocated, k8s k8s.Service) (*eniResourceManager, error) {
-	log.Infof("Creating EniResourceManager")
+	log.InfoS("Creating EniResourceManager")
 	m := &eniResourceManager{}
 	limit, err := helper.NewInstanceLimitManager(volcApi)
 	if err != nil {
@@ -231,13 +231,13 @@ func (f *eniFactory) CreateWithIPCount(ipCnt int, trunk bool) (types.NetResource
 
 	eni, err := f.volcApi.AllocENI(subnet.SubnetId, f.secManager.GetSecurityGroups(), trunk, ipCnt)
 	if err != nil {
-		log.Errorf("Failed to create eni, %v", err)
+		log.ErrorS(err, "Failed to create eni")
 		if strings.Contains(err.Error(), apiErr.LimitExceededEnisPerInstance) {
 			f.limit.Update()
 		}
 		return nil, err
 	}
-	log.Infof("Created eni %s", eni.String())
+	log.InfoS("Created eni", "eniID", eni.String())
 	return eni, nil
 }
 
@@ -252,9 +252,9 @@ func (f *eniFactory) Release(resource types.NetResource) error {
 	defer func() {
 		if err != nil {
 			metrics.ResourceManagerErrInc("Release", err)
-			log.Errorf("Release eni %s failed, %v", resource.GetID(), err)
+			log.ErrorS(err, "Release eni failed", "ID", resource.GetID())
 		} else {
-			log.Infof("Release eni %s success", resource.GetID())
+			log.InfoS("Release eni success", "eniID", resource.GetID())
 		}
 	}()
 	eni := resource.GetVPCResource()
@@ -297,14 +297,14 @@ func (f *eniFactory) GetResourceLimit() int {
 
 func (f *eniFactory) monitor(subnetPeriod, limitPeriod time.Duration) {
 	go wait.Forever(func() {
-		log.Debugf("Monitor check subnet")
+		log.DebugS("Monitor check subnet")
 		defer runtime.HandleCrash(log)
 		if subnet := f.subnets.SelectSubnet(f.ipFamily, helper.WithAging(subnetAging)); subnet != nil {
 			f.limit.UnCordonCreate("eniFactory subnet monitor")
 		}
 	}, subnetPeriod)
 	go wait.Forever(func() {
-		log.Debugf("Monitor check limit")
+		log.DebugS("Monitor check limit")
 		defer runtime.HandleCrash(log)
 		f.limit.Update()
 	}, limitPeriod)

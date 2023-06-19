@@ -95,10 +95,10 @@ type daemon struct {
 func createEc2(cfg *config.Config, instanceMeta helper.InstanceMetadataGetter) (ec2.EC2, error) {
 	var credentialProvider credential.Provider
 	if cfg.RamRole != nil {
-		log.Infof("Set credential provider by ramRole %s", *cfg.RamRole)
+		log.InfoS("Set credential provider by ramRole", "RamRole", *cfg.RamRole)
 		credentialProvider = credential.NewTSTProvider(*cfg.RamRole)
 	} else if cfg.CredentialAccessKeyId != nil && cfg.CredentialAccessKeySecret != nil {
-		log.Infof("Set credential provider by static ak/sk")
+		log.InfoS("Set credential provider by static ak/sk")
 		credentialProvider = credential.NewStaticProvider(&credential.Credential{
 			AccessKeyId:     datatype.StringValue(cfg.CredentialAccessKeyId),
 			SecretAccessKey: datatype.StringValue(cfg.CredentialAccessKeySecret),
@@ -109,7 +109,7 @@ func createEc2(cfg *config.Config, instanceMeta helper.InstanceMetadataGetter) (
 
 	endpoint := ""
 	if cfg.OpenApiAddress != nil {
-		log.Infof("Set openapi address to %s", *cfg.OpenApiAddress)
+		log.InfoS("Set openapi address", "OpenApiAddress", *cfg.OpenApiAddress)
 		endpoint = *cfg.OpenApiAddress
 	}
 	apiClient := metrics.NewMetricEC2Wrapper(ec2.NewClient(instanceMeta.GetRegion(), endpoint, credentialProvider))
@@ -273,14 +273,14 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 				newConfig, err := config.GetCelloConfigFromConfigMap(newObj)
 				if err != nil {
 					_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventConfigMapUpdateFailed, err.Error())
-					log.Errorf("Get cello config failed while configmap update: %v", err)
+					log.ErrorS(err, "Get cello config failed while configmap update")
 					return
 				}
 				if !sets.NewString(d.cfg.Subnets...).Equal(sets.NewString(newConfig.Subnets...)) {
 					err = d.subnetManager.FlushSubnets(newConfig.Subnets...)
 					if err != nil {
 						_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventUpdateSubnetFailed, err.Error())
-						log.Errorf("Update subnet list failed due to: %v", err)
+						log.ErrorS(err, "Update subnet list failed")
 						return
 					}
 					d.cfg.Subnets = newConfig.Subnets
@@ -290,7 +290,7 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 					err = d.securityGroupManager.UpdateSecurityGroups(newConfig.SecurityGroups)
 					if err != nil {
 						_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventUpdateSecurityGroupFailed, err.Error())
-						log.Errorf("Update security group list failed due to: %v", err)
+						log.ErrorS(err, "Update security group list failed")
 						return
 					}
 					d.cfg.SecurityGroups = newConfig.SecurityGroups
@@ -330,11 +330,13 @@ func (d *daemon) gc() error {
 	signal.MuteChannel(signal.WakeGC)
 	defer signal.UnmuteChannel(signal.WakeGC)
 	var err error
-	log.Infof("Daemon GC start")
+	log.DebugS("Daemon gc start")
 	defer func() {
-		if err == nil {
+		if err != nil {
+			log.ErrorS(err, "Daemon gc failed")
+		} else {
 			d.lastGC = time.Now()
-			log.Infof("Daemon GC finished")
+			log.DebugS("Daemon gc finished")
 		}
 	}()
 
@@ -415,9 +417,9 @@ func (d *daemon) judgmentEvictPod(ctx *netContext, resourceLimit int) error {
 	pods, err := d.podPersistenceManager.List()
 	if err == nil && len(pods) >= resourceLimit {
 		info := "number of pods currently exceeds available net resources"
-		ctx.log.Infof("Pod evicted due to %s", info)
+		ctx.log.InfoS("Pod evicted", "info", info)
 		if err = d.k8s.EvictPod(ctx, ctx.pod.Name, ctx.pod.Namespace); err != nil {
-			ctx.log.Errorf("Pod evicted failed, %v", err)
+			ctx.log.ErrorS(err, "Pod evicted failed")
 			return fmt.Errorf("%s, pod evicted but failed, %v", info, err)
 		} else {
 			return fmt.Errorf("%s, pod evicted", info)
@@ -431,7 +433,7 @@ func (d *daemon) allocateENI(ctx *netContext, oldPod *types.Pod) (*types.ENI, er
 	oldRes := oldPod.GetVPCResourceByType(types.NetResourceTypeEni)
 	prefer := ""
 	if length := len(oldRes); length > 1 {
-		ctx.Log().Warnf("ENI for pod %s is more than one", types.PodKey(oldPod.Namespace, oldPod.Name))
+		ctx.Log().WarnS("ENI for pod is more than one", "pod", types.PodKey(oldPod.Namespace, oldPod.Name))
 	} else if length == 1 {
 		prefer = oldRes[0].ID
 	}
@@ -455,7 +457,7 @@ func (d *daemon) allocateENIIP(ctx *netContext, oldPod *types.Pod) (*types.ENIIP
 	oldRes := oldPod.GetVPCResourceByType(types.NetResourceTypeEniIp)
 	prefer := ""
 	if length := len(oldRes); length > 1 {
-		ctx.Log().Warnf("ENI for pod %s is more than one", types.PodKey(oldPod.Namespace, oldPod.Name))
+		ctx.Log().WarnS("ENI for pod is more than one", "pod", types.PodKey(oldPod.Namespace, oldPod.Name))
 	} else if length == 1 {
 		prefer = oldRes[0].ID
 	}
@@ -500,14 +502,14 @@ func (d *daemon) createVpcEndpoint(ctx context.Context, req *pbrpc.CreateEndpoin
 		"SandboxContainerId": req.InfraContainerId,
 		"IfName":             req.IfName,
 	})
-	lg.Infof("Handle CreateEndpoint")
+	lg.InfoS("Handle CreateEndpoint")
 
 	defer runtime.HandleCrash(lg)
 	defer func() {
 		if err != nil {
-			lg.Warnf("Fail to handle CreateEndpoint: %v", err)
+			lg.ErrorS(err, "Fail to handle CreateEndpoint")
 		} else {
-			lg.Infof("CreateEndpoint result: %s", resp.String())
+			lg.InfoS("CreateEndpoint", "result", resp.String())
 		}
 	}()
 
@@ -557,11 +559,11 @@ func (d *daemon) createVpcEndpoint(ctx context.Context, req *pbrpc.CreateEndpoin
 			for i, r := range netCtx.res {
 				err = d.podPersistenceManager.Delete(newPod.Namespace, newPod.Name)
 				if err != nil {
-					log.Errorf("Delete pod from db failed while rollback, %v", err)
+					log.ErrorS(err, "Delete pod from db failed while rollback")
 				}
 				mgr := d.managers[r.Type]
 				if mgr == nil {
-					lg.Warnf("Find %s resource without manger", r.Type)
+					lg.WarnS("Find resource without manger", "type", r.Type)
 					continue
 				}
 				err = mgr.Release(netCtx, &netCtx.res[i])
@@ -659,13 +661,13 @@ func (d *daemon) deleteVpcEndpoint(ctx context.Context, req *pbrpc.DeleteEndpoin
 		"Name":               req.Name,
 		"SandboxContainerId": req.InfraContainerId,
 	})
-	lg.Infof("Handle DeleteEndpoint")
+	lg.InfoS("Handle DeleteEndpoint")
 	defer runtime.HandleCrash(lg)
 	defer func() {
 		if err != nil {
-			lg.Warnf("Fail to handle DeleteEndpoint: %s", err.Error())
+			lg.ErrorS(err, "Fail to handle DeleteEndpoint")
 		} else {
-			lg.Infof("Handle DeleteEndpoint succeed")
+			lg.InfoS("Handle DeleteEndpoint succeed")
 		}
 	}()
 
@@ -714,7 +716,7 @@ func (d *daemon) deleteVpcEndpoint(ctx context.Context, req *pbrpc.DeleteEndpoin
 	for i, r := range oldPod.Resources {
 		mgr := d.managers[r.Type]
 		if mgr == nil {
-			lg.Errorf("Find %s resource without manger", r.Type)
+			lg.ErrorS(nil, "Find resource without manger", "Type", r.Type)
 			continue
 		}
 		err = mgr.Release(netCtx, &oldPod.Resources[i])
@@ -757,7 +759,7 @@ func (d *daemon) verifyPodNetwork(podNetworkMode string) bool {
 }
 
 func (d *daemon) syncPodPersistence() error {
-	log.Infof("Sync pod persistence")
+	log.InfoS("Sync pod persistence")
 	podMap := map[string]*v1.Pod{}
 
 	persistPods, err := d.podPersistenceManager.List()
@@ -786,7 +788,7 @@ func (d *daemon) syncPodPersistence() error {
 			}
 		}
 
-		log.Warnf("Found pod[%s/%s] in persistence not exist in k8s, it would be deleted.", pod.Namespace, pod.Name)
+		log.WarnS("Found pod in persistence not exist in k8s, it would be deleted.", "ns", pod.Namespace, "name", pod.Name)
 		err = d.podPersistenceManager.Delete(pod.Namespace, pod.Name)
 		if err != nil {
 			return fmt.Errorf("delete pod[%s] in persistence failed: %w", pod.Name, err)
@@ -796,7 +798,7 @@ func (d *daemon) syncPodPersistence() error {
 }
 
 func (d *daemon) startServers(stopCh chan struct{}) error {
-	log.Infof("Cello daemon ready, start service")
+	log.InfoS("Cello daemon ready, start service")
 
 	err := d.devicePluginManager.Serve(stopCh)
 	if err != nil {
@@ -817,7 +819,7 @@ func (d *daemon) startServers(stopCh chan struct{}) error {
 	defer func(debugServer *http.Server) {
 		inErr := debugServer.Close()
 		if inErr != nil {
-			log.Errorf("DebugServer close failed, %v", inErr)
+			log.ErrorS(inErr, "DebugServer close failed")
 		}
 	}(debugServer)
 
@@ -829,7 +831,7 @@ func (d *daemon) startServers(stopCh chan struct{}) error {
 	defer func(ctlServer *http.Server) {
 		inErr := ctlServer.Close()
 		if inErr != nil {
-			log.Errorf("CtlServer close failed, %v", inErr)
+			log.ErrorS(inErr, "CtlServer close failed")
 		}
 	}(ctlServer)
 
@@ -866,10 +868,10 @@ func (d *daemon) startEndpointGrpcServer() (*grpc.Server, error) {
 	pbrpc.RegisterCelloServer(grpcServer, d)
 
 	go func() {
-		log.Infof("Start grpc server")
+		log.InfoS("Start grpc server")
 		err = grpcServer.Serve(l)
 		if err != nil {
-			log.Warnf("Grpc server exit: %v", err)
+			log.ErrorS(err, "Grpc server exit")
 		}
 	}()
 	return grpcServer, nil
@@ -898,10 +900,10 @@ func (d *daemon) startDebugServer() (*http.Server, error) {
 
 	go func() {
 		defer runtime.HandleCrash(log)
-		log.Infof("Start debug server")
+		log.InfoS("Start debug server")
 		err := server.ListenAndServe()
 		if err != nil {
-			log.Warnf("Debug server exit: %v", err)
+			log.ErrorS(err, "Debug server exit")
 		}
 	}()
 
@@ -1032,7 +1034,7 @@ func (d *daemon) GetStockPodCount() int {
 	var count int
 	pods, err := d.k8s.ListCachedPods()
 	if err != nil {
-		log.Errorf("List cached pods failed")
+		log.ErrorS(err, "List cached pods failed")
 		return count
 	}
 	for _, pod := range pods {
@@ -1082,7 +1084,7 @@ func watchResourceNum(ctx context.Context, pluginManger deviceplugin.Manager, re
 			return
 		}
 		if err != nil {
-			log.Errorf("update resource for %s failed, %v", resName, err)
+			log.ErrorS(err, "update resource", "resName", resName)
 		}
 	}
 }

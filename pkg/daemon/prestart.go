@@ -36,7 +36,7 @@ func PreHookAction() error {
 
 // updateLocalPodDB migrate local Pod persistence DB to the current version.
 func updateLocalPodDB() error {
-	log.Infof("Start convert pod format in persistence db")
+	log.InfoS("Start convert pod format in persistence db")
 
 	ipNsMapping := map[string]string{}
 	namespaces, err := netns.ListAllNetNs()
@@ -109,7 +109,7 @@ func updateLocalPodDB() error {
 	}
 
 	podPersist.Close()
-	log.Infof("Convert pod format in persistence db success")
+	log.InfoS("Convert pod format in persistence db success")
 	return nil
 }
 

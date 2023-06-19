@@ -45,27 +45,27 @@ func (p *STSProvider) Get() *Credential {
 }
 
 func (p *STSProvider) refresh() *Credential {
-	log.Debugf("start to refresh sts for role %s", p.role)
+	log.DebugS("start to refresh sts", "role", p.role)
 	for {
 		c, err := p.getNewSTS(p.role)
 		if err != nil {
-			log.Warnf("failed to get new sts: %s", err.Error())
+			log.ErrorS(err, "failed to get new sts")
 			t := time.NewTimer(10 * time.Second)
 			<-t.C
 			continue
 		}
-		log.Debugf("STS refreshed, current time %s, expired time %s", c.CurrentTime.String(), c.ExpiredTime.String())
+		log.DebugS("STS refreshed", "CurrentTime", c.CurrentTime.String(), "ExpiredTime", c.ExpiredTime.String())
 		return c
 	}
 }
 
 func (p *STSProvider) init() {
-	log.Infof("Init STSProvider")
+	log.InfoS("Init STSProvider")
 	p.currentCredential = p.refresh()
 	go func() {
 		for {
 			d := p.currentCredential.ExpiredTime.Sub(p.currentCredential.CurrentTime) / 2
-			log.Debugf("Next refresh task was scheduled after %s", d.String())
+			log.DebugS("Next refresh task was scheduled", "after", d.String())
 			t := time.NewTimer(d)
 			<-t.C
 			p.currentCredential = p.refresh()

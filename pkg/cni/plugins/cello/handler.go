@@ -37,7 +37,6 @@ import (
 	"github.com/volcengine/cello/pkg/metrics"
 	"github.com/volcengine/cello/pkg/pbrpc"
 	"github.com/volcengine/cello/pkg/utils/iproute"
-	"github.com/volcengine/cello/pkg/utils/logger"
 	celloTypes "github.com/volcengine/cello/types"
 )
 
@@ -50,7 +49,7 @@ const (
 func CmdAdd(args *skel.CmdArgs) error {
 	result, err := InternalAdd(args)
 	if err != nil {
-		log.Log.Errorf("Failed to add: %s", err.Error())
+		log.Log.ErrorS(err, "Failed to add")
 		return err
 	}
 	err = cniTypes.PrintResult(result, result.Version())
@@ -64,7 +63,7 @@ func CmdAdd(args *skel.CmdArgs) error {
 func CmdDel(args *skel.CmdArgs) error {
 	err := InternalDel(args)
 	if err != nil {
-		log.Log.Errorf("Failed to del%s", err.Error())
+		log.Log.ErrorS(err, "Failed to del")
 	}
 	return err
 }
@@ -83,7 +82,7 @@ func InternalAdd(args *skel.CmdArgs) (result cniTypes.Result, err error) {
 	if err != nil {
 		return
 	}
-	log.Log.Infof("CniConf: %+v", cniConfig)
+	log.Log.InfoS("show CniConf", "CniConf", cniConfig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultCniTimeout)
 	defer cancel()
@@ -114,13 +113,12 @@ func InternalAdd(args *skel.CmdArgs) (result cniTypes.Result, err error) {
 		err = fmt.Errorf("cello create endpoint failed: %w", err)
 		return
 	}
-	log.Log.Infof("cello create endpoint response: %s", createEndpointResponse.String())
+	log.Log.InfoS("Cello create endpoint response", "response", createEndpointResponse.String())
 	start := time.Now()
 
 	defer func() {
 		duration := metrics.MsSince(start)
-		log.Log.WithFields(logger.Fields{"TimeCost": duration, "Success": err == nil}).Infof("Setup driver for %s/%s",
-			k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME)
+		log.Log.InfoS("Setup driver", "TimeCost", fmt.Sprintf("%f", duration), "Success", err == nil, "ns", k8sConfig.K8S_POD_NAMESPACE, "name", k8sConfig.K8S_POD_NAME)
 		if err != nil {
 			// TODO: support delete specific network interface.
 			if cniConfig.RuntimeConfig.NetworkInterfaceConfig == nil {
@@ -131,7 +129,7 @@ func InternalAdd(args *skel.CmdArgs) (result cniTypes.Result, err error) {
 				}
 				_, err2 := celloClient.DeleteEndpoint(ctx, deleteEndpointRequest)
 				if err2 != nil {
-					log.Log.Errorf("Request to delete endpoint failed: %s", err.Error())
+					log.Log.ErrorS(err, "Request to delete endpoint failed")
 				}
 			}
 		}
@@ -170,7 +168,7 @@ func InternalAdd(args *skel.CmdArgs) (result cniTypes.Result, err error) {
 	}
 	appendNetworkConfigToCNIResult(cniResult, networkConfig)
 	cniResultJson, _ := json.Marshal(cniResult)
-	log.Log.Debugf("CNI Result: %s", cniResultJson)
+	log.Log.DebugS("CNI Result", "result", cniResultJson)
 	result = cniResult
 	return
 }
@@ -196,12 +194,12 @@ func InternalDel(args *skel.CmdArgs) error {
 	err = driver.GenericTeardownNetwork(args.Netns)
 	duration := metrics.MsSince(start)
 	if err != nil {
-		log.Log.WithFields(logger.Fields{"TimeCost": duration, "Netns": args.Netns}).
-			Errorf("Teardown driver for %s/%s/%s failed, %v", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, args.IfName, err)
+		log.Log.ErrorS(err, "Teardown driver failed", "TimeCost", duration, "Netns",
+			args.Netns, "namespace", k8sConfig.K8S_POD_NAMESPACE, "name", k8sConfig.K8S_POD_NAME, "IfName", args.IfName)
 		return nil
 	}
-	log.Log.WithFields(logger.Fields{"TimeCost": duration, "Netns": args.Netns}).
-		Infof("Teardown driver for %s/%s/%s success", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, args.IfName)
+	log.Log.InfoS("eardown driver success", "TimeCost", duration, "Netns",
+		args.Netns, "namespace", k8sConfig.K8S_POD_NAMESPACE, "name", k8sConfig.K8S_POD_NAME, "IfName", args.IfName)
 
 	if cniConfig.RuntimeConfig.NetworkInterfaceConfig == nil {
 		deleteEndpointRequest := &pbrpc.DeleteEndpointRequest{
@@ -211,12 +209,12 @@ func InternalDel(args *skel.CmdArgs) error {
 		}
 		_, err = celloClient.DeleteEndpoint(ctx, deleteEndpointRequest)
 		if err != nil {
-			log.Log.Errorf("Request to delete endpoint failed: %s", err.Error())
+			log.Log.ErrorS(err, "Request to delete endpoint failed")
 			return err
 		}
 	} // if static ipam, do nothing
 
-	log.Log.Infof("Request to delete endpoint succeed")
+	log.Log.InfoS("Request to delete endpoint succeed")
 
 	return nil
 }
@@ -307,7 +305,7 @@ func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, network *pbrpc
 
 	hostIPSet, err := iproute.GetHostIP()
 	if err != nil {
-		log.Log.Warnf("failed to get host addresses: %v", err.Error())
+		log.Log.WarnS("Failed to get host addresses", "err", err)
 	}
 
 	hostLink, err := iproute.GetHostLinkByDefaultRoute(netlink.FAMILY_V4)

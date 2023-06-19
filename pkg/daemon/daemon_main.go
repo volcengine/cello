@@ -16,7 +16,6 @@
 package daemon
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -28,12 +27,12 @@ import (
 
 func Execute() {
 	if err := PreHookAction(); err != nil {
-		log.Fatalf("PreHook action execute failed, %v", err)
+		log.FatalS(err, "PreHook action execute failed")
 	}
 
 	d, err := NewDaemon()
 	if err != nil {
-		log.Fatalf("Create cello daemon failed, %v", err)
+		log.FatalS(err, "Create cello daemon failed")
 	}
 
 	stopCh := make(chan struct{})
@@ -41,7 +40,7 @@ func Execute() {
 
 	err = d.start(stopCh)
 	if err != nil {
-		log.Fatalf("Run Daemon failed, %v", err)
+		log.FatalS(err, "Run Daemon failed")
 	}
 }
 
@@ -53,23 +52,23 @@ func signalHandler(stopCh chan struct{}) {
 		syscall.SIGUSR1, syscall.SIGUSR2)
 
 	for s := range sig {
-		log.Infof(fmt.Sprintf("Cello-agent received user signal %d", s))
+		log.InfoS("Cello-agent received user signal", "signal", s)
 		switch s {
 		case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM:
-			log.Infof(fmt.Sprintf("cello-agent received user signal %d, graceful exit now...", s))
+			log.InfoS("cello-agent received user signal, graceful exit now...", "signal", s)
 			closeOnce.Do(func() {
 				close(stopCh)
 				time.Sleep(1 * time.Second)
 			})
 		case syscall.SIGUSR1, syscall.SIGUSR2, syscall.SIGQUIT, syscall.SIGABRT:
-			log.Infof(fmt.Sprintf("Cello-agent received user signal %d, graceful exit now...", s))
-			log.Infof(string(debug.Stack()))
+			log.InfoS("Cello-agent received user signal, graceful exit now...", "signal", s)
+			log.InfoS(string(debug.Stack()))
 			closeOnce.Do(func() {
 				close(stopCh)
 				time.Sleep(1 * time.Second)
 			})
 		default:
-			log.Warnf(fmt.Sprintf("Cello-agent receive unknown os term signal %v. ignore...", s))
+			log.WarnS("Cello-agent receive unknown os term signal. ignore...", "signal", s)
 		}
 	}
 

@@ -37,11 +37,11 @@ const (
 // ServeMetrics sets up cello metrics.
 func ServeMetrics(serveMux *http.ServeMux) {
 	if disableMetrics() {
-		log.Info("Metrics endpoint disabled")
+		log.InfoS("Metrics endpoint disabled")
 		return
 	}
 
-	log.Infof("Register metrics server")
+	log.InfoS("Register metrics server")
 	serveMux.Handle("/metrics", promhttp.Handler())
 }
 
@@ -56,7 +56,7 @@ func getEnvBoolWithDefault(envName string, def bool) bool {
 		if err == nil {
 			return parsedValue
 		}
-		log.Errorf("Failed to parse %s, using default `%t`: %v", envName, def, err.Error())
+		log.ErrorS(err, "Failed to parse, using default", "envName", envName)
 	}
 	return def
 }

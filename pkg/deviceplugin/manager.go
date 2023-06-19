@@ -83,22 +83,22 @@ func (manager *PluginManager) register() error {
 func (manager *PluginManager) Serve(stopCh chan struct{}) error {
 	err := manager.start()
 	if err != nil {
-		log.Errorf("Device plugin start failed: %v", err)
+		log.ErrorS(err, "Device plugin start failed")
 		return err
 	}
 	err = manager.register()
 	if err != nil {
-		log.Errorf("Device plugin register failed: %v", err)
+		log.ErrorS(err, "Device plugin register failed")
 		return err
 	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Errorf("Create watcher failed: %v", err)
+		log.ErrorS(err, "Create watcher failed")
 		return err
 	}
 	err = watcher.Add(path.Clean(DevicePluginPath))
 	if err != nil {
-		log.Errorf("Watch kubelet failed")
+		log.ErrorS(err, "Watch kubelet failed")
 		return err
 	}
 
@@ -111,21 +111,21 @@ func (manager *PluginManager) Serve(stopCh chan struct{}) error {
 					return
 				}
 				if event.Name == KubeletSocket && event.Has(fsnotify.Create) {
-					log.Infof(" %s created, restarting.", KubeletSocket)
+					log.InfoS("KubeletSocket created, restarting.", "KubeletSocket", KubeletSocket)
 					manager.Stop()
 					manager.ctx, manager.cancel = context.WithCancel(context.Background())
 					_ = manager.start()
 					err = manager.register()
 					if err != nil {
-						log.Errorf("Register failed after kubelet restart", err)
+						log.ErrorS(err, "Register failed after kubelet restart")
 					}
 				} else if event.Name == "kubelet.sock" && event.Op&fsnotify.Remove == fsnotify.Remove {
-					log.Infof("Kubelet stopped")
+					log.InfoS("Kubelet stopped")
 				}
 
 			case err := <-watcher.Errors:
 				if err != nil {
-					log.Errorf("Watch kubelet failed:v%", err.Error())
+					log.ErrorS(err, "Watch kubelet failed")
 				}
 			case <-stopCh:
 				break
@@ -176,7 +176,7 @@ func (manager *PluginManager) start() error {
 		go func() {
 			err := plugin.Server().Serve(sock)
 			if err != nil {
-				log.Errorf("Failed to serve deviceplugin grpc server.")
+				log.ErrorS(nil, "Failed to serve deviceplugin grpc server.")
 			}
 		}()
 
@@ -188,7 +188,7 @@ func (manager *PluginManager) start() error {
 		if err != nil {
 			return err
 		}
-		log.Infof("Start device plugin for %v", VolcNameSpace+plugin.ResourceName())
+		log.InfoS("Start device plugin", "ResourceName", VolcNameSpace+plugin.ResourceName())
 	}
 	return nil
 }

@@ -50,14 +50,14 @@ func RegisterChannel(signal string, ch chan<- SigData) error {
 // NotifySignal non-blocking notification.
 func NotifySignal(signal string, data SigData) {
 	if _, exist := muteSignal[signal]; exist {
-		log.Infof("Signal %s muted", signal)
+		log.InfoS("Signal muted", "signal", signal)
 		return
 	}
 	if ch, exist := signalChannels[signal]; exist {
 		select {
 		case ch <- data:
 		default:
-			log.Infof("Signal [%v %v] processing", signal, data)
+			log.InfoS("Signal processing", "signal", signal, "data", data)
 		}
 	}
 }

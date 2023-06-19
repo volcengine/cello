@@ -75,7 +75,7 @@ func SetupDataPath(setupConfig *types.SetupConfig) error {
 	default:
 		return fmt.Errorf("unsupport datapath %d", setupConfig.DP)
 	}
-	log.Log.Infof("DataPath driver %s setup network, %s", dataPathDriver.Name(), setupConfig.String())
+	log.Log.InfoS("DataPath driver setup network", "dataPathDriver", dataPathDriver.Name(), "setupConfig", setupConfig.String())
 	return dataPathDriver.SetupNetwork(setupConfig)
 }
 
@@ -100,7 +100,7 @@ func GenericTeardownNetwork(netNs string) error {
 	defer func(containerNs ns.NetNS) {
 		inErr := containerNs.Close()
 		if inErr != nil {
-			log.Log.Errorf("Failed to close netns due to: %v", inErr)
+			log.Log.ErrorS(inErr, "Failed to close netns")
 		}
 	}(containerNs)
 
@@ -132,7 +132,7 @@ func GenericTeardownNetwork(netNs string) error {
 				}
 				name, inErr := ip.RandomVethName()
 				if inErr != nil {
-					log.Log.Warnf("Generate random link name for %s failed: %s", link.Attrs().Name, inErr)
+					log.Log.WarnS("Generate random link name failed", "linkName", link.Attrs().Name, "err", inErr)
 					continue
 				}
 				errList = append(errList, netlink.LinkSetDown(link))
@@ -146,7 +146,7 @@ func GenericTeardownNetwork(netNs string) error {
 	})
 
 	if err != nil {
-		log.Log.Errorf("failed to cleanup container network: %v", err)
+		log.Log.ErrorS(err, "Failed to cleanup container network")
 	}
 
 	// Cleanup fast path.
@@ -154,7 +154,7 @@ func GenericTeardownNetwork(netNs string) error {
 		for _, addr := range fastPath.dst {
 			err = teardownFastPathCfg(addr.IPNet, fastPath.table)
 			if err != nil {
-				log.Log.Warnf("TeardownFastPathCfg[dst: %s, table: %d] failed, %s", addr.IP.String(), fastPath.table, err.Error())
+				log.Log.ErrorS(err, "TeardownFastPathCfg failed", "ip", addr.IP.String(), "table", fastPath.table)
 			}
 		}
 	}

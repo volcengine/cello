@@ -52,6 +52,10 @@ func (logf *structuredLogger) DebugWithFields(fields Fields, args ...interface{}
 	logf.logrusLogger.WithFields(logrus.Fields(fields)).Debug(args...)
 }
 
+func (logf *structuredLogger) DebugS(msg string, kvList ...interface{}) {
+	logf.logrusLogger.WithFields(*mergeField(kvList...)).Debug(msg)
+}
+
 func (logf *structuredLogger) Infof(format string, args ...interface{}) {
 	logf.logrusLogger.Infof(format, args...)
 }
@@ -62,6 +66,10 @@ func (logf *structuredLogger) Info(args ...interface{}) {
 
 func (logf *structuredLogger) InfoWithFields(fields Fields, args ...interface{}) {
 	logf.logrusLogger.WithFields(logrus.Fields(fields)).Info(args...)
+}
+
+func (logf *structuredLogger) InfoS(msg string, kvList ...interface{}) {
+	logf.logrusLogger.WithFields(*mergeField(kvList...)).Info(msg)
 }
 
 func (logf *structuredLogger) Warnf(format string, args ...interface{}) {
@@ -76,6 +84,10 @@ func (logf *structuredLogger) WarnWithFields(fields Fields, args ...interface{})
 	logf.logrusLogger.WithFields(logrus.Fields(fields)).Warn(args...)
 }
 
+func (logf *structuredLogger) WarnS(msg string, kvList ...interface{}) {
+	logf.logrusLogger.WithFields(*mergeField(kvList...)).Warn(msg)
+}
+
 func (logf *structuredLogger) Errorf(format string, args ...interface{}) {
 	logf.logrusLogger.Errorf(format, args...)
 }
@@ -88,12 +100,39 @@ func (logf *structuredLogger) ErrorWithFields(fields Fields, args ...interface{}
 	logf.logrusLogger.WithFields(logrus.Fields(fields)).Error(args...)
 }
 
+func (logf *structuredLogger) ErrorS(err error, msg string, kvList ...interface{}) {
+	field := mergeField(kvList...)
+	if err != nil {
+		logf.logrusLogger.WithFields(logrus.Fields{"err": err}).WithFields(*field).Error(msg)
+		return
+	}
+	logf.logrusLogger.WithFields(*field).Error(msg)
+}
+
 func (logf *structuredLogger) Fatalf(format string, args ...interface{}) {
 	logf.logrusLogger.Fatalf(format, args...)
 }
 
+func (logf *structuredLogger) FatalS(err error, msg string, kvList ...interface{}) {
+	field := mergeField(kvList...)
+	if err != nil {
+		logf.logrusLogger.WithFields(logrus.Fields{"err": err}).WithFields(*field).Fatal(msg)
+		return
+	}
+	logf.logrusLogger.WithFields(*field).Fatal(msg)
+}
+
 func (logf *structuredLogger) Panicf(format string, args ...interface{}) {
 	logf.logrusLogger.Panicf(format, args...)
+}
+
+func (logf *structuredLogger) PanicS(err error, msg string, kvList ...interface{}) {
+	field := mergeField(kvList...)
+	if err != nil {
+		logf.logrusLogger.WithFields(logrus.Fields{"err": err}).WithFields(*field).Panic(msg)
+		return
+	}
+	logf.logrusLogger.WithFields(*field).Panic(msg)
 }
 
 func (logf *structuredLogger) WithFields(fields Fields) Logger {
@@ -228,4 +267,22 @@ func getCaller(skip int) (uintptr, string, int) {
 	}
 
 	return pc, f, l
+}
+
+func mergeField(kvList ...interface{}) *logrus.Fields {
+	if len(kvList) == 0 {
+		return &logrus.Fields{}
+	}
+
+	field := logrus.Fields{}
+	for i := 0; i < len(kvList)/2; i++ {
+		key := kvList[i*2]
+		val := kvList[i*2+1]
+		if sK, ok := key.(string); ok {
+			field[sK] = val
+		} else {
+			field[fmt.Sprintf("%s", key)] = val
+		}
+	}
+	return &field
 }

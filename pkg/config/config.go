@@ -270,7 +270,7 @@ func verifyConfig(cfg *Config) error {
 	ipFamily := types.IPFamily(*cfg.IPFamily)
 	hostIPSet, err := iproute.GetHostIP()
 	if err != nil {
-		log.Warnf("get host ip failed: %v", err)
+		log.ErrorS(err, "get host ip failed")
 	}
 	if ipFamily.EnableIPv4() && hostIPSet.IPv4 == nil {
 		return fmt.Errorf("IPFamily is %s, ip stack of host does not support, %v", datatype.StringValue(cfg.IPFamily), err)

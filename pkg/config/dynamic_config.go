@@ -46,12 +46,12 @@ func GetMergedConfigFromConfigMap(k8s k8s.Service) (*Config, error) {
 
 	nodeConfig, err := getNodeScopeConfig(k8s)
 	if err != nil {
-		log.Errorf("Get node scope config failed, %v", err)
+		log.ErrorS(err, "Get node scope config failed")
 	}
 	if nodeConfig == nil {
 		return clusterConfig, nil
 	}
-	log.Infof("Get node scope config: %s", nodeConfig.String())
+	log.InfoS("Get node scope config", "nodeConfig", nodeConfig.String())
 
 	// Currently, only the following parameters are supported to be configured via node scope configmap
 	if nodeConfig.PoolTargetLimit != nil {
@@ -85,7 +85,7 @@ func getNodeScopeConfig(k8s k8s.Service) (*Config, error) {
 	}
 	nsAndName := strings.SplitN(cfName, ".", 2)
 	if length := len(nsAndName); length != 2 {
-		log.Errorf("Dynamic config label %s err[must like nameSpace.name]", cfName)
+		log.ErrorS(nil, "Dynamic config label err[must like nameSpace.name]", "cfName", cfName)
 		return nil, fmt.Errorf("dynamic config label %s err[must like nameSpace.name]", cfName)
 	}
 

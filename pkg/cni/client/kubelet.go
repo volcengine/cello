@@ -61,7 +61,7 @@ func GetResourceClient(kubeletSocket string) (types.ResourceClient, error) {
 	// If Kubelet resource API endpoint exist use that by default
 	// Or else fallback with checkpoint file
 	if hasKubeletAPIEndpoint(kubeletSocketURL) {
-		log.Log.Debugf("GetResourceClient: using Kubelet resource API endpoint")
+		log.Log.DebugS("GetResourceClient: using Kubelet resource API endpoint")
 		return getKubeletClient(kubeletSocketURL)
 	}
 
@@ -132,7 +132,7 @@ func (rc *kubeletClient) GetPodResourceMap(ns, name string) (map[string]*types.R
 		if pr.Name == name && pr.Namespace == ns {
 			for _, cnt := range pr.Containers {
 				for _, dev := range cnt.Devices {
-					log.Log.Infof("Got device %+v for pod %s/%s", dev, ns, name)
+					log.Log.InfoS("Got device for pod", "dev", dev, "ns", ns, "name", name)
 					if rInfo, ok := resourceMap[dev.ResourceName]; ok {
 						rInfo.DeviceIDs = append(rInfo.DeviceIDs, dev.DeviceIds...)
 					} else {
@@ -148,7 +148,7 @@ func (rc *kubeletClient) GetPodResourceMap(ns, name string) (map[string]*types.R
 func hasKubeletAPIEndpoint(url *url.URL) bool {
 	// Check for kubelet resource API socket file
 	if _, err := os.Stat(url.Path); err != nil {
-		log.Log.Debugf("hasKubeletAPIEndpoint: error looking up kubelet resource api socket file: %q", err)
+		log.Log.DebugS("hasKubeletAPIEndpoint: error looking up kubelet resource api socket file", "err", err)
 		return false
 	}
 	return true

@@ -228,7 +228,7 @@ func (k *k8sManager) initPodInformer() {
 	factory.Start(stopCh.Done())
 	// wait informer synced
 	if !cache.WaitForCacheSync(stopCh.Done(), informer.HasSynced) {
-		log.Errorf("Timeout to wait pod informer synced")
+		log.ErrorS(nil, "Timeout to wait pod informer synced")
 		runtime.HandleError(fmt.Errorf("wait pod informer synced failed, timeout"))
 		return
 	}
@@ -236,7 +236,7 @@ func (k *k8sManager) initPodInformer() {
 	// mark podLister ready
 	k.podListerOnce.Do(func() {
 		close(k.podListerReady)
-		log.Infof("K8s pod informer synced, pod lister ready")
+		log.InfoS("K8s pod informer synced, pod lister ready")
 	})
 }
 
@@ -274,7 +274,7 @@ func (k *k8sManager) initConfigMapInformer() {
 	informersFactory.Start(stopCh.Done())
 	// wait informer synced
 	if !cache.WaitForCacheSync(stopCh.Done(), k.configMapInformer.HasSynced) {
-		log.Errorf("Timeout to wait configmap informer synced")
+		log.ErrorS(nil, "Timeout to wait configmap informer synced")
 		runtime.HandleError(fmt.Errorf("wait configmap informer synced failed, timeout"))
 		return
 	}
@@ -363,7 +363,7 @@ func (k *k8sManager) GetNodeAnnotation() (map[string]string, error) {
 }
 
 func (k *k8sManager) PatchPodAnnotation(ctx context.Context, namespace, name string, anno map[string]string) error {
-	log.Infof("show ns:%s, name:%s, PodAnnotation:%v", namespace, name, anno)
+	log.InfoS("show PodAnnotation", "ns", namespace, "name", name, "anno", anno)
 	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
 		return true
 	}, func() error {
@@ -418,7 +418,7 @@ func NewK8sService(nodeName string, clientSet kubernetes.Interface) (Service, er
 		node:           node,
 		podListerReady: make(chan struct{}),
 	}
-	log.Infof("Init pod informer...")
+	log.InfoS("Init pod informer...")
 	go k8sM.initPodInformer()
 	k8sM.initConfigMapInformer()
 	return k8sM, nil

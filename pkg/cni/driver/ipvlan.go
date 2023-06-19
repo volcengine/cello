@@ -85,7 +85,7 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 	}
 	err = ipVlanConf.Setup(netNS)
 	if err != nil {
-		log.Log.Errorf("ipVlanConf setup error, err:%s", err.Error())
+		log.Log.ErrorS(err, "IPVlanConf setup error")
 		return
 	}
 
@@ -279,7 +279,7 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 		log.Log.Infof("SetupInitNamespace")
 		err = d.setupInitNamespace(config)
 		if err != nil {
-			log.Log.Errorf("SetupInitNamespace failed, err:%s", err.Error())
+			log.Log.ErrorS(err, "SetupInitNamespace failed")
 			return err
 		}
 	}
@@ -399,7 +399,7 @@ func (d *IPVlanDriver) setupFilters(link netlink.Link, srcEgressRedirectCIDRs []
 	filtersToDeleted := make([]netlink.Filter, 0)
 	filters, err := netlink.FilterList(link, qdiscHandle)
 	if err != nil {
-		log.Log.Errorf("failed to get filter list, %v", err)
+		log.Log.ErrorS(err, "failed to get filter list")
 	}
 	for _, filter := range filters {
 		matchAny := false
@@ -443,7 +443,7 @@ func (d *IPVlanDriver) createIPVlanSlave(parentLink netlink.Link, slaveName stri
 			return nil, fmt.Errorf("get device %s error, %w", slaveName, err)
 		}
 	} else {
-		log.Log.Infof("Slave interface has existed.")
+		log.Log.InfoS("Slave interface has existed.")
 		return slaveLink, nil
 	}
 
@@ -457,14 +457,14 @@ func (d *IPVlanDriver) createIPVlanSlave(parentLink netlink.Link, slaveName stri
 		Mode: netlink.IPVLAN_MODE_L2,
 	})
 	if err != nil && !errors.Is(err, syscall.EEXIST) {
-		log.Log.Infof("Slave interface create failed.")
+		log.Log.InfoS("Slave interface create failed.")
 		return nil, err
 	}
 	link, err := netlink.LinkByName(slaveName)
 	if err != nil {
 		return nil, fmt.Errorf("error get ipvlan link %s", slaveName)
 	}
-	log.Log.Infof("Create slave device %s in host netns success", slaveName)
+	log.Log.InfoS("Create slave device in host netns success", "slaveName", slaveName)
 	return link, nil
 }
 

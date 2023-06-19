@@ -107,13 +107,13 @@ func (c *celloCtlAPI) start() (*http.Server, error) {
 	_ = os.Remove(c.debugSocketPath) // ignore_security_alert
 	unixAddr, err := net.ResolveUnixAddr("unix", c.debugSocketPath)
 	if err != nil {
-		log.Errorf("New socket path failed: %v", err)
+		log.ErrorS(err, "New socket path failed")
 		return nil, err
 	}
 
 	l, err := net.ListenUnix("unix", unixAddr)
 	if err != nil {
-		log.Errorf("Listen unix addr failed: %v", err)
+		log.ErrorS(err, "Listen unix addr failed")
 		return nil, err
 	}
 
@@ -123,10 +123,10 @@ func (c *celloCtlAPI) start() (*http.Server, error) {
 
 	go func() {
 		defer runtime.HandleCrash(log)
-		log.Infof("Start ctl http server")
+		log.InfoS("Start ctl http server")
 		err := server.Serve(l)
 		if err != nil {
-			log.Warnf("Ctl server exit: %v", err)
+			log.WarnS("Ctl server exit", "err", err)
 		}
 	}()
 
