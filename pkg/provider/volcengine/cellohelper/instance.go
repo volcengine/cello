@@ -178,7 +178,7 @@ func (m *defaultInstanceLimit) updateLocked() error {
 	}
 
 	m.limit.InstanceLimitsAttr = newLimit.InstanceLimitsAttr
-	log.Infof("InstanceLimit Updated %v", m.limit)
+	log.Infof("InstanceLimit Updated %s", m.limit.String())
 	m.lastUpdate = time.Now()
 	m.notifyWatcherLocked()
 	return nil
@@ -216,8 +216,12 @@ func (m *defaultInstanceLimit) CordonCreate(name string) {
 func (m *defaultInstanceLimit) UnCordonCreate(name string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+	if !m.limit.Cordon {
+		return
+	}
 	log.Infof("UnCordon eni create by %s", name)
 	m.limit.Cordon = false
+	m.notifyWatcherLocked()
 }
 
 func NewInstanceLimitManager(api VolcAPI) (InstanceLimitManager, error) {
