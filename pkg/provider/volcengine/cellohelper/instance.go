@@ -76,6 +76,8 @@ type InstanceLimitManager interface {
 	CordonCreate(name string)
 	// UnCordonCreate unCordon create eni
 	UnCordonCreate(name string)
+	// NotifyWatcher send a signal to all instance limit watcher
+	NotifyWatcher()
 }
 
 // ENIAvailable get quota minus the custom eni and primary eni.
@@ -132,6 +134,12 @@ func (m *defaultInstanceLimit) WatchUpdate(name string, watcher chan<- struct{})
 	defer m.lock.Unlock()
 	log.Infof("Component %s watch update", name)
 	m.eventWatchers = append(m.eventWatchers, watcher)
+}
+
+func (m *defaultInstanceLimit) NotifyWatcher() {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	m.notifyWatcherLocked()
 }
 
 func (m *defaultInstanceLimit) notifyWatcherLocked() {

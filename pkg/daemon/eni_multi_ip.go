@@ -426,10 +426,15 @@ func (f *eniIPFactory) Name() string {
 func (f *eniIPFactory) receiveRes() (ip *types.ENIIP, err error) {
 	eniIP := <-f.eniIpReceiver
 	resErr := eniIP.err
-	if resErr != nil && (strings.Contains(resErr.Error(), apiErr.LimitExceededPrivateIpsPerEni) ||
-		strings.Contains(resErr.Error(), apiErr.LimitExceededIpv6AddressesPerEni)) {
-		f.eniFactory.limit.Update()
-		signal.NotifySignal(signal.WakeGC, signal.SigWakeGC)
+	if resErr != nil {
+		if strings.Contains(resErr.Error(), apiErr.LimitExceededPrivateIpsPerEni) ||
+			strings.Contains(resErr.Error(), apiErr.LimitExceededIpv6AddressesPerEni) {
+			f.eniFactory.limit.Update()
+			signal.NotifySignal(signal.WakeGC, signal.SigWakeGC)
+		}
+		if strings.Contains(resErr.Error(), apiErr.InsufficientIpInSubnet) {
+			f.eniFactory.limit.NotifyWatcher()
+		}
 	}
 
 	if eniIP.ENIIP == nil || resErr != nil {

@@ -1047,7 +1047,7 @@ func hasRequestAndLimitsFields(pod *v1.Pod) bool {
 
 func watchResourceNum(ctx context.Context, pluginManger deviceplugin.Manager, resName string, lister func() int, updateSignal <-chan struct{}) {
 	// A ticker for resync resourceNum
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	var err error
 	for {
