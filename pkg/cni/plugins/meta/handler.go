@@ -1205,6 +1205,11 @@ func buildMetaConfigForDelegateNetConf(podNamespace, podName string, delegate *D
 				if idCount := len(entry.DeviceIDs); idCount > 0 && idCount > entry.Index {
 					delegate.MetaConfig.DeviceID = entry.DeviceIDs[entry.Index]
 					log.Log.Infof("Got podName: %s deviceID: %s", podName, delegate.MetaConfig.DeviceID)
+					if strings.Contains(delegate.MetaConfig.DeviceID, "@") {
+						old := delegate.MetaConfig.DeviceID
+						delegate.MetaConfig.DeviceID = strings.Split(delegate.MetaConfig.DeviceID, "@")[0]
+						log.Log.Infof("Normalize deviceID %s to %s", old, delegate.MetaConfig.DeviceID)
+					}
 					entry.Index++ // increment Index for next delegate
 				}
 			}
