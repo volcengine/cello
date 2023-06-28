@@ -35,7 +35,9 @@ data:
       "poolMonitorIntervalSec": 120,
       "networkMode": "eni_shared",
       "ipFamily": "{{ .Values.cello.ipFamily }}",
-      "platform": "kubernetes"
+      "platform": "kubernetes",
+      "kubeClientQPS": 5.0,
+      "kubeClientBurst": 10
     }
   10-cello.conflist: |
     {

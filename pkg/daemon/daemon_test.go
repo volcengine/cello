@@ -1077,6 +1077,11 @@ func TestDaemon(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("TestGC", func(t *testing.T) {
+		err = d.gc()
+		assert.NoError(t, err)
+	})
+
 	_ = prg.Signal(signal)
 	time.Sleep(10 * time.Second)
 }

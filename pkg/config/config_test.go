@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -150,4 +151,17 @@ func TestConfigMerge(t *testing.T) {
 	assert.Equal(t, true, sets.NewString(cfg.SecurityGroups...).Equal(sets.NewString(nodeConfig.SecurityGroups...)))
 	// Subnets
 	assert.Equal(t, true, sets.NewString(cfg.Subnets...).Equal(sets.NewString(nodeConfig.Subnets...)))
+}
+
+func TestParseStaticConf(t *testing.T) {
+	conf := &Config{}
+	byteConf, err := json.Marshal(conf)
+	assert.NoError(t, err)
+	err = os.WriteFile("/tmp/cello_con.json", byteConf, 0666)
+	assert.NoError(t, err)
+	confParsed, err := ParseStaticConfig("/tmp/cello_con.json")
+	assert.NoError(t, err)
+	assert.Equal(t, DefaultKubeClientQPS, *confParsed.KubeClientQPS)
+	assert.Equal(t, DefaultKubeClientBurst, *confParsed.KubeClientBurst)
+	assert.Equal(t, DefaultKubeContentType, *confParsed.KubeContentType)
 }

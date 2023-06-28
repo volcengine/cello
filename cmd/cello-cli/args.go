@@ -83,6 +83,26 @@ func buildCommand() []*cli.Command {
 			},
 		},
 		{
+			Name:      "perf",
+			Usage:     "Perf utils for cello agent",
+			ArgsUsage: "[perfObject] [perfType] [perfArgs]",
+			Subcommands: []*cli.Command{
+				{
+					Name:      "apiserver",
+					Usage:     "perf on APIServer",
+					ArgsUsage: "[perfType] [perfArgs]",
+					Subcommands: []*cli.Command{
+						{
+							Name:      "qps",
+							Usage:     "perf QPS",
+							ArgsUsage: "[qps]",
+							Action:    perfApiServerQPS,
+						},
+					},
+				},
+			},
+		},
+		{
 			Name:    "config",
 			Aliases: []string{"c"},
 			Usage:   "Cello agent config manager",

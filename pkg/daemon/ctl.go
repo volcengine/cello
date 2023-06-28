@@ -16,9 +16,13 @@
 package daemon
 
 import (
+	"math"
 	"net"
 	"net/http"
 	"os"
+	"strconv"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -49,6 +53,8 @@ const (
 	EcsMetaInfoGetPath = "/ecs/info/get"
 	// TaskStatusGetPath is the HTTP path to get task status.
 	TaskStatusGetPath = "/task/status/get"
+	// PerfTest for kubecliet qps for apiserver
+	PerfApiServerQPSPath = "/perf/apiserver/qps"
 )
 
 // Handler is the interface to handle http request.
@@ -79,6 +85,7 @@ func (d *daemon) newCelloCtlAPI() *celloCtlAPI {
 	ctl.handlers[http.MethodGet][IPAMLimitGetPath] = newInstanceLimitHandler(d.instanceLimit)
 	ctl.handlers[http.MethodGet][PodsGetPath] = newGetPersistencePodHandler(d.podPersistenceManager)
 	ctl.handlers[http.MethodGet][EcsMetaInfoGetPath] = newGetInstanceMetaHandler(d.ecsMetaGetter, d.instanceMeta)
+	ctl.handlers[http.MethodGet][PerfApiServerQPSPath] = newPerfQpsHandler(d)
 	return ctl
 }
 
@@ -176,5 +183,74 @@ func (l *getInstanceLimit) Handle(c *gin.Context) {
 func newInstanceLimitHandler(limit helper.InstanceLimitManager) Handler {
 	return &getInstanceLimit{
 		limit: limit,
+	}
+}
+
+type perfQps struct {
+	daemon *daemon
+}
+type PerfQpsReport struct {
+	Finished      bool    `json:"finished,omitempty"`
+	TargetQPS     int     `json:"targetQPS,omitempty"`
+	ActualQPS     float64 `json:"actualQPS,omitempty"`
+	FailedRequest int     `json:"failedQuery,omitempty"`
+	TimeDuration  float64 `json:"timeDuration,omitempty"`
+	ErrorMsg      error   `json:"error,omitempty"`
+}
+
+func (p *perfQps) Handle(c *gin.Context) {
+	var (
+		wg          sync.WaitGroup
+		qps         int
+		failedQuery int
+		qpsStr      string
+		startTime   time.Time
+		duration    float64
+		err         error
+		errs        chan error
+	)
+
+	qpsStr = c.Query("qps")
+	qps = 5
+	if qpsStr != "" {
+		qps, _ = strconv.Atoi(qpsStr)
+	}
+	errs = make(chan error, qps)
+
+	startTime = time.Now()
+	for i := 0; i < qps; i++ {
+		wg.Add(1)
+		go func() {
+			_, err = p.daemon.k8s.GetLocalNode(c)
+			if err != nil {
+				errs <- err
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	duration = time.Since(startTime).Seconds()
+
+	for {
+		select {
+		case err = <-errs:
+			failedQuery += 1
+		default:
+			perfReport := PerfQpsReport{
+				Finished:     true,
+				TargetQPS:    qps,
+				ActualQPS:    float64(qps-failedQuery) / math.Ceil(duration),
+				TimeDuration: duration,
+				ErrorMsg:     err}
+			c.JSON(http.StatusOK, perfReport)
+			return
+		}
+	}
+
+}
+
+func newPerfQpsHandler(d *daemon) Handler {
+	return &perfQps{
+		daemon: d,
 	}
 }

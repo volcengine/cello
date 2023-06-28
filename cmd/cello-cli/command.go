@@ -416,3 +416,19 @@ func showMetadataInfo(c *cli.Context) error {
 		WithRoot(tree).
 		Render()
 }
+
+func perfApiServerQPS(c *cli.Context) error {
+	url := fmt.Sprintf("%s%s", baseUrl, daemon.PerfApiServerQPSPath)
+	var qpsPerfResult daemon.PerfQpsReport
+	var err error
+	if c.NArg() == 1 {
+		err = debugClientGet(url, &qpsPerfResult, AdditionArg{Key: "qps", Value: c.Args().Get(0)})
+	} else {
+		err = debugClientGet(url, &qpsPerfResult)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Perf result:\n%s\n", PrettyJson(qpsPerfResult))
+	return nil
+}

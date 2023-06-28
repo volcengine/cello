@@ -16,9 +16,12 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 
 	"github.com/gdexlab/go-render/render"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/volcengine/cello/pkg/k8s"
 	"github.com/volcengine/cello/pkg/utils/datatype"
@@ -42,6 +45,11 @@ const (
 	DefaultSubnetStatUpdateIntervalSec = 60
 	DefaultReconcileIntervalSec        = 1200
 	DefaultGcProtectPeriodSec          = 120
+
+	// Default apiserver client config
+	DefaultKubeClientQPS   = 5.0
+	DefaultKubeClientBurst = 10
+	DefaultKubeContentType = runtime.ContentTypeProtobuf
 )
 
 var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "config"})
@@ -122,6 +130,15 @@ type Config struct {
 	// - "vke": The cluster is provided by Volcengine Kubernetes Engine(VKE).
 	// - "kubernetes": The cluster is hosted by user(self-managed).
 	Platform *string `yaml:"platform" json:"platform,omitempty"`
+
+	// Regular apiserver request QPS limit for kube client
+	KubeClientQPS *float64 `yaml:"kubeClientQPS" json:"kubeClientQPS,omitempty"`
+
+	// Burst apiserver request QPS limit for kube client
+	KubeClientBurst *int `yaml:"kubeClientBurst" json:"kubeClientBurst,omitempty"`
+
+	// Apiserver request content type
+	KubeContentType *string `yaml:"kubeContentType" json:"kubeContentType,omitempty"`
 }
 
 // verifyConfig verify Config.
@@ -273,6 +290,44 @@ func ParseConfig(k8s k8s.Service) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	return cfg, nil
+}
+
+func verifyStaticConfig(cfg *Config) error {
+	if datatype.Float64Value(cfg.KubeClientQPS) == 0 {
+		cfg.KubeClientQPS = datatype.Float64(DefaultKubeClientQPS)
+	}
+	log.Infof("--KubeClientQPS=%f", datatype.Float64Value(cfg.KubeClientQPS))
+
+	if datatype.IntValue(cfg.KubeClientBurst) == 0 {
+		cfg.KubeClientBurst = datatype.Int(DefaultKubeClientBurst)
+	}
+	log.Infof("--KubeClientBurst=%d", datatype.IntValue(cfg.KubeClientBurst))
+
+	if datatype.StringValue(cfg.KubeContentType) == "" {
+		cfg.KubeContentType = datatype.String(DefaultKubeContentType)
+	}
+	log.Infof("--KubeContentType=%s", datatype.StringValue(cfg.KubeContentType))
+	return nil
+}
+
+// Get configMap from mounted config file, note this func does not fill config with default data
+func ParseStaticConfig(configPath string) (*Config, error) {
+	configMapFile, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &Config{}
+	err = json.Unmarshal([]byte(configMapFile), &cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	err = verifyStaticConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 

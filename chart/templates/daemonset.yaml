@@ -72,6 +72,22 @@ spec:
             requests:
               cpu: 250m
               memory: 256Mi
+          livenessProbe:
+            periodSeconds: 10
+            initialDelaySeconds: 30
+            successThreshold: 1
+            failureThreshold: 6
+            httpGet:
+              path: /healthz
+              port: {{ .Values.cello.healthCheckPort }}
+          readinessProbe:
+            periodSeconds: 10
+            initialDelaySeconds: 30
+            successThreshold: 1
+            failureThreshold: 6
+            httpGet:
+              path: /healthz
+              port: {{ .Values.cello.healthCheckPort }}
           securityContext:
             privileged: true
           terminationMessagePath: /dev/termination-log
@@ -92,6 +108,9 @@ spec:
               name: host-log-cello-cni
             - mountPath: /var/lib/kubelet/device-plugins
               name: host-device-plugins
+            - mountPath: /etc/cello/cello-config
+              name: configvolume
+              subPath: cello.json
         - name: cilium
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}

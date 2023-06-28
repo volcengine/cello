@@ -38,12 +38,14 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	typedv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 
 	"github.com/volcengine/cello/pkg/utils/logger"
 	utilruntime "github.com/volcengine/cello/pkg/utils/runtime"
+	"github.com/volcengine/cello/pkg/version"
 	"github.com/volcengine/cello/types"
 )
 
@@ -209,7 +211,12 @@ func (k *k8sManager) initPodInformer() {
 	// add pod informer only
 	podInformer := factory.Core().V1().Pods()
 	informer := podInformer.Informer()
-	defer runtime.HandleCrash()
+	// an empty transform for informer before start, can modify data before cached in future
+	transform := func(obj interface{}) (interface{}, error) { return obj, nil }
+	if err := informer.SetTransform(transform); err != nil {
+		log.Error("init transform failed for pod informer")
+		return
+	}
 
 	// start pod informer
 	go factory.Start(stopCh.Done()) //FIXME: No Need to start a goroutine, start() will create a new one.
@@ -252,6 +259,12 @@ func (k *k8sManager) initConfigMapInformer() {
 		}))
 	// Add configmap informer.
 	k.configMapInformer = informersFactory.Core().V1().ConfigMaps().Informer()
+	// An empty transform for informer before start, can modify data before cached in future
+	transform := func(obj interface{}) (interface{}, error) { return obj, nil }
+	if err := k.configMapInformer.SetTransform(transform); err != nil {
+		log.Error("init transform failed for configMap informer")
+		return
+	}
 	informersFactory.Start(stopCh.Done())
 	// wait informer synced
 	if !cache.WaitForCacheSync(stopCh.Done(), k.configMapInformer.HasSynced) {
@@ -345,6 +358,21 @@ func (k *k8sManager) PatchPodAnnotation(ctx context.Context, namespace, name str
 		_, err := k.rawKubeClient.CoreV1().Pods(namespace).Patch(ctx, name, k8sTypes.StrategicMergePatchType, patchData, metav1.PatchOptions{})
 		return err
 	})
+}
+
+// NewKubernetesClient creates a kubernetes client.
+func NewK8sClient(qps *float64, burst *int, contentType *string) (*kubernetes.Clientset, error) {
+	c, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("create incluster config failed: %v", err)
+	}
+	c.QPS = float32(float64(*qps))
+	c.Burst = int(*burst)
+	c.ContentType = string(*contentType)
+
+	c.UserAgent = version.UserAgent()
+
+	return kubernetes.NewForConfig(c)
 }
 
 func NewK8sService(nodeName string, clientSet kubernetes.Interface) (Service, error) {

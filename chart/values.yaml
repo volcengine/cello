@@ -23,5 +23,7 @@ cello:
   k8sServiceHost: ""
   # Kubernetes service port.
   k8sServicePort: ""
+  #health check port
+  healthCheckPort: 11414
 cilium:
   debug: false

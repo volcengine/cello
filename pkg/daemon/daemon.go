@@ -37,8 +37,6 @@ import (
 	k8sErr "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/volcengine/cello/pkg/backoff"
@@ -59,7 +57,6 @@ import (
 	"github.com/volcengine/cello/pkg/utils/math"
 	"github.com/volcengine/cello/pkg/utils/netns"
 	"github.com/volcengine/cello/pkg/utils/runtime"
-	"github.com/volcengine/cello/pkg/version"
 	"github.com/volcengine/cello/types"
 )
 
@@ -67,6 +64,7 @@ const (
 	envNodeName        = "NODE_NAME"
 	DefaultSocketPath  = "/var/run/cello/cni.socket"
 	podPersistencePath = "/var/run/cello/Resource.db"
+	celloConfigMapPath = "/etc/cello/cello-config"
 )
 
 // daemon is the cello daemon that is in charge of manage the resources consumed by kubernetes network.
@@ -122,11 +120,19 @@ func NewDaemon() (*daemon, error) {
 	if nodeName == "" {
 		return nil, fmt.Errorf("get env %s failed", envNodeName)
 	}
-	k8sClient, err := NewKubernetesClient()
+
+	// mounted json config
+	staticCfg, err := config.ParseStaticConfig(celloConfigMapPath)
 	if err != nil {
-		return nil, fmt.Errorf("create kubernetes clientSet failed: %w", err)
+		return nil, fmt.Errorf("parse static json config failed: %v", err)
 	}
-	k8sService, err := k8s.NewK8sService(nodeName, k8sClient)
+
+	k8sClientSet, err := k8s.NewK8sClient(staticCfg.KubeClientQPS, staticCfg.KubeClientBurst, staticCfg.KubeContentType)
+	if err != nil {
+		return nil, fmt.Errorf("create kubernetes clientset failed: %v", err)
+	}
+
+	k8sService, err := k8s.NewK8sService(nodeName, k8sClientSet)
 	if err != nil {
 		return nil, fmt.Errorf("create kubernetes service failed: %v", err)
 	}
@@ -307,18 +313,16 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 	return d, nil
 }
 
-func (d *daemon) gc() {
+func (d *daemon) gc() error {
 	if time.Since(d.lastGC) < time.Minute {
-		return
+		return nil
 	}
 	signal.MuteChannel(signal.WakeGC)
 	defer signal.UnmuteChannel(signal.WakeGC)
 	var err error
 	log.Infof("Daemon GC start")
 	defer func() {
-		if err != nil {
-			log.Errorf("Daemon gc failed, %v", err)
-		} else {
+		if err == nil {
 			d.lastGC = time.Now()
 			log.Infof("Daemon GC finished")
 		}
@@ -352,6 +356,7 @@ func (d *daemon) gc() {
 		}
 	}
 	err = k8sErr.NewAggregate([]error{eniGCErr, ipGCErr})
+	return err
 }
 
 func (d *daemon) start(stopCh chan struct{}) error {
@@ -370,7 +375,10 @@ func (d *daemon) start(stopCh chan struct{}) error {
 		once.Do(func() {
 			time.Sleep(period)
 		})
-		d.gc()
+		if gcErr := d.gc(); gcErr != nil {
+			log.Error("gc err:", gcErr)
+		}
+
 	}, period, 0.2, true, stopCh)
 
 	go func() {
@@ -379,7 +387,9 @@ func (d *daemon) start(stopCh chan struct{}) error {
 			case <-stopCh:
 				return
 			case <-sig:
-				d.gc()
+				if gcErr := d.gc(); gcErr != nil {
+					log.Error("gc err:", gcErr)
+				}
 			}
 		}
 	}()
@@ -714,17 +724,6 @@ func (d *daemon) PatchPodAnnotation(ctx context.Context, request *pbrpc.PatchPod
 func (d *daemon) verifyPodNetwork(podNetworkMode string) bool {
 	return (d.networkMode == config.NetworkModeENIExclusive && podNetworkMode == types.PodNetworkModeENIExclusive) ||
 		(d.networkMode == config.NetworkModeENIShare && podNetworkMode == types.PodNetworkModeENIShare)
-}
-
-// NewKubernetesClient creates a kubernetes client.
-func NewKubernetesClient() (*kubernetes.Clientset, error) {
-	c, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, fmt.Errorf("create incluster config failed: %v", err)
-	}
-	c.UserAgent = version.UserAgent()
-
-	return kubernetes.NewForConfig(c)
 }
 
 func (d *daemon) syncPodPersistence() error {
