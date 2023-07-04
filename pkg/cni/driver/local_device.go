@@ -27,17 +27,17 @@ import (
 	"github.com/volcengine/cello/pkg/cni/utils"
 )
 
-type ExclusiveENI struct{}
+type LocalNetDevice struct{}
 
-func NewExclusiveENIDriver() *ExclusiveENI {
-	return &ExclusiveENI{}
+func NewLocalNetDeviceDriver() *LocalNetDevice {
+	return &LocalNetDevice{}
 }
 
-func (d *ExclusiveENI) Name() string {
-	return "exclusiveENI"
+func (d *LocalNetDevice) Name() string {
+	return "localNetDevice"
 }
 
-func (d *ExclusiveENI) SetupNetwork(config *types.SetupConfig) (err error) {
+func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 	targetENI, err := netlink.LinkByIndex(config.ENIIndex)
 	if err != nil {
 		err = fmt.Errorf("could not found parent device [index %d]", config.ENIIndex)
@@ -67,7 +67,7 @@ func (d *ExclusiveENI) SetupNetwork(config *types.SetupConfig) (err error) {
 
 	defer func() {
 		if err != nil {
-			_ = TeardownNetwork(config.NetNSPath)
+			_ = GenericTeardownNetwork(config.NetNSPath)
 		}
 	}()
 

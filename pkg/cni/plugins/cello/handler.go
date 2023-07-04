@@ -198,10 +198,10 @@ func InternalDel(args *skel.CmdArgs) error {
 
 	start := time.Now()
 	// todo: support delete one of multiple networks
-	err = driver.TeardownNetwork(args.Netns)
+	err = driver.GenericTeardownNetwork(args.Netns)
 	duration := metrics.MsSince(start)
 	log.Log.WithFields(logger.Fields{"TimeCost": duration, "Netns": args.Netns, "Status": fmt.Sprint(err == nil)}).
-		Infof("Teardown driver for %s/%s", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME)
+		Infof("Teardown driver for %s/%s/%s", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, args.IfName)
 	if err != nil {
 		return err
 	}

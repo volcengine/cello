@@ -89,7 +89,7 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 
 	defer func() {
 		if err != nil {
-			_ = TeardownNetwork(config.NetNSPath)
+			_ = GenericTeardownNetwork(config.NetNSPath)
 		}
 	}()
 

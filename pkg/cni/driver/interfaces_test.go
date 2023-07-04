@@ -158,7 +158,7 @@ func TestDataPathUseExclusiveENI(t *testing.T) {
 	})
 
 	// Test teardown network.
-	err = TeardownNetwork(containerNS.Path())
+	err = GenericTeardownNetwork(containerNS.Path())
 	assert.NoError(t, err)
 
 	_ = containerNS.Do(func(netNS ns.NetNS) error {
@@ -503,7 +503,7 @@ func TestDataPathUseSharedENI(t *testing.T) {
 	assert.True(t, hasV6DstFilter)
 
 	// Test teardown ns1 network.
-	err = TeardownNetwork(containerNS1.Path())
+	err = GenericTeardownNetwork(containerNS1.Path())
 	assert.NoError(t, err)
 	_ = containerNS1.Do(func(netNS ns.NetNS) error {
 		link, err := netlink.LinkByName(containerLinkName)
@@ -525,9 +525,9 @@ func TestDataPathUseSharedENI(t *testing.T) {
 	assert.Equal(t, 0, len(routes))
 
 	// Test teardown ns2 network.
-	err = TeardownNetwork(containerNS1.Path())
+	err = GenericTeardownNetwork(containerNS2.Path())
 	assert.NoError(t, err)
-	_ = containerNS1.Do(func(netNS ns.NetNS) error {
+	_ = containerNS2.Do(func(netNS ns.NetNS) error {
 		link, err := netlink.LinkByName(containerLinkName)
 		assert.Error(t, err)
 		assert.Nil(t, link)
@@ -709,7 +709,7 @@ func TestDataPathUseTrunkENI(t *testing.T) {
 	//TODO: Check filters.
 
 	// Test teardown network.
-	err = TeardownNetwork(containerNS.Path())
+	err = GenericTeardownNetwork(containerNS.Path())
 	assert.NoError(t, err)
 	_ = containerNS.Do(func(netNS ns.NetNS) error {
 		link, err := netlink.LinkByName(containerLinkName)

@@ -66,7 +66,7 @@ func SetupDataPath(setupConfig *types.SetupConfig) error {
 	case types.IPVlan:
 		dataPathDriver = NewIPVlanDriver()
 	case types.ENI:
-		dataPathDriver = NewExclusiveENIDriver()
+		dataPathDriver = NewLocalNetDeviceDriver()
 	case types.Vlan:
 		dataPathDriver = NewVlanDriver()
 	default:
@@ -76,8 +76,8 @@ func SetupDataPath(setupConfig *types.SetupConfig) error {
 	return dataPathDriver.SetupNetwork(setupConfig)
 }
 
-// TeardownNetwork all the networks netns.
-func TeardownNetwork(netNs string) error {
+// GenericTeardownNetwork all the networks netns.
+func GenericTeardownNetwork(netNs string) error {
 	if netNs == "" {
 		return nil
 	}
