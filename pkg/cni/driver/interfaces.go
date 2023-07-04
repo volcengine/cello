@@ -17,6 +17,7 @@ package driver
 
 import (
 	"fmt"
+	"github.com/containernetworking/plugins/pkg/ip"
 	"net"
 
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -78,20 +79,24 @@ func SetupDataPath(setupConfig *types.SetupConfig) error {
 
 // GenericTeardownNetwork all the networks netns.
 func GenericTeardownNetwork(netNs string) error {
+	var errList []error
+	hostNetNS, err := ns.GetCurrentNS()
+
 	if netNs == "" {
 		return nil
 	}
 	containerNs, err := ns.GetNS(netNs)
 	if err != nil {
 		log.Log.Infof("Target netns doesn't exist.")
-		return nil
+		return err
 	}
 	defer func(containerNs ns.NetNS) {
-		err := containerNs.Close()
-		if err != nil {
-			log.Log.Errorf("Failed to close netns due to: %v", err.Error())
+		inErr := containerNs.Close()
+		if inErr != nil {
+			log.Log.Errorf("Failed to close netns due to: %v", inErr)
 		}
 	}(containerNs)
+
 	var fastPaths []*FastPath
 	err = containerNs.Do(func(netNS ns.NetNS) error {
 		links, err2 := netlink.LinkList()
@@ -101,39 +106,27 @@ func GenericTeardownNetwork(netNs string) error {
 		for _, link := range links {
 			switch link.(type) {
 			case *netlink.IPVlan:
-				ip, inErr := netlink.AddrList(link, netlink.FAMILY_ALL)
+				dst, inErr := netlink.AddrList(link, netlink.FAMILY_ALL)
 				if inErr != nil {
 					return fmt.Errorf("list addresses for link %s failed: %w", link.Attrs().Name, inErr)
 				}
 				fastPaths = append(fastPaths, &FastPath{
-					dst:   ip,
+					dst:   dst,
 					table: 0,
 				})
-				inErr = netlink.LinkDel(link)
+				errList = append(errList, netlink.LinkDel(link))
+			case *netlink.Vlan, *netlink.Veth:
+				errList = append(errList, netlink.LinkDel(link))
+			case *netlink.Device:
+				name, inErr := ip.RandomVethName()
 				if inErr != nil {
 					log.Log.Warnf("Delete link %s failed: %s", link.Attrs().Name, inErr)
+					continue
 				}
-			case *netlink.Veth:
-				inErr := netlink.LinkDel(link)
-				if inErr != nil {
-					log.Log.Warnf("Delete link %s failed: %s", link.Attrs().Name, inErr)
-				}
-			case *netlink.Vlan:
-				inErr := netlink.LinkDel(link)
-				if inErr != nil {
-					log.Log.Warnf("Delete link %s failed: %s", link.Attrs().Name, inErr)
-				}
+				errList = append(errList, netlink.LinkSetName(link, name))
+				errList = append(errList, netlink.LinkSetNsFd(link, int(hostNetNS.Fd())))
 			default:
-				addresses, inErr := netlink.AddrList(link, netlink.FAMILY_ALL)
-				if inErr != nil {
-					return fmt.Errorf("list addresses for link %s failed: %w", link.Attrs().Name, inErr)
-				}
-				for i, address := range addresses {
-					inErr = netlink.AddrDel(link, &addresses[i])
-					if inErr != nil {
-						return fmt.Errorf("remove address %s from link %s failed: %s", address.String(), link.Attrs().Name, inErr)
-					}
-				}
+				continue
 			}
 		}
 		return nil

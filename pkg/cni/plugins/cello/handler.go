@@ -200,11 +200,13 @@ func InternalDel(args *skel.CmdArgs) error {
 	// todo: support delete one of multiple networks
 	err = driver.GenericTeardownNetwork(args.Netns)
 	duration := metrics.MsSince(start)
-	log.Log.WithFields(logger.Fields{"TimeCost": duration, "Netns": args.Netns, "Status": fmt.Sprint(err == nil)}).
-		Infof("Teardown driver for %s/%s/%s", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, args.IfName)
 	if err != nil {
-		return err
+		log.Log.WithFields(logger.Fields{"TimeCost": duration, "Netns": args.Netns}).
+			Errorf("Teardown driver for %s/%s/%s failed, %v", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, args.IfName, err)
+		return nil
 	}
+	log.Log.WithFields(logger.Fields{"TimeCost": duration, "Netns": args.Netns}).
+		Infof("Teardown driver for %s/%s/%s success", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, args.IfName)
 
 	if cniConfig.RuntimeConfig.NetworkInterfaceConfig == nil {
 		deleteEndpointRequest := &pbrpc.DeleteEndpointRequest{
