@@ -20,6 +20,7 @@ message CreateEndpointRequest {
   string InfraContainerId = 3;
   string IfName = 4;
   string NetNs = 5;
+  string IpamType = 6;
 }
 
 message IPSet {
@@ -38,15 +39,19 @@ message NetworkInterface {
   string IfName   = 4;
   repeated Route ExtraRoutes = 5;
   bool DefaultRoute = 6;
+  IfType IfType = 7;
 }
 
 enum IfType {
   TypeENIShare = 0;
   TypeENIExclusive = 1;
+  TypeENTTrunk = 2;
+  TypePhysicsShare = 3;
+  TypePhysicsExclusive = 4;
 }
 
 message CreateEndpointResponse {
-  IfType IfType = 1;
+  reserved 1;
   repeated NetworkInterface Interfaces = 2;
 }
 

@@ -74,14 +74,6 @@ const (
 	Vlan
 )
 
-// IPType indicates ENI's IP address binding.
-type IPType int
-
-const (
-	ENIMultiIP IPType = iota
-	ENISingleIP
-)
-
 // SetupConfig is the datapath config for pod to be set up.
 type SetupConfig struct {
 	DP       DataPathType

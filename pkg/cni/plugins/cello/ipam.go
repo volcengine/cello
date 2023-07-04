@@ -79,7 +79,6 @@ func buildTrunkEndpointFromNetworkInterfaceConfig(runtimeConfig *types.NetworkIn
 		}
 	}
 	return &pbrpc.CreateEndpointResponse{
-		IfType: pbrpc.IfType_TypeENIExclusive,
 		Interfaces: []*pbrpc.NetworkInterface{
 			{
 				ENI: &pbrpc.ENI{
@@ -98,6 +97,7 @@ func buildTrunkEndpointFromNetworkInterfaceConfig(runtimeConfig *types.NetworkIn
 				IfName:       ifName,
 				ExtraRoutes:  nil,
 				DefaultRoute: false,
+				IfType:       pbrpc.IfType_TypeENTTrunk,
 			},
 		},
 	}, nil

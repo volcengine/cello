@@ -137,11 +137,6 @@ func InternalAdd(args *skel.CmdArgs) (result cniTypes.Result, err error) {
 		}
 	}()
 
-	ipType := types.ENIMultiIP
-	if createEndpointResponse.IfType == pbrpc.IfType_TypeENIExclusive {
-		ipType = types.ENISingleIP
-	}
-
 	//setup network
 	var network *pbrpc.NetworkInterface
 	var networkConfig *types.SetupConfig
@@ -152,7 +147,7 @@ func InternalAdd(args *skel.CmdArgs) (result cniTypes.Result, err error) {
 		return
 	}
 
-	networkConfig, err = generateSetupConfig(args, cniConfig, network, ipType)
+	networkConfig, err = generateSetupConfig(args, cniConfig, network)
 	if err != nil {
 		return nil, fmt.Errorf("parse setupConfig failed, %w", err)
 	}
@@ -250,7 +245,7 @@ func parseCmdArgs(args *skel.CmdArgs) (string, *types.NetConf, *types.K8SArgs, e
 	return confVersion, &conf, &k8sConfig, nil
 }
 
-func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, network *pbrpc.NetworkInterface, ipType types.IPType) (*types.SetupConfig, error) {
+func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, network *pbrpc.NetworkInterface) (*types.SetupConfig, error) {
 	eniLink, err := iproute.LinkByMac(network.GetENI().GetMac())
 	if err != nil {
 		return nil, fmt.Errorf("could not found dev [%s-%s]: %w", network.GetENI().ID, network.GetENI().GetMac(), err)
@@ -360,17 +355,15 @@ func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, network *pbrpc
 	}
 	networkConfig.ExtraRoutes = routes
 
-	switch ipType {
-	case types.ENIMultiIP:
+	switch network.IfType {
+	case pbrpc.IfType_TypeENIShare:
 		networkConfig.DP = types.IPVlan
-	case types.ENISingleIP:
-		if networkConfig.Vid != 0 {
-			networkConfig.DP = types.Vlan
-		} else {
-			networkConfig.DP = types.ENI
-		}
+	case pbrpc.IfType_TypeENIExclusive:
+		networkConfig.DP = types.ENI
+	case pbrpc.IfType_TypeENTTrunk:
+		networkConfig.DP = types.Vlan
 	default:
-		return nil, fmt.Errorf("unsupported ipType %d", ipType)
+		return nil, fmt.Errorf("unsupported ipType %d", network.IfType)
 	}
 
 	return networkConfig, nil

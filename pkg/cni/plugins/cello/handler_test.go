@@ -23,7 +23,6 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/volcengine/cello/pkg/cni/types"
 	"github.com/volcengine/cello/pkg/pbrpc"
 )
 
@@ -99,8 +98,9 @@ func TestParseConfigs(t *testing.T) {
 		DefaultRoute: false,
 	}
 
-	for _, ifType := range []types.IPType{types.ENISingleIP, types.ENIMultiIP} {
-		gotSetupConf, err := generateSetupConfig(args, gotCNIConf, networkInterface, ifType)
+	for _, ifType := range []pbrpc.IfType{pbrpc.IfType_TypeENIExclusive, pbrpc.IfType_TypeENIShare, pbrpc.IfType_TypeENTTrunk} {
+		networkInterface.IfType = ifType
+		gotSetupConf, err := generateSetupConfig(args, gotCNIConf, networkInterface)
 		assert.NoError(t, err)
 		assert.Equal(t, ipv4, gotSetupConf.IPv4.IP.String())
 		assert.Equal(t, ipv6, gotSetupConf.IPv6.IP.String())

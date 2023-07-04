@@ -576,6 +576,7 @@ func (d *daemon) CreateEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRe
 				IPv6Addr:     ipSet.IPv6,
 				IfName:       req.IfName,
 				DefaultRoute: true,
+				IfType:       pbrpc.IfType_TypeENIExclusive,
 			}
 			newPod.MainInterface = iFace
 			newPod.IsMainInterfaceSharedMode = false
@@ -601,6 +602,7 @@ func (d *daemon) CreateEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRe
 				IPv6Addr:     ipSet.IPv6,
 				IfName:       req.IfName,
 				DefaultRoute: true,
+				IfType:       pbrpc.IfType_TypeENIShare,
 			}
 			newPod.MainInterface = iFace
 			newPod.IsMainInterfaceSharedMode = true
@@ -619,7 +621,7 @@ func (d *daemon) CreateEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRe
 	if err != nil {
 		return nil, err
 	}
-	return &pbrpc.CreateEndpointResponse{IfType: getIfType(d.networkMode), Interfaces: networks}, nil
+	return &pbrpc.CreateEndpointResponse{Interfaces: networks}, nil
 }
 
 // DeleteEndpoint releases network resources used by Pod.
@@ -964,13 +966,6 @@ func mutateNetworks([]*pbrpc.NetworkInterface) error {
 
 func IsMain(ifName string) bool {
 	return ifName == "" || ifName == types.DefaultIfName
-}
-
-func getIfType(networkMode string) pbrpc.IfType {
-	if networkMode == config.NetworkModeENIExclusive {
-		return pbrpc.IfType_TypeENIExclusive
-	}
-	return pbrpc.IfType_TypeENIShare
 }
 
 func (d *daemon) translatePod(pod *v1.Pod) *types.Pod {
