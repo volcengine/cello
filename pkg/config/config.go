@@ -18,7 +18,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"github.com/gdexlab/go-render/render"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -50,6 +50,8 @@ const (
 	DefaultKubeClientQPS   = 5.0
 	DefaultKubeClientBurst = 10
 	DefaultKubeContentType = runtime.ContentTypeProtobuf
+
+	DefaultRdmaIpamDataDir = "/var/run/cello/rdma-ipam"
 )
 
 var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "config"})
@@ -139,6 +141,14 @@ type Config struct {
 
 	// Apiserver request content type
 	KubeContentType *string `yaml:"kubeContentType" json:"kubeContentType,omitempty"`
+
+	// EnableRdmaIpam enable rdma ipam
+	EnableRdmaIpam *bool `yaml:"enableRdmaIpam" json:"enableRdmaIpam,omitempty"`
+
+	RdmaIpamDataDir *string `yaml:"rdmaIpamDataDir" json:"rdmaIpamDataDir,omitempty"`
+
+	// ProbeRdma enable probe rdma interfaces
+	ProbeRdma *bool `yaml:"probeRdma" json:"probeRdma,omitempty"`
 }
 
 // verifyConfig verify Config.
@@ -277,6 +287,22 @@ func verifyConfig(cfg *Config) error {
 		cfg.Platform = datatype.String(PlatformVKE)
 	}
 	log.Infof("--Platform=%s", datatype.StringValue(cfg.Platform))
+
+	if cfg.EnableRdmaIpam == nil {
+		cfg.EnableRdmaIpam = datatype.Bool(false)
+	}
+	log.Infof("--EnableRdmaIpam=%t", datatype.BoolValue(cfg.EnableRdmaIpam))
+
+	if cfg.RdmaIpamDataDir == nil {
+		cfg.RdmaIpamDataDir = datatype.String(DefaultRdmaIpamDataDir)
+	}
+	log.Infof("--RdmaIpamDataDir=%s", datatype.StringValue(cfg.RdmaIpamDataDir))
+
+	if cfg.ProbeRdma == nil {
+		cfg.ProbeRdma = datatype.Bool(true)
+	}
+	log.Infof("--ProbeRdma=%t", datatype.BoolValue(cfg.ProbeRdma))
+
 	return nil
 }
 
@@ -313,12 +339,12 @@ func verifyStaticConfig(cfg *Config) error {
 
 // Get configMap from mounted config file, note this func does not fill config with default data
 func ParseStaticConfig(configPath string) (*Config, error) {
-	configMapFile, err := ioutil.ReadFile(configPath)
+	configMapFile, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
 	}
 	cfg := &Config{}
-	err = json.Unmarshal([]byte(configMapFile), &cfg)
+	err = json.Unmarshal(configMapFile, &cfg)
 	if err != nil {
 		return nil, err
 	}

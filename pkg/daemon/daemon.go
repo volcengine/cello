@@ -87,6 +87,8 @@ type daemon struct {
 	cfg                   *config.Config
 	lastGC                time.Time
 	pbrpc.UnimplementedCelloServer
+
+	rdmaIpamManager *RdmaIpamManager
 }
 
 // createEc2 creates an ec2 client.
@@ -310,6 +312,14 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 			},
 		})
 	}
+
+	if datatype.BoolValue(cfg.EnableRdmaIpam) {
+		err = d.initRdmaIpam()
+		if err != nil {
+			return nil, fmt.Errorf("init rdma ipam failed, %v", err)
+		}
+	}
+
 	return d, nil
 }
 
@@ -464,8 +474,26 @@ func (d *daemon) allocateENIIP(ctx *netContext, oldPod *types.Pod) (*types.ENIIP
 	return eniip.(*types.ENIIP), err
 }
 
-// CreateEndpoint allocate network resources(ENI, IP) for a pod.
 func (d *daemon) CreateEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRequest) (resp *pbrpc.CreateEndpointResponse, err error) {
+	switch req.GetIpamType() {
+	case types.IPAMTypeRdmaShare, types.IPAMTypeRdmaExclusive:
+		return d.createRdmaEndpoint(ctx, req)
+	default:
+		return d.createVpcEndpoint(ctx, req)
+	}
+}
+
+func (d *daemon) DeleteEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRequest) (resp *pbrpc.DeleteEndpointResponse, err error) {
+	switch req.GetIpamType() {
+	case types.IPAMTypeRdmaShare, types.IPAMTypeRdmaExclusive:
+		return d.deleteRdmaEndpoint(ctx, req)
+	default:
+		return d.deleteVpcEndpoint(ctx, req)
+	}
+}
+
+// createVpcEndpoint allocate vpc network resources(ENI, IP) for a pod.
+func (d *daemon) createVpcEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRequest) (resp *pbrpc.CreateEndpointResponse, err error) {
 	lg := log.WithFields(logger.Fields{
 		"Namespace":          req.Namespace,
 		"Name":               req.Name,
@@ -624,8 +652,8 @@ func (d *daemon) CreateEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRe
 	return &pbrpc.CreateEndpointResponse{Interfaces: networks}, nil
 }
 
-// DeleteEndpoint releases network resources used by Pod.
-func (d *daemon) DeleteEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRequest) (resp *pbrpc.DeleteEndpointResponse, err error) {
+// deleteVpcEndpoint releases vpc network resources used by Pod.
+func (d *daemon) deleteVpcEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRequest) (resp *pbrpc.DeleteEndpointResponse, err error) {
 	lg := log.WithFields(logger.Fields{
 		"Namespace":          req.Namespace,
 		"Name":               req.Name,

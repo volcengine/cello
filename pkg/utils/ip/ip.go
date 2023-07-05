@@ -71,3 +71,12 @@ func NetIPToMap(ips []net.IP) map[string]net.IP {
 	}
 	return result
 }
+
+// IPNetToStringSlice convert net.IPNet slice of ips to string slice.
+func IPNetToStringSlice(ips []net.IPNet) []string {
+	var result []string
+	for _, ip := range ips {
+		result = append(result, ip.String())
+	}
+	return result
+}

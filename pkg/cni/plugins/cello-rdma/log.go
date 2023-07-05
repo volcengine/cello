@@ -13,14 +13,17 @@
 // limitations under the License.
 //
 
-package types
+package cello_rdma
 
-const (
-	AnnotationK8sPrefix = "k8s.volcengine.com/"
-
-	AnnotationTrunkENI              = AnnotationK8sPrefix + "trunk-eni"
-	AnnotationPodNetworksDefinition = AnnotationK8sPrefix + "pod-networks-definition"
-	AnnotationVKEPodNetworks        = AnnotationK8sPrefix + "pod-networks"
-
-	AnnotationRdmaInfo = AnnotationK8sPrefix + "rdma-info"
+import (
+	"github.com/volcengine/cello/pkg/utils/logger"
+	"k8s.io/apimachinery/pkg/util/uuid"
 )
+
+var conf = logger.Configuration{
+	LogLocation: "/var/log/cello/cni.log",
+	LogLevel:    "info",
+}
+
+// log uses logger with traceID print log.
+var log = logger.New(&conf).WithFields(logger.Fields{"component": "cello-rdma", "traceID": string(uuid.NewUUID())[:8]})

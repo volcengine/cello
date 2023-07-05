@@ -53,4 +53,5 @@ modprobe sch_htb || echo "modprobe sch_htb failed"
 # install CNIs
 /bin/cp -f /etc/cello/net.d/* /etc/cni/net.d
 /bin/cp -f /cello/cello-cni /opt/cni/bin
+/bin/cp -f /cello/cello-rdma /opt/cni/bin
 /bin/cp -f /containernetworking/plugins/* /opt/cni/bin/

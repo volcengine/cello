@@ -17,9 +17,8 @@ import (
 var _ = Describe("Cidr IPAM Allocator", func() {
 	Context("allocator context", func() {
 		cfg := cidr.Config{
-			Mode:    "",
 			DataDir: path.Join(tempDir, "allocator"),
-			Ranges: map[string]allocator.RangeSet{
+			Ranges: map[string]*allocator.RangeSet{
 				"abc": {allocator.Range{
 					RangeStart: net.IP{198, 19, 50, 3},
 					RangeEnd:   net.IP{198, 19, 50, 29},
@@ -56,6 +55,7 @@ var _ = Describe("Cidr IPAM Allocator", func() {
 		It("should allocate an ip success from configured range", func() {
 			sameIP, err = allocators.Get("abc", "containerdId1", "eth1", nil)
 			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Ranges["abc"].Contains(sameIP.Address.IP)).To(BeTrue())
 			fmt.Fprintln(GinkgoWriter, "got ip", sameIP.String())
 
 		})
@@ -70,6 +70,13 @@ var _ = Describe("Cidr IPAM Allocator", func() {
 		It("should allocate a different ip while use same owner id and different ifName", func() {
 			ipCfg, err := allocators.Get("abc", "containerdId1", "eth2", nil)
 			Expect(err).NotTo(HaveOccurred())
+			fmt.Fprintln(GinkgoWriter, "got ip", ipCfg.String())
+		})
+
+		It("should allocate a different ip while use another rangeset", func() {
+			ipCfg, err := allocators.Get("def", "containerdId1", "eth2", nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.Ranges["def"].Contains(ipCfg.Address.IP)).To(BeTrue())
 			fmt.Fprintln(GinkgoWriter, "got ip", ipCfg.String())
 		})
 

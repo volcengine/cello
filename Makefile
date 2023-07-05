@@ -57,6 +57,10 @@ else
     	./cmd/cello-cni
 endif
 
+cello-rdma:
+	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cello-rdma $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) $(BUILD_INFO) \
+		./cmd/cello-rdma
+
 cilium-launcher:
 	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cilium-launcher $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
 		./cmd/launcher/cilium
@@ -66,7 +70,7 @@ protobuf: tidy
 
 all: pkg image
 
-bin: tidy cello-cni cello-ctl cello-agent cilium-launcher
+bin: tidy cello-cni cello-ctl cello-agent cilium-launcher cello-rdma
 
 pkg: bin
 	cp ./script/bootstrap/* $(OUTPUT)/
@@ -83,6 +87,6 @@ test:
 clean:
 	rm -rf ./output
 
-.PHONY: clean protobuf cello-agent cello-cni cello-ctl bin pkg image all test
+.PHONY: clean protobuf cello-agent cello-cni cello-ctl bin pkg image all test cello-rdma
 
 .DEFAULT: bin

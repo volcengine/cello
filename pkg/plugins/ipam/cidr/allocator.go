@@ -18,11 +18,17 @@ package cidr
 import (
 	"fmt"
 	"github.com/containernetworking/plugins/plugins/ipam/host-local/backend"
+	"github.com/volcengine/cello/pkg/utils/logger"
+	k8sErr "k8s.io/apimachinery/pkg/util/errors"
 	"net"
 
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/plugins/plugins/ipam/host-local/backend/allocator"
 	"github.com/containernetworking/plugins/plugins/ipam/host-local/backend/disk"
+)
+
+var (
+	log = logger.GetLogger().WithFields(logger.Fields{"subsys": "cidrAllocator"})
 )
 
 // AllocatorGroup Manage multiple allocators for multiple sets of cidr
@@ -43,9 +49,10 @@ func NewAllocatorGroup(c *Config) (*AllocatorGroup, error) {
 		if err != nil {
 			return nil, err
 		}
+		log.Infof("Create allocator for %s, id %s", rangeSet.String(), id)
 		group.stores[id] = store
-		group.members[id] = allocator.NewIPAllocator(&rangeSet, store, 0)
-		group.rangeSets[id] = &rangeSet
+		group.members[id] = allocator.NewIPAllocator(rangeSet, store, 0)
+		group.rangeSets[id] = rangeSet
 	}
 	return group, nil
 }
@@ -84,11 +91,30 @@ func (a *AllocatorGroup) Get(rangeSetId, ownerId, ifName string, requestedIP net
 
 // Release clears all IPs allocated for the container with given ID
 func (a *AllocatorGroup) Release(rangeSetId, ownerId, ifName string) error {
-	alloc, exist := a.members[rangeSetId]
-	if !exist {
-		return fmt.Errorf("get allocater by %s failed, not exist", rangeSetId)
+	var rangeSetIdList []string
+	if rangeSetId == "" {
+		for id, store := range a.stores {
+			if ipAddr := store.GetByID(ownerId, ifName); len(ipAddr) != 0 {
+				rangeSetIdList = append(rangeSetIdList, id)
+			}
+		}
+	} else {
+		rangeSetIdList = append(rangeSetIdList, rangeSetId)
 	}
-	return alloc.Release(ownerId, ifName)
+
+	var errList []error
+	for _, id := range rangeSetIdList {
+		alloc, exist := a.members[id]
+		if !exist {
+			errList = append(errList, fmt.Errorf("get allocater by %s failed, not exist", rangeSetId))
+			continue
+		}
+		err := alloc.Release(ownerId, ifName)
+		if err != nil {
+			errList = append(errList, err)
+		}
+	}
+	return k8sErr.NewAggregate(errList)
 }
 
 func canonicalizeIP(ip *net.IP) error {

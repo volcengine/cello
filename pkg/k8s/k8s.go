@@ -93,6 +93,12 @@ type Service interface {
 
 	// PatchPodAnnotation patch annotation to pod
 	PatchPodAnnotation(ctx context.Context, namespace, name string, anno map[string]string) error
+
+	// PatchNodeAnnotation patch annotation to node
+	PatchNodeAnnotation(anno map[string]interface{}) error
+
+	// GetNodeAnnotation get annotation of node
+	GetNodeAnnotation() (map[string]string, error)
 }
 
 type k8sManager struct {
@@ -296,15 +302,15 @@ func (k *k8sManager) GetCachedPod(namespace, name string) (*corev1.Pod, error) {
 // if annotation value is empty, we will remove it or set it
 // k8s.volcengine.com/trunk-eni: {"eniID":"xxx"}.
 func (k *k8sManager) PatchTrunkInfo(info *types.TrunkInfo) error {
-	node, err := k.rawKubeClient.CoreV1().Nodes().Get(context.TODO(), k.nodeName, metav1.GetOptions{ResourceVersion: "0"})
+	nodeAnno, err := k.GetNodeAnnotation()
 	if err != nil {
 		return err
 	}
 
 	var currentInfo *types.TrunkInfo
 	currentInfoAbnormal := false
-	if node.GetAnnotations() != nil {
-		if oldInfoStr, ok := node.GetAnnotations()[types.AnnotationTrunkENI]; ok {
+	if nodeAnno != nil {
+		if oldInfoStr, ok := nodeAnno[types.AnnotationTrunkENI]; ok {
 			var oldInfo types.TrunkInfo
 			err = json.Unmarshal([]byte(oldInfoStr), &oldInfo)
 			if err != nil {
@@ -329,19 +335,31 @@ func (k *k8sManager) PatchTrunkInfo(info *types.TrunkInfo) error {
 		}
 		infoValue = string(b)
 	}
-	annotation := map[string]map[string]map[string]interface{}{
-		"metadata": {
-			"annotations": {
-				types.AnnotationTrunkENI: infoValue,
+
+	return k.PatchNodeAnnotation(map[string]interface{}{types.AnnotationTrunkENI: infoValue})
+}
+
+func (k *k8sManager) PatchNodeAnnotation(anno map[string]interface{}) error {
+	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
+		return true
+	}, func() error {
+		patch := map[string]map[string]map[string]interface{}{
+			"metadata": {
+				"annotations": anno,
 			},
-		},
-	}
-	annotationPatchStr, err := json.Marshal(annotation)
-	if err != nil {
+		}
+		patchData, _ := json.Marshal(patch)
+		_, err := k.rawKubeClient.CoreV1().Nodes().Patch(context.TODO(), k.nodeName, k8sTypes.StrategicMergePatchType, patchData, metav1.PatchOptions{})
 		return err
+	})
+}
+
+func (k *k8sManager) GetNodeAnnotation() (map[string]string, error) {
+	node, err := k.rawKubeClient.CoreV1().Nodes().Get(context.TODO(), k.nodeName, metav1.GetOptions{ResourceVersion: "0"})
+	if err != nil {
+		return nil, err
 	}
-	_, err = k.rawKubeClient.CoreV1().Nodes().Patch(context.TODO(), k.nodeName, k8sTypes.MergePatchType, []byte(annotationPatchStr), metav1.PatchOptions{})
-	return err
+	return node.GetAnnotations(), nil
 }
 
 func (k *k8sManager) PatchPodAnnotation(ctx context.Context, namespace, name string, anno map[string]string) error {

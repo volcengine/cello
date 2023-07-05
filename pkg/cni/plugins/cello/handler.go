@@ -358,6 +358,7 @@ func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, network *pbrpc
 	switch network.IfType {
 	case pbrpc.IfType_TypeENIShare:
 		networkConfig.DP = types.IPVlan
+		networkConfig.SetupInitNs = true
 	case pbrpc.IfType_TypeENIExclusive:
 		networkConfig.DP = types.ENI
 	case pbrpc.IfType_TypeENTTrunk:

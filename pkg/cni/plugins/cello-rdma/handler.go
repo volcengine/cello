@@ -1,0 +1,340 @@
+// Copyright 2023 The Cello Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+package cello_rdma
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/containernetworking/plugins/pkg/ip"
+	"github.com/vishvananda/netlink"
+	"net"
+	"time"
+
+	"github.com/containernetworking/cni/pkg/skel"
+	cniTypes "github.com/containernetworking/cni/pkg/types"
+	current "github.com/containernetworking/cni/pkg/types/040"
+	cniVersion "github.com/containernetworking/cni/pkg/version"
+
+	"github.com/volcengine/cello/pkg/cni/client"
+	"github.com/volcengine/cello/pkg/cni/driver"
+	"github.com/volcengine/cello/pkg/cni/types"
+	"github.com/volcengine/cello/pkg/metrics"
+	"github.com/volcengine/cello/pkg/pbrpc"
+	"github.com/volcengine/cello/pkg/utils/device"
+	"github.com/volcengine/cello/pkg/utils/iproute"
+	"github.com/volcengine/cello/pkg/utils/logger"
+	celloTypes "github.com/volcengine/cello/types"
+)
+
+const (
+	defaultCniTimeout = 120 * time.Second
+)
+
+func CmdAdd(args *skel.CmdArgs) error {
+	_, cniConfig, k8sConfig, err := types.ParseCmdArgs(args)
+	if err != nil {
+		return err
+	}
+	log.Infof("CniConf: %+v", cniConfig)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultCniTimeout)
+	defer cancel()
+
+	celloClient, conn, err := client.NewCelloClient(ctx)
+	if err != nil {
+		return fmt.Errorf("cello addCmd create cello rpc client failed: %w", err)
+	}
+	defer func() {
+		_ = conn.Close()
+	}()
+
+	if cniConfig.RuntimeConfig.DeviceID == "" {
+		return fmt.Errorf("no master device")
+	}
+	masterMac, err := getMacByDeviceId(cniConfig.RuntimeConfig.DeviceID)
+	if err != nil {
+		return fmt.Errorf("get mac of master device %s failed, %v", cniConfig.RuntimeConfig.DeviceID, err)
+	}
+
+	var ipamType string
+	switch cniConfig.DriverType {
+	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsShare)]:
+		ipamType = celloTypes.IPAMTypeRdmaShare
+	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsExclusive)]:
+		ipamType = celloTypes.IPAMTypeRdmaExclusive
+	default:
+		return fmt.Errorf("driveType %s not support", cniConfig.DriverType)
+	}
+
+	createEndpointRequest := &pbrpc.CreateEndpointRequest{
+		Name:             string(k8sConfig.K8S_POD_NAME),
+		Namespace:        string(k8sConfig.K8S_POD_NAMESPACE),
+		InfraContainerId: string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID),
+		IfName:           args.IfName,
+		NetNs:            args.Netns,
+		IpamType:         ipamType,
+		IpamArgs:         &pbrpc.IpamArgs{DeviceId: masterMac},
+	}
+	createEndpointResponse, err := celloClient.CreateEndpoint(ctx, createEndpointRequest)
+	if err != nil {
+		return fmt.Errorf("cello create endpoint failed: %v", err)
+	}
+
+	start := time.Now()
+	defer func() {
+		duration := metrics.MsSince(start)
+		if err != nil {
+			log.WithFields(logger.Fields{"TimeCost": duration}).Errorf("Setup driver for %s/%s failed, %v",
+				k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, err)
+
+			deleteEndpointRequest := &pbrpc.DeleteEndpointRequest{
+				Name:             string(k8sConfig.K8S_POD_NAME),
+				Namespace:        string(k8sConfig.K8S_POD_NAMESPACE),
+				InfraContainerId: string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID),
+				IfName:           args.IfName,
+				IpamType:         celloTypes.IPAMTypeRdmaShare,
+				IpamArgs:         &pbrpc.IpamArgs{DeviceId: masterMac},
+			}
+			_, err = celloClient.DeleteEndpoint(ctx, deleteEndpointRequest)
+			if err != nil {
+				log.Errorf("Request to delete endpoint failed: %v", err)
+			}
+		} else {
+			log.WithFields(logger.Fields{"TimeCost": duration}).Infof("Setup driver for %s/%s success",
+				k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME)
+		}
+	}()
+
+	networkConfig, err := generateSetupConfig(args, cniConfig, createEndpointResponse.GetInterfaces())
+
+	err = driver.SetupDataPath(networkConfig)
+	if err != nil {
+		return err
+	}
+
+	cniResult := &current.Result{
+		CNIVersion: cniVersion.Current(),
+		Interfaces: nil,
+		IPs:        nil,
+		Routes:     nil,
+		DNS:        cniTypes.DNS{},
+	}
+	types.AppendNetworkConfigToCNIResult(cniResult, networkConfig)
+	cniResultJson, _ := json.Marshal(cniResult)
+	log.Debugf("CNI Result: %s", cniResultJson)
+
+	err = cniTypes.PrintResult(cniResult, cniResult.Version())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func CmdDel(args *skel.CmdArgs) error {
+	_, cniConfig, k8sConfig, err := types.ParseCmdArgs(args)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultCniTimeout)
+	defer cancel()
+
+	celloClient, conn, err := client.NewCelloClient(ctx)
+	if err != nil {
+		return fmt.Errorf("cello cmdDel create cello rpc client failed: %w", err)
+	}
+	defer func() {
+		_ = conn.Close()
+	}()
+
+	start := time.Now()
+
+	err = driver.GenericTeardownNetwork(args.Netns)
+	duration := metrics.MsSince(start)
+	if err != nil {
+		log.WithFields(logger.Fields{"TimeCost": duration, "Netns": args.Netns}).
+			Errorf("Teardown driver for %s/%s/%s failed, %v", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, args.IfName, err)
+		return nil
+	}
+	log.WithFields(logger.Fields{"TimeCost": duration, "Netns": args.Netns}).
+		Infof("Teardown driver for %s/%s/%s success", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, args.IfName)
+
+	if cniConfig.RuntimeConfig.DeviceID == "" {
+		return fmt.Errorf("no master device")
+	}
+	masterMac, err := getMacByDeviceId(cniConfig.RuntimeConfig.DeviceID)
+	if err != nil {
+		return fmt.Errorf("get mac of master device %s failed, %v", cniConfig.RuntimeConfig.DeviceID, err)
+	}
+
+	var ipamType string
+	switch cniConfig.DriverType {
+	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsShare)]:
+		ipamType = celloTypes.IPAMTypeRdmaShare
+	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsExclusive)]:
+		ipamType = celloTypes.IPAMTypeRdmaExclusive
+	default:
+		return fmt.Errorf("driveType %s not support", cniConfig.DriverType)
+	}
+
+	deleteEndpointRequest := &pbrpc.DeleteEndpointRequest{
+		Name:             string(k8sConfig.K8S_POD_NAME),
+		Namespace:        string(k8sConfig.K8S_POD_NAMESPACE),
+		InfraContainerId: string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID),
+		IfName:           args.IfName,
+		IpamType:         ipamType,
+		IpamArgs:         &pbrpc.IpamArgs{DeviceId: masterMac},
+	}
+	_, err = celloClient.DeleteEndpoint(ctx, deleteEndpointRequest)
+	if err != nil {
+		log.Errorf("Request to delete endpoint failed: %s", err.Error())
+		return err
+	}
+	log.Infof("Request to delete endpoint succeed")
+	return nil
+}
+
+func CmdCheck(_ *skel.CmdArgs) error {
+	return nil
+}
+
+func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, networks []*pbrpc.NetworkInterface) (*types.SetupConfig, error) {
+	var network *pbrpc.NetworkInterface
+	for _, n := range networks {
+		if n.IfName == args.IfName {
+			network = n
+			break
+		}
+	}
+	if network == nil {
+		return nil, fmt.Errorf("not found network config for %s", args.IfName)
+	}
+
+	masterLink, err := iproute.LinkByMac(network.GetENI().GetMac())
+	if err != nil {
+		return nil, fmt.Errorf("could not found dev [%s]: %v", network.GetENI().GetMac(), err)
+	}
+
+	var (
+		podIPv4Net  *net.IPNet
+		podIPv6Net  *net.IPNet
+		gatewayIPv4 net.IP
+		gatewayIPv6 net.IP
+	)
+
+	getPodIPSet := func(podIP string) (*net.IPNet, error) {
+		ipAddr, n, inErr := net.ParseCIDR(podIP)
+		if inErr != nil {
+			return nil, inErr
+		}
+		n.IP = ipAddr
+		return n, nil
+	}
+
+	gatewayIPv4Str := network.GetENI().GetIPv4Gateway()
+	gatewayIPv6Str := network.GetENI().GetIPv6Gateway()
+	if network.GetIPv4Addr() != "" {
+		podIPv4Net, err = getPodIPSet(network.GetIPv4Addr())
+		if err != nil {
+			return nil, err
+		}
+	}
+	if network.GetIPv6Addr() != "" {
+		podIPv6Net, err = getPodIPSet(network.GetIPv6Addr())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if gatewayIPv4Str != "" {
+		gatewayIPv4 = net.ParseIP(gatewayIPv4Str)
+		if gatewayIPv4 == nil {
+			return nil, fmt.Errorf("failed to parse ip %s", gatewayIPv6Str)
+		}
+	}
+
+	if gatewayIPv6Str != "" {
+		gatewayIPv6 = net.ParseIP(gatewayIPv6Str)
+		if gatewayIPv6 == nil {
+			return nil, fmt.Errorf("failed to parse ip %s", gatewayIPv6Str)
+		}
+	}
+
+	networkConfig := &types.SetupConfig{
+		ENIIndex:     masterLink.Attrs().Index,
+		IfName:       args.IfName,
+		NetNSPath:    args.Netns,
+		IPv4:         podIPv4Net,
+		IPv4Gateway:  gatewayIPv4,
+		IPv6:         podIPv6Net,
+		IPv6Gateway:  gatewayIPv6,
+		HostLink:     masterLink,
+		HostIPSet:    &celloTypes.IPSet{},
+		BandWidth:    conf.RuntimeConfig.Bandwidth,
+		DefaultRoute: network.DefaultRoute,
+		Vid:          network.GetENI().GetVid(),
+	}
+	var routes []cniTypes.Route
+	for _, r := range conf.ExtraRoutes {
+		ipAddr, n, inErr := net.ParseCIDR(r.Dst)
+		if inErr != nil {
+			return nil, fmt.Errorf("parse extra routes failed, %w", inErr)
+		}
+		route := cniTypes.Route{Dst: *n}
+		if r.Gw == "" {
+			if ipAddr.To4() != nil {
+				route.GW = gatewayIPv4
+			} else {
+				route.GW = gatewayIPv6
+			}
+		} else {
+			route.GW = net.ParseIP(r.Gw)
+		}
+		routes = append(routes, route)
+	}
+	networkConfig.ExtraRoutes = routes
+
+	switch conf.DriverType {
+	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsShare)]:
+		networkConfig.DP = types.IPVlan
+		networkConfig.ExtraNeigh = []types.Neigh{{
+			Dst: ip.NextIP(gatewayIPv4),
+			Mac: masterLink.Attrs().HardwareAddr,
+		}}
+	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsExclusive)]:
+		networkConfig.DP = types.ENI
+	default:
+		return nil, fmt.Errorf("unsupported ipType %d", network.IfType)
+	}
+
+	return networkConfig, nil
+}
+
+func getMacByDeviceId(deviceId string) (string, error) {
+	names, err := device.GetNetNamesByDeviceId(deviceId)
+	if err != nil {
+		return "", err
+	}
+	if len(names) != 1 {
+		return "", fmt.Errorf("device %s has too many net names %s", deviceId, names)
+	}
+	link, err := netlink.LinkByName(names[0])
+	if err != nil {
+		return "", err
+	}
+	return link.Attrs().HardwareAddr.String(), nil
+}

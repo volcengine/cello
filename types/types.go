@@ -438,3 +438,14 @@ func (f IPFamily) Support(s IPFamily) bool {
 	return (s == IPFamilyIPv4 && f == IPFamilyIPv4) ||
 		(s == IPFamilyIPv6 && f == IPFamilyIPv6)
 }
+
+type RdmaInterface struct {
+	IfName string `json:"ifName"`
+	Mac    string `json:"mac"`
+	Cidr   string `json:"cidr"`
+}
+
+const (
+	IPAMTypeRdmaShare     = "ipamTypeRdmaShare"
+	IPAMTypeRdmaExclusive = "ipamTypeRdmaExclusive"
+)

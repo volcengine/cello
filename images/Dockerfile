@@ -69,10 +69,18 @@ WORKDIR /go/src/cello/
 COPY ../.. .
 RUN CELLO_META=$CELLO_META make bin
 
-FROM cello-base
-ENV HTTP_PROXY=""
-ENV HTTPS_PROXY=""
-ENV GOPROXY=""
+
+FROM --platform=${TARGETPLATFORM} runtime
+# TARGETOS is an automatic platform ARG enabled by Docker BuildKit.
+ARG TARGETOS=linux
+# TARGETARCH is an automatic platform ARG enabled by Docker BuildKit.
+ARG TARGETARCH=amd64
+RUN groupadd -f cilium && echo ". /etc/profile.d/bash_completion.sh" >> /etc/bash.bashrc
+
+ENV HUBBLE_SERVER=unix:///var/run/cilium/hubble.sock
+COPY --from=hubble /out/${TARGETOS}/${TARGETARCH}/bin/hubble /bin/hubble
+COPY --from=hubble /out/linux/bash_completion /etc/bash_completion.d/hubble
+
 # cello & cilium bin
 COPY --from=cello-builder /go/src/cello/output /cello
 COPY --from=cni-plugins-builder /go/src/containernetworking/plugins/bin/loopback /containernetworking/plugins/

@@ -43,12 +43,6 @@ func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 		err = fmt.Errorf("could not found parent device [index %d]", config.ENIIndex)
 		return
 	}
-	if targetENI.Attrs().OperState != netlink.LinkOperState(netlink.OperUp) {
-		err = netlink.LinkSetUp(targetENI)
-		if err != nil {
-			return fmt.Errorf("failed to set link up due to: %v", err.Error())
-		}
-	}
 	config.Link = targetENI
 
 	// setup device in pod ns
@@ -58,7 +52,9 @@ func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 		err = fmt.Errorf("get ns handle for [%s] failed: %w", config.NetNSPath, err)
 		return
 	}
-	defer netns.Close()
+	defer func() {
+		_ = netns.Close()
+	}()
 	err = netlink.LinkSetNsFd(targetENI, int(netns.Fd()))
 	if err != nil {
 		err = fmt.Errorf("set link %s to netns failed: %w", targetENI.Attrs().Name, err)
@@ -72,6 +68,11 @@ func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 	}()
 
 	err = netns.Do(func(netNS ns.NetNS) error {
+		podLink, err2 := netlink.LinkByName(targetENI.Attrs().Name)
+		if err2 != nil {
+			return fmt.Errorf("could not find interface %d inside netns after name changed", targetENI.Attrs().Index)
+		}
+
 		linkConfig := &device.Conf{
 			IfName:    config.IfName,
 			MTU:       targetENI.Attrs().MTU,
@@ -81,9 +82,24 @@ func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 			Neighs:    []*netlink.Neigh{},
 			SysCtl:    [][]string{},
 		}
-		podLink, err2 := netlink.LinkByIndex(targetENI.Attrs().Index)
-		if err2 != nil {
-			return fmt.Errorf("could not find interface %d inside netns after name changed", targetENI.Attrs().Index)
+
+		for _, ne := range config.ExtraNeigh {
+			linkConfig.Neighs = append(linkConfig.Neighs, &netlink.Neigh{
+				LinkIndex:    podLink.Attrs().Index,
+				State:        netlink.NUD_PERMANENT,
+				IP:           ne.Dst,
+				HardwareAddr: ne.Mac,
+			})
+		}
+
+		for _, ro := range config.ExtraRoutes {
+			linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
+				Dst:       &ro.Dst,
+				Gw:        ro.GW,
+				LinkIndex: podLink.Attrs().Index,
+				Scope:     netlink.SCOPE_UNIVERSE,
+				Flags:     int(netlink.FLAG_ONLINK),
+			})
 		}
 
 		if config.BandWidth != nil && !config.BandWidth.IsZero() {
@@ -101,15 +117,17 @@ func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 			addr := &netlink.Addr{IPNet: config.IPv4}
 			linkConfig.Addresses = append(linkConfig.Addresses, addr)
 
-			// Route
-			linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
-				Table:     tableId,
-				LinkIndex: podLink.Attrs().Index,
-				Scope:     netlink.SCOPE_UNIVERSE,
-				Dst:       defaultIPv4Route,
-				Gw:        config.IPv4Gateway,
-				//Flags:     int(netlink.FLAG_ONLINK),
-			})
+			if config.DefaultRoute {
+				// Default Route
+				linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
+					Table:     tableId,
+					LinkIndex: podLink.Attrs().Index,
+					Scope:     netlink.SCOPE_UNIVERSE,
+					Dst:       defaultIPv4Route,
+					Gw:        config.IPv4Gateway,
+					//Flags:     int(netlink.FLAG_ONLINK),
+				})
+			}
 
 			// Rules
 			if config.PolicyRoute {
@@ -129,15 +147,17 @@ func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 			}
 			linkConfig.Addresses = append(linkConfig.Addresses, addr)
 
-			// Route
-			linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
-				Table:     tableId,
-				LinkIndex: podLink.Attrs().Index,
-				Scope:     netlink.SCOPE_UNIVERSE,
-				Gw:        config.IPv6Gateway,
-				Dst:       defaultIPv6Route,
-				//Flags:     int(netlink.FLAG_ONLINK),
-			})
+			if config.DefaultRoute {
+				// Default Route
+				linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
+					Table:     tableId,
+					LinkIndex: podLink.Attrs().Index,
+					Scope:     netlink.SCOPE_UNIVERSE,
+					Gw:        config.IPv6Gateway,
+					Dst:       defaultIPv6Route,
+					//Flags:     int(netlink.FLAG_ONLINK),
+				})
+			}
 
 			// Rules
 			if config.PolicyRoute {

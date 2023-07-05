@@ -13,6 +13,10 @@ service Cello {
   }
 }
 
+message IpamArgs {
+  string DeviceId = 1; // id or mac or any identify
+}
+
 // 详细请求
 message CreateEndpointRequest {
   string Name = 1;
@@ -21,6 +25,7 @@ message CreateEndpointRequest {
   string IfName = 4;
   string NetNs = 5;
   string IpamType = 6;
+  IpamArgs IpamArgs = 7;
 }
 
 message IPSet {
@@ -73,6 +78,9 @@ message DeleteEndpointRequest {
   string Name = 1;
   string Namespace = 2;
   string InfraContainerId = 3;
+  string IfName = 4;
+  string IpamType = 5;
+  IpamArgs IpamArgs = 6;
 }
 
 message DeleteEndpointResponse {

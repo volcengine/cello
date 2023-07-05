@@ -74,7 +74,9 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 		err = fmt.Errorf("get ns handle for [%s] failed: %w", config.NetNSPath, err)
 		return
 	}
-	defer netNS.Close()
+	defer func() {
+		_ = netNS.Close()
+	}()
 
 	ipVlanConf := device2.IPVlanConf{
 		MasterName: parentENI.Attrs().Name,
@@ -99,6 +101,7 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 		if inErr != nil {
 			return fmt.Errorf("error find link %s in container, %w", config.IfName, inErr)
 		}
+
 		linkConfig := &device2.Conf{
 			IfName:    config.IfName,
 			MTU:       parentENI.Attrs().MTU,
@@ -107,6 +110,25 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 			Rules:     []*netlink.Rule{},
 			Neighs:    []*netlink.Neigh{},
 			SysCtl:    [][]string{},
+		}
+
+		for _, ne := range config.ExtraNeigh {
+			linkConfig.Neighs = append(linkConfig.Neighs, &netlink.Neigh{
+				LinkIndex:    podLink.Attrs().Index,
+				State:        netlink.NUD_PERMANENT,
+				IP:           ne.Dst,
+				HardwareAddr: ne.Mac,
+			})
+		}
+
+		for _, ro := range config.ExtraRoutes {
+			linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
+				Dst:       &ro.Dst,
+				Gw:        ro.GW,
+				LinkIndex: podLink.Attrs().Index,
+				Scope:     netlink.SCOPE_UNIVERSE,
+				Flags:     int(netlink.FLAG_ONLINK),
+			})
 		}
 
 		if config.BandWidth != nil && !config.BandWidth.IsZero() {
@@ -122,21 +144,21 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 		}
 
 		if config.IPv4 != nil {
-
 			// Addr
 			addr := &netlink.Addr{IPNet: config.IPv4}
 			linkConfig.Addresses = append(linkConfig.Addresses, addr)
 
-			// Routes.
-			// To Gateway.
-			linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
-				Table:     tableId,
-				LinkIndex: podLink.Attrs().Index,
-				Scope:     netlink.SCOPE_UNIVERSE,
-				Gw:        config.IPv4Gateway,
-				Dst:       defaultIPv4Route,
-				//Flags:     int(netlink.FLAG_ONLINK),
-			})
+			// Default Routes.
+			if config.DefaultRoute {
+				linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
+					Table:     tableId,
+					LinkIndex: podLink.Attrs().Index,
+					Scope:     netlink.SCOPE_UNIVERSE,
+					Gw:        config.IPv4Gateway,
+					Dst:       defaultIPv4Route,
+					//Flags:     int(netlink.FLAG_ONLINK),
+				})
+			}
 			// To Host.
 			if config.HostIPSet.IPv4 != nil {
 				linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
@@ -187,16 +209,17 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 			}
 			linkConfig.Addresses = append(linkConfig.Addresses, addr)
 
-			// Routes.
-			// To Gateway.
-			linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
-				Table:     tableId,
-				LinkIndex: podLink.Attrs().Index,
-				Scope:     netlink.SCOPE_UNIVERSE,
-				Gw:        config.IPv6Gateway,
-				Dst:       defaultIPv6Route,
-				//Flags:     int(netlink.FLAG_ONLINK),
-			})
+			// Default Routes.
+			if config.DefaultRoute {
+				linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
+					Table:     tableId,
+					LinkIndex: podLink.Attrs().Index,
+					Scope:     netlink.SCOPE_UNIVERSE,
+					Gw:        config.IPv6Gateway,
+					Dst:       defaultIPv6Route,
+					//Flags:     int(netlink.FLAG_ONLINK),
+				})
+			}
 			// To host.
 			if config.HostIPSet.IPv6 != nil {
 				linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
@@ -251,12 +274,14 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 		return
 	}
 
-	// 3. setup init ns
-	log.Log.Infof("SetupInitNamespace")
-	err = d.setupInitNamespace(config)
-	if err != nil {
-		log.Log.Errorf("SetupInitNamespace failed, err:%s", err.Error())
-		return err
+	if config.SetupInitNs {
+		// 3. setup init ns
+		log.Log.Infof("SetupInitNamespace")
+		err = d.setupInitNamespace(config)
+		if err != nil {
+			log.Log.Errorf("SetupInitNamespace failed, err:%s", err.Error())
+			return err
+		}
 	}
 	return
 }

@@ -408,7 +408,7 @@ func (e *VolcApiImpl) GetTotalAttachedEniCnt() (int, error) {
 		return true, nil
 	})
 	if err = apiErr.BackoffErrWrapper(err, inErr); err != nil {
-		return 0, fmt.Errorf("desribe instance failed, %v, %v", err, inErr)
+		return 0, fmt.Errorf("desribe instance failed, %v", err)
 	}
 	if output == nil || len(output.Instances) != 1 {
 		return 0, fmt.Errorf("desribe instance failed, no result")

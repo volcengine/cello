@@ -24,11 +24,8 @@ import (
 )
 
 type Config struct {
-	Mode    string                        `json:"mode,omitempty"`
-	DataDir string                        `json:"dataDir"`
-	Ranges  map[string]allocator.RangeSet `json:"ranges,omitempty"`
-
-	Hook func() (map[string]allocator.RangeSet, error) `json:"-"`
+	DataDir string                         `json:"dataDir"`
+	Ranges  map[string]*allocator.RangeSet `json:"ranges,omitempty"`
 }
 
 func LoadConfigFromFile(path string) (*Config, error) {
@@ -51,18 +48,7 @@ func PrepareConfig(c *Config) error {
 	}
 
 	if c.Ranges == nil {
-		c.Ranges = map[string]allocator.RangeSet{}
-	}
-
-	if c.Hook != nil {
-		ranges, inErr := c.Hook()
-		if inErr != nil {
-			return inErr
-		}
-		// merge
-		for k, v := range ranges {
-			c.Ranges[k] = append(c.Ranges[k], v...)
-		}
+		c.Ranges = map[string]*allocator.RangeSet{}
 	}
 
 	for _, v := range c.Ranges {

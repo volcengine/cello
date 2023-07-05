@@ -16,12 +16,18 @@
 package types
 
 import (
+	"encoding/json"
 	"net"
 
+	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
+	cniTypes "github.com/containernetworking/cni/pkg/types"
+	current "github.com/containernetworking/cni/pkg/types/040"
+	cniVersion "github.com/containernetworking/cni/pkg/version"
 	cniIp "github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/gdexlab/go-render/render"
+	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
 
 	celloTypes "github.com/volcengine/cello/types"
@@ -34,6 +40,13 @@ const (
 	// NetworkInterfaceConfigTypeTrunk is the trunk type of NetworkInterfaceConfig runtimeConfig
 	NetworkInterfaceConfigTypeTrunk = "trunk"
 )
+
+// Route means one route rule
+type Route struct {
+	// Dst means the destination address
+	Dst string `json:"dst,omitempty"`
+	Gw  string `json:"gw,omitempty"`
+}
 
 // NetConf is the cni network config.
 type NetConf struct {
@@ -53,7 +66,11 @@ type NetConf struct {
 	RuntimeConfig struct {
 		NetworkInterfaceConfig *NetworkInterfaceConfig `json:"com.volcengine.k8s.network-interface,omitempty"`
 		Bandwidth              *BandwidthEntry         `json:"bandwidth,omitempty"`
+		DeviceID               string                  `json:"deviceID,omitempty"`
 	} `json:"runtimeConfig,omitempty"`
+
+	ExtraRoutes []Route `json:"extraRoutes,omitempty"`
+	DriverType  string  `json:"driverType"`
 }
 
 // K8SArgs is CNI args of kubernetes.
@@ -73,6 +90,11 @@ const (
 	ENI
 	Vlan
 )
+
+type Neigh struct {
+	Dst net.IP
+	Mac net.HardwareAddr
+}
 
 // SetupConfig is the datapath config for pod to be set up.
 type SetupConfig struct {
@@ -105,6 +127,11 @@ type SetupConfig struct {
 	// for vlan
 	Vid          uint32
 	HardwareAddr net.HardwareAddr
+
+	// for ipVlan host netns config
+	SetupInitNs bool
+
+	ExtraNeigh []Neigh
 }
 
 func (c *SetupConfig) String() string {
@@ -152,4 +179,68 @@ type NetworkInterfaceConfig struct {
 type NetworkInterfaceTrunkConfig struct {
 	VlanID   string `json:"vlanID,omitempty"`
 	TrunkMac string `json:"trunkMac,omitempty"`
+}
+
+func ParseCmdArgs(args *skel.CmdArgs) (string, *NetConf, *K8SArgs, error) {
+	// get cni request version
+	versionDecoder := &cniVersion.ConfigDecoder{}
+	confVersion, err := versionDecoder.Decode(args.StdinData)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	// parse config in cni conf file
+	conf := NetConf{}
+	if err = json.Unmarshal(args.StdinData, &conf); err != nil {
+		return "", nil, nil, errors.Wrap(err, "error loading config from args")
+	}
+
+	// args from a string in the form "K=V;K2=V2;..."
+	// we added args like region-id/vpc-id/subnet-id
+	k8sConfig := K8SArgs{}
+	if err = types.LoadArgs(args.Args, &k8sConfig); err != nil {
+		return "", nil, nil, errors.Wrap(err, "error loading config from args")
+	}
+	return confVersion, &conf, &k8sConfig, nil
+}
+
+func AppendNetworkConfigToCNIResult(cniResult *current.Result, networkConfig *SetupConfig) {
+	cniInterface := &current.Interface{
+		Name:    networkConfig.IfName,
+		Mac:     networkConfig.Link.Attrs().HardwareAddr.String(),
+		Sandbox: networkConfig.NetNSPath,
+	}
+	cniResult.Interfaces = append(cniResult.Interfaces, cniInterface)
+	cniIfIndex := len(cniResult.Interfaces) - 1
+
+	if networkConfig.IPv4 != nil && networkConfig.IPv4Gateway != nil {
+		cniResult.IPs = append(cniResult.IPs, &current.IPConfig{
+			Version:   "4",
+			Interface: &cniIfIndex,
+			Address:   *networkConfig.IPv4,
+			Gateway:   networkConfig.IPv4Gateway,
+		})
+		cniResult.Routes = append(cniResult.Routes, &cniTypes.Route{
+			Dst: net.IPNet{
+				IP:   net.ParseIP("0.0.0.0"),
+				Mask: net.CIDRMask(0, 32),
+			},
+			GW: networkConfig.IPv4Gateway,
+		})
+	}
+	if networkConfig.IPv6 != nil && networkConfig.IPv6Gateway != nil {
+		cniResult.IPs = append(cniResult.IPs, &current.IPConfig{
+			Version:   "6",
+			Interface: &cniIfIndex,
+			Address:   *networkConfig.IPv6,
+			Gateway:   networkConfig.IPv6Gateway,
+		})
+		cniResult.Routes = append(cniResult.Routes, &cniTypes.Route{
+			Dst: net.IPNet{
+				IP:   net.ParseIP("::"),
+				Mask: net.CIDRMask(0, 128),
+			},
+			GW: networkConfig.IPv6Gateway,
+		})
+	}
 }
