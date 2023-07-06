@@ -314,7 +314,7 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 	}
 
 	if datatype.BoolValue(cfg.EnableRdmaIpam) {
-		err = d.initRdmaIpam()
+		err = d.initRdmaIpamManager()
 		if err != nil {
 			return nil, fmt.Errorf("init rdma ipam failed, %v", err)
 		}

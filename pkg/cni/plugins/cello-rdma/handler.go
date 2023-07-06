@@ -19,22 +19,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/containernetworking/plugins/pkg/ip"
-	"github.com/vishvananda/netlink"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	cniTypes "github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/040"
 	cniVersion "github.com/containernetworking/cni/pkg/version"
+	"github.com/containernetworking/plugins/pkg/ip"
 
 	"github.com/volcengine/cello/pkg/cni/client"
 	"github.com/volcengine/cello/pkg/cni/driver"
 	"github.com/volcengine/cello/pkg/cni/types"
 	"github.com/volcengine/cello/pkg/metrics"
 	"github.com/volcengine/cello/pkg/pbrpc"
-	"github.com/volcengine/cello/pkg/utils/device"
 	"github.com/volcengine/cello/pkg/utils/iproute"
 	"github.com/volcengine/cello/pkg/utils/logger"
 	celloTypes "github.com/volcengine/cello/types"
@@ -65,16 +64,12 @@ func CmdAdd(args *skel.CmdArgs) error {
 	if cniConfig.RuntimeConfig.DeviceID == "" {
 		return fmt.Errorf("no master device")
 	}
-	masterMac, err := getMacByDeviceId(cniConfig.RuntimeConfig.DeviceID)
-	if err != nil {
-		return fmt.Errorf("get mac of master device %s failed, %v", cniConfig.RuntimeConfig.DeviceID, err)
-	}
 
 	var ipamType string
-	switch cniConfig.DriverType {
-	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsShare)]:
+	switch strings.ToLower(cniConfig.DriverType) {
+	case strings.ToLower(pbrpc.IfType_TypePhysicsShare.String()):
 		ipamType = celloTypes.IPAMTypeRdmaShare
-	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsExclusive)]:
+	case strings.ToLower(pbrpc.IfType_TypePhysicsExclusive.String()):
 		ipamType = celloTypes.IPAMTypeRdmaExclusive
 	default:
 		return fmt.Errorf("driveType %s not support", cniConfig.DriverType)
@@ -87,7 +82,7 @@ func CmdAdd(args *skel.CmdArgs) error {
 		IfName:           args.IfName,
 		NetNs:            args.Netns,
 		IpamType:         ipamType,
-		IpamArgs:         &pbrpc.IpamArgs{DeviceId: masterMac},
+		IpamArgs:         &pbrpc.IpamArgs{DeviceId: cniConfig.RuntimeConfig.DeviceID},
 	}
 	createEndpointResponse, err := celloClient.CreateEndpoint(ctx, createEndpointRequest)
 	if err != nil {
@@ -107,7 +102,7 @@ func CmdAdd(args *skel.CmdArgs) error {
 				InfraContainerId: string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID),
 				IfName:           args.IfName,
 				IpamType:         celloTypes.IPAMTypeRdmaShare,
-				IpamArgs:         &pbrpc.IpamArgs{DeviceId: masterMac},
+				IpamArgs:         &pbrpc.IpamArgs{DeviceId: cniConfig.RuntimeConfig.DeviceID},
 			}
 			_, err = celloClient.DeleteEndpoint(ctx, deleteEndpointRequest)
 			if err != nil {
@@ -120,6 +115,9 @@ func CmdAdd(args *skel.CmdArgs) error {
 	}()
 
 	networkConfig, err := generateSetupConfig(args, cniConfig, createEndpointResponse.GetInterfaces())
+	if err != nil {
+		return err
+	}
 
 	err = driver.SetupDataPath(networkConfig)
 	if err != nil {
@@ -173,19 +171,11 @@ func CmdDel(args *skel.CmdArgs) error {
 	log.WithFields(logger.Fields{"TimeCost": duration, "Netns": args.Netns}).
 		Infof("Teardown driver for %s/%s/%s success", k8sConfig.K8S_POD_NAMESPACE, k8sConfig.K8S_POD_NAME, args.IfName)
 
-	if cniConfig.RuntimeConfig.DeviceID == "" {
-		return fmt.Errorf("no master device")
-	}
-	masterMac, err := getMacByDeviceId(cniConfig.RuntimeConfig.DeviceID)
-	if err != nil {
-		return fmt.Errorf("get mac of master device %s failed, %v", cniConfig.RuntimeConfig.DeviceID, err)
-	}
-
 	var ipamType string
-	switch cniConfig.DriverType {
-	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsShare)]:
+	switch strings.ToLower(cniConfig.DriverType) {
+	case strings.ToLower(pbrpc.IfType_TypePhysicsShare.String()):
 		ipamType = celloTypes.IPAMTypeRdmaShare
-	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsExclusive)]:
+	case strings.ToLower(pbrpc.IfType_TypePhysicsExclusive.String()):
 		ipamType = celloTypes.IPAMTypeRdmaExclusive
 	default:
 		return fmt.Errorf("driveType %s not support", cniConfig.DriverType)
@@ -197,7 +187,7 @@ func CmdDel(args *skel.CmdArgs) error {
 		InfraContainerId: string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID),
 		IfName:           args.IfName,
 		IpamType:         ipamType,
-		IpamArgs:         &pbrpc.IpamArgs{DeviceId: masterMac},
+		IpamArgs:         &pbrpc.IpamArgs{DeviceId: cniConfig.RuntimeConfig.DeviceID}, // deviceId maybe empty
 	}
 	_, err = celloClient.DeleteEndpoint(ctx, deleteEndpointRequest)
 	if err != nil {
@@ -289,20 +279,16 @@ func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, networks []*pb
 		Vid:          network.GetENI().GetVid(),
 	}
 	var routes []cniTypes.Route
-	for _, r := range conf.ExtraRoutes {
+	for _, r := range network.ExtraRoutes {
 		ipAddr, n, inErr := net.ParseCIDR(r.Dst)
 		if inErr != nil {
 			return nil, fmt.Errorf("parse extra routes failed, %w", inErr)
 		}
 		route := cniTypes.Route{Dst: *n}
-		if r.Gw == "" {
-			if ipAddr.To4() != nil {
-				route.GW = gatewayIPv4
-			} else {
-				route.GW = gatewayIPv6
-			}
+		if ipAddr.To4() != nil {
+			route.GW = gatewayIPv4
 		} else {
-			route.GW = net.ParseIP(r.Gw)
+			route.GW = gatewayIPv6
 		}
 		routes = append(routes, route)
 	}
@@ -322,19 +308,4 @@ func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, networks []*pb
 	}
 
 	return networkConfig, nil
-}
-
-func getMacByDeviceId(deviceId string) (string, error) {
-	names, err := device.GetNetNamesByDeviceId(deviceId)
-	if err != nil {
-		return "", err
-	}
-	if len(names) != 1 {
-		return "", fmt.Errorf("device %s has too many net names %s", deviceId, names)
-	}
-	link, err := netlink.LinkByName(names[0])
-	if err != nil {
-		return "", err
-	}
-	return link.Attrs().HardwareAddr.String(), nil
 }

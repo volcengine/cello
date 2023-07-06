@@ -439,10 +439,22 @@ func (f IPFamily) Support(s IPFamily) bool {
 		(s == IPFamilyIPv6 && f == IPFamilyIPv6)
 }
 
+type HpcRoute struct {
+	Dst string `json:"dst"`
+	Gw  string `json:"gw"`
+	Dev string `json:"dev"`
+}
+
+type RdmaInfo struct {
+	HpcRoute       HpcRoute        `json:"hpcRoute"`
+	RdmaInterfaces []RdmaInterface `json:"rdmaInterfaces"`
+}
+
 type RdmaInterface struct {
-	IfName string `json:"ifName"`
-	Mac    string `json:"mac"`
-	Cidr   string `json:"cidr"`
+	IfName   string `json:"ifName"`
+	Mac      string `json:"mac"`
+	DeviceId string `json:"deviceId"`
+	Cidr     string `json:"cidr"`
 }
 
 const (

@@ -41,13 +41,6 @@ const (
 	NetworkInterfaceConfigTypeTrunk = "trunk"
 )
 
-// Route means one route rule
-type Route struct {
-	// Dst means the destination address
-	Dst string `json:"dst,omitempty"`
-	Gw  string `json:"gw,omitempty"`
-}
-
 // NetConf is the cni network config.
 type NetConf struct {
 	// CNIVersion for CNI calls.
@@ -69,8 +62,7 @@ type NetConf struct {
 		DeviceID               string                  `json:"deviceID,omitempty"`
 	} `json:"runtimeConfig,omitempty"`
 
-	ExtraRoutes []Route `json:"extraRoutes,omitempty"`
-	DriverType  string  `json:"driverType"`
+	DriverType string `json:"driverType"`
 }
 
 // K8SArgs is CNI args of kubernetes.
