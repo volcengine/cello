@@ -16,8 +16,9 @@
 package cello_rdma
 
 import (
-	"github.com/volcengine/cello/pkg/utils/logger"
 	"k8s.io/apimachinery/pkg/util/uuid"
+
+	"github.com/volcengine/cello/pkg/utils/logger"
 )
 
 var conf = logger.Configuration{

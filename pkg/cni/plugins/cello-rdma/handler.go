@@ -46,6 +46,7 @@ const (
 func CmdAdd(args *skel.CmdArgs) error {
 	_, cniConfig, k8sConfig, err := types.ParseCmdArgs(args)
 	if err != nil {
+		log.Errorf("parse cmdArgs failed, %v", err)
 		return err
 	}
 	log.Infof("CniConf: %+v", cniConfig)
@@ -145,8 +146,10 @@ func CmdAdd(args *skel.CmdArgs) error {
 func CmdDel(args *skel.CmdArgs) error {
 	_, cniConfig, k8sConfig, err := types.ParseCmdArgs(args)
 	if err != nil {
+		log.Errorf("parse cmdArgs failed, %v", err)
 		return err
 	}
+	log.Infof("CniConf: %+v", cniConfig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), defaultCniTimeout)
 	defer cancel()
@@ -294,14 +297,14 @@ func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, networks []*pb
 	}
 	networkConfig.ExtraRoutes = routes
 
-	switch conf.DriverType {
-	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsShare)]:
+	switch strings.ToLower(conf.DriverType) {
+	case strings.ToLower(pbrpc.IfType_TypePhysicsShare.String()):
 		networkConfig.DP = types.IPVlan
 		networkConfig.ExtraNeigh = []types.Neigh{{
 			Dst: ip.NextIP(gatewayIPv4),
 			Mac: masterLink.Attrs().HardwareAddr,
 		}}
-	case pbrpc.IfType_name[int32(pbrpc.IfType_TypePhysicsExclusive)]:
+	case strings.ToLower(pbrpc.IfType_TypePhysicsExclusive.String()):
 		networkConfig.DP = types.ENI
 	default:
 		return nil, fmt.Errorf("unsupported ipType %d", network.IfType)

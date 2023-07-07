@@ -777,6 +777,9 @@ func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
 			TrunkSupported: volcengine.BoolValue(instance.TrunkNetworkInterfaceSupported),
 		},
 	}
+	if instance.Rdma != nil && volcengine.Int32Value(instance.Rdma.RdmaNetworkInterfaces) > 0 {
+		limit.RdmaSupport = true
+	}
 
 	// TODO assert ENITotal which now is 0
 	if limit.NonPrimaryENI() <= 0 {

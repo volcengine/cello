@@ -35,6 +35,7 @@ type InstanceLimitsAttr struct {
 	IPv4MaxPerENI  int
 	IPv6MaxPerENI  int
 	TrunkSupported bool
+	RdmaSupport    bool
 }
 
 // InstanceLimits quota and limit.

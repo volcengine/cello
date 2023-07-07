@@ -195,7 +195,7 @@ func loadNetDeviceConfigCache(dirPath string, deviceID string) (*NetDevice, erro
 }
 
 func storeNetDeviceConfigCache(dirPath string, device *NetDevice) error {
-	if err := os.MkdirAll(dirPath, 750); err != nil {
+	if err := os.MkdirAll(dirPath, 0750); err != nil {
 		return fmt.Errorf("make cache dir %s failed, %v", dirPath, err)
 	}
 	file := path.Join(dirPath, device.DeviceID)
@@ -203,7 +203,7 @@ func storeNetDeviceConfigCache(dirPath string, device *NetDevice) error {
 	if err != nil {
 		return fmt.Errorf("marshal netDevice %v failed, %v", device, err)
 	}
-	if err = renameio.WriteFile(file, data, 640); err != nil {
+	if err = renameio.WriteFile(file, data, 0640); err != nil {
 		return fmt.Errorf("write netDevice %s cache to %s failed, %v", device.DeviceID, file, err)
 	}
 

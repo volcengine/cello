@@ -343,6 +343,9 @@ func showMetadataInfo(c *cli.Context) error {
 		if err != nil {
 			return err
 		}
+		if id == "" {
+			continue
+		}
 		subnetId, err := getter.GetENISubnetID(ctx, eniMac)
 		if err != nil {
 			return err

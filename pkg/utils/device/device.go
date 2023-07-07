@@ -18,10 +18,10 @@ package device
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Mellanox/rdmamap"
-	"path/filepath"
 )
 
 var (

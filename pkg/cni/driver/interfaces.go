@@ -17,11 +17,13 @@ package driver
 
 import (
 	"fmt"
-	"github.com/containernetworking/plugins/pkg/ip"
 	"net"
+	"os"
 
+	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
+	k8sErr "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/volcengine/cello/pkg/cni/log"
 	"github.com/volcengine/cello/pkg/cni/types"
@@ -79,15 +81,20 @@ func SetupDataPath(setupConfig *types.SetupConfig) error {
 
 // GenericTeardownNetwork all the networks netns.
 func GenericTeardownNetwork(netNs string) error {
-	var errList []error
 	hostNetNS, err := ns.GetCurrentNS()
+	if err != nil {
+		return err
+	}
 
 	if netNs == "" {
 		return nil
 	}
 	containerNs, err := ns.GetNS(netNs)
 	if err != nil {
-		log.Log.Infof("Target netns doesn't exist.")
+		if os.IsNotExist(err) {
+			return nil
+		}
+		log.Log.Infof("Get target netns failed, %v", err)
 		return err
 	}
 	defer func(containerNs ns.NetNS) {
@@ -99,6 +106,7 @@ func GenericTeardownNetwork(netNs string) error {
 
 	var fastPaths []*FastPath
 	err = containerNs.Do(func(netNS ns.NetNS) error {
+		var errList []error
 		links, err2 := netlink.LinkList()
 		if err2 != nil {
 			return fmt.Errorf("list links failed: %w", err2)
@@ -115,7 +123,7 @@ func GenericTeardownNetwork(netNs string) error {
 					table: 0,
 				})
 				errList = append(errList, netlink.LinkDel(link))
-			case *netlink.Vlan, *netlink.Veth:
+			case *netlink.Vlan, *netlink.Veth, *netlink.Dummy:
 				errList = append(errList, netlink.LinkDel(link))
 			case *netlink.Device:
 				name, inErr := ip.RandomVethName()
@@ -129,8 +137,9 @@ func GenericTeardownNetwork(netNs string) error {
 				continue
 			}
 		}
-		return nil
+		return k8sErr.NewAggregate(errList)
 	})
+
 	if err != nil {
 		log.Log.Errorf("failed to cleanup container network: %v", err)
 	}

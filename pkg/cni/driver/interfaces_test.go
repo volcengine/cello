@@ -285,6 +285,7 @@ func TestDataPathUseSharedENI(t *testing.T) {
 		},
 		Vid:          0,
 		HardwareAddr: nil,
+		SetupInitNs:  true,
 	}
 	t.Log(render.Render(dataPathConfig))
 
