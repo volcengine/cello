@@ -17,11 +17,11 @@ package driver
 
 import (
 	"fmt"
-	"github.com/volcengine/cello/pkg/cni/log"
-	"syscall"
-
+	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
+	"github.com/volcengine/cello/pkg/cni/log"
+	"syscall"
 
 	"github.com/volcengine/cello/pkg/cni/device"
 	"github.com/volcengine/cello/pkg/cni/types"
@@ -39,12 +39,30 @@ func (d *LocalNetDevice) Name() string {
 }
 
 func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
-	targetENI, err := netlink.LinkByIndex(config.ENIIndex)
+	targetLink, err := netlink.LinkByIndex(config.ENIIndex)
 	if err != nil {
 		err = fmt.Errorf("could not found parent device [index %d]", config.ENIIndex)
 		return
 	}
-	config.Link = targetENI
+	err = netlink.LinkSetDown(targetLink)
+	if err != nil {
+		return fmt.Errorf("set link %s down failed, %v", targetLink.Attrs().Name, err)
+	}
+	tempName, err := ip.RandomVethName()
+	if err != nil {
+		return err
+	}
+	err = netlink.LinkSetName(targetLink, tempName)
+	if err != nil {
+		return fmt.Errorf("set link %s name to %s failed, %v", targetLink.Attrs().Name, tempName, err)
+	}
+
+	targetLink, err = netlink.LinkByName(tempName)
+	if err != nil {
+		err = fmt.Errorf("could not found parent device [index %d, name %s]", config.ENIIndex, tempName)
+		return
+	}
+	config.Link = targetLink
 
 	// setup device in pod ns
 	var netns ns.NetNS
@@ -61,9 +79,9 @@ func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 		}
 	}(netns)
 
-	err = netlink.LinkSetNsFd(targetENI, int(netns.Fd()))
+	err = netlink.LinkSetNsFd(targetLink, int(netns.Fd()))
 	if err != nil {
-		err = fmt.Errorf("set link %s to netns failed: %w", targetENI.Attrs().Name, err)
+		err = fmt.Errorf("set link %s to netns failed: %w", targetLink.Attrs().Name, err)
 		return
 	}
 
@@ -74,14 +92,14 @@ func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 	}()
 
 	err = netns.Do(func(netNS ns.NetNS) error {
-		podLink, err2 := netlink.LinkByName(targetENI.Attrs().Name)
+		podLink, err2 := netlink.LinkByName(tempName)
 		if err2 != nil {
-			return fmt.Errorf("could not find interface %d inside netns after name changed", targetENI.Attrs().Index)
+			return fmt.Errorf("could not find interface %s inside netns, %v", tempName, err2)
 		}
 
 		linkConfig := &device.Conf{
 			IfName:    config.IfName,
-			MTU:       targetENI.Attrs().MTU,
+			MTU:       targetLink.Attrs().MTU,
 			Addresses: []*netlink.Addr{},
 			Routes:    []*netlink.Route{},
 			Rules:     []*netlink.Rule{},

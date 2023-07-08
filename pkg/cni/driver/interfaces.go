@@ -17,13 +17,12 @@ package driver
 
 import (
 	"fmt"
-	"net"
-	"os"
-
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
 	k8sErr "k8s.io/apimachinery/pkg/util/errors"
+	"net"
+	"os"
 
 	"github.com/volcengine/cello/pkg/cni/log"
 	"github.com/volcengine/cello/pkg/cni/types"
@@ -131,6 +130,7 @@ func GenericTeardownNetwork(netNs string) error {
 					log.Log.Warnf("Delete link %s failed: %s", link.Attrs().Name, inErr)
 					continue
 				}
+				errList = append(errList, netlink.LinkSetDown(link))
 				errList = append(errList, netlink.LinkSetName(link, name))
 				errList = append(errList, netlink.LinkSetNsFd(link, int(hostNetNS.Fd())))
 			default:
