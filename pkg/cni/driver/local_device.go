@@ -17,13 +17,14 @@ package driver
 
 import (
 	"fmt"
+	"syscall"
+
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
-	"github.com/volcengine/cello/pkg/cni/log"
-	"syscall"
 
 	"github.com/volcengine/cello/pkg/cni/device"
+	"github.com/volcengine/cello/pkg/cni/log"
 	"github.com/volcengine/cello/pkg/cni/types"
 	"github.com/volcengine/cello/pkg/cni/utils"
 )
