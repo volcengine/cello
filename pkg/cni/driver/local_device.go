@@ -17,6 +17,7 @@ package driver
 
 import (
 	"fmt"
+	"github.com/volcengine/cello/pkg/cni/log"
 	"syscall"
 
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -52,9 +53,14 @@ func (d *LocalNetDevice) SetupNetwork(config *types.SetupConfig) (err error) {
 		err = fmt.Errorf("get ns handle for [%s] failed: %w", config.NetNSPath, err)
 		return
 	}
-	defer func() {
-		_ = netns.Close()
-	}()
+
+	defer func(netNs ns.NetNS) {
+		inErr := netNs.Close()
+		if inErr != nil {
+			log.Log.Errorf("Failed to close netns due to: %v", inErr)
+		}
+	}(netns)
+
 	err = netlink.LinkSetNsFd(targetENI, int(netns.Fd()))
 	if err != nil {
 		err = fmt.Errorf("set link %s to netns failed: %w", targetENI.Attrs().Name, err)

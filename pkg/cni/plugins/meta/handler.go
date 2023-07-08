@@ -440,6 +440,13 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 	}
 	log.Log.Infof("setup Routes, NetNsConfig:%+v", netInfos)
 
+	defer func(netNs ns.NetNS) {
+		inErr := netNs.Close()
+		if inErr != nil {
+			log.Log.Errorf("Failed to close netns due to: %v", inErr)
+		}
+	}(netNs)
+
 	customRoutes := make(map[string][]RealRoute)
 
 	for _, netInfo := range netInfos {
@@ -944,6 +951,14 @@ func validateIfName(nsname string, ifname string) error {
 	if err != nil {
 		return fmt.Errorf("validateIfName: no net namespace %s found: %v", nsname, err)
 	}
+
+	defer func(netNs ns.NetNS) {
+		inErr := netNs.Close()
+		if inErr != nil {
+			log.Log.Errorf("Failed to close netns due to: %v", inErr)
+		}
+	}(podNs)
+
 	err = podNs.Do(func(_ ns.NetNS) error {
 		_, getErr := netlink.LinkByName(ifname)
 		if getErr != nil {
