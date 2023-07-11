@@ -219,7 +219,7 @@ func (k *k8sManager) initPodInformer() {
 	}
 
 	// start pod informer
-	go factory.Start(stopCh.Done()) //FIXME: No Need to start a goroutine, start() will create a new one.
+	factory.Start(stopCh.Done())
 	// wait informer synced
 	if !cache.WaitForCacheSync(stopCh.Done(), informer.HasSynced) {
 		log.Errorf("Timeout to wait pod informer synced")
