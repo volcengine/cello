@@ -3,6 +3,7 @@ module github.com/volcengine/cello
 go 1.20
 
 require (
+	github.com/Mellanox/rdmamap v1.1.0
 	github.com/boltdb/bolt v1.3.1
 	github.com/containernetworking/cni v1.1.2
 	github.com/containernetworking/plugins v1.2.0

@@ -13,15 +13,18 @@
 // limitations under the License.
 //
 
-package main
+package log
 
 import (
-	"github.com/containernetworking/cni/pkg/skel"
-	cniVersion "github.com/containernetworking/cni/pkg/version"
+	"k8s.io/apimachinery/pkg/util/uuid"
 
-	"github.com/volcengine/cello/pkg/plugins/cni/cello"
+	"github.com/volcengine/cello/pkg/utils/logger"
 )
 
-func main() {
-	skel.PluginMain(cello.CmdAdd, cello.CmdCheck, cello.CmdDel, cniVersion.All, "Cello CNI")
+var conf = logger.Configuration{
+	LogLocation: "/var/log/cello/cni.log",
+	LogLevel:    "info",
 }
+
+// Log uses logger with traceID print log.
+var Log = logger.New(&conf).WithFields(logger.Fields{"subsys": "cniBin", "traceID": string(uuid.NewUUID())[:8]})

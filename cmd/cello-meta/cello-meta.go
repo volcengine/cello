@@ -19,9 +19,10 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	cniVersion "github.com/containernetworking/cni/pkg/version"
 
-	"github.com/volcengine/cello/pkg/plugins/cni/cello"
+	_ "github.com/volcengine/cello/pkg/plugins/cni/cello"
+	celloMeta "github.com/volcengine/cello/pkg/plugins/cni/cello-meta"
 )
 
 func main() {
-	skel.PluginMain(cello.CmdAdd, cello.CmdCheck, cello.CmdDel, cniVersion.All, "Cello CNI")
+	skel.PluginMain(celloMeta.CmdAdd, celloMeta.CmdCheck, celloMeta.CmdDel, cniVersion.All, "Cello Meta CNI")
 }

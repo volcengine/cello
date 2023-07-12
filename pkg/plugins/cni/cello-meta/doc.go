@@ -13,15 +13,5 @@
 // limitations under the License.
 //
 
-package main
-
-import (
-	"github.com/containernetworking/cni/pkg/skel"
-	cniVersion "github.com/containernetworking/cni/pkg/version"
-
-	"github.com/volcengine/cello/pkg/plugins/cni/cello"
-)
-
-func main() {
-	skel.PluginMain(cello.CmdAdd, cello.CmdCheck, cello.CmdDel, cniVersion.All, "Cello CNI")
-}
+// Package meta is multi-cni command handler.
+package cello_meta

@@ -64,11 +64,9 @@ RUN cd plugins && bash build_linux.sh
 FROM docker.io/library/golang:1.20-bullseye as cello-builder
 ARG GOPROXY
 ENV GOPROXY $GOPROXY
-ARG CELLO_META
 WORKDIR /go/src/cello/
 COPY ../.. .
-RUN CELLO_META=$CELLO_META make bin
-
+RUN make bin
 
 FROM --platform=${TARGETPLATFORM} runtime
 # TARGETOS is an automatic platform ARG enabled by Docker BuildKit.
@@ -86,9 +84,9 @@ COPY --from=cello-builder /go/src/cello/output /cello
 COPY --from=cni-plugins-builder /go/src/containernetworking/plugins/bin/loopback /containernetworking/plugins/
 COPY --from=cilium-builder /tmp/install/. /
 RUN mv /opt/cni/bin/cilium-cni /containernetworking/plugins/cilium-cni && \
-    ln -s /cello/cello-ctl /bin/cello-ctl && \
-    ln -s /cello/cello-agent /bin/cello-agent && \
-    ln -s /cello/cilium-launcher /bin/cilium-launcher
+    ln -s /cello/bin/cello-ctl /bin/cello-ctl && \
+    ln -s /cello/bin/cello-agent /bin/cello-agent && \
+    ln -s /cello/bin/cilium-launcher /bin/cilium-launcher
 
 # script
 RUN mkdir -p /script

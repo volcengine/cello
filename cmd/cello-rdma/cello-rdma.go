@@ -19,7 +19,7 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	cniVersion "github.com/containernetworking/cni/pkg/version"
 
-	celloRdma "github.com/volcengine/cello/pkg/cni/plugins/cello-rdma"
+	celloRdma "github.com/volcengine/cello/pkg/plugins/cni/cello-rdma"
 )
 
 func main() {
