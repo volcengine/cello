@@ -50,8 +50,8 @@ type InstanceLimits struct {
 }
 
 func (l *InstanceLimits) String() string {
-	return fmt.Sprintf("{ENITotal: %d, ENIQuota: %d, IPv4MaxPerENI: %d, IPv6MaxPerENI: %d, TrunkSupported: %t, ENICustomer: %d, Created: %d, Cordon: %t}",
-		l.ENITotal, l.ENIQuota, l.IPv4MaxPerENI, l.IPv6MaxPerENI, l.TrunkSupported, l.ENICustomer, l.Created, l.Cordon)
+	return fmt.Sprintf("{ENITotal: %d, ENIQuota: %d, IPv4MaxPerENI: %d, IPv6MaxPerENI: %d, TrunkSupported: %t, RdmaSupport: %t, ENICustomer: %d, Created: %d, Cordon: %t}",
+		l.ENITotal, l.ENIQuota, l.IPv4MaxPerENI, l.IPv6MaxPerENI, l.TrunkSupported, l.RdmaSupport, l.ENICustomer, l.Created, l.Cordon)
 }
 
 // SupportTrunk support trunk or not.
