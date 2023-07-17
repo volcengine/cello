@@ -111,5 +111,8 @@ func GetCelloConfigFromConfigMap(obj interface{}) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal config failed, %v", err)
 	}
+	if len(celloConfig.SecurityGroups) == 0 && len(celloConfig.LegacySecurityGroups) != 0 {
+		celloConfig.SecurityGroups = celloConfig.LegacySecurityGroups
+	}
 	return celloConfig, nil
 }
