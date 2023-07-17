@@ -80,97 +80,101 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 		return matches, nil
 	}
 
-	if datatype.BoolValue(d.cfg.ProbeRdma) {
-		// find rdma
-		rdmaInterfaces, err := device.ListRdma()
-		if err != nil {
-			return nil, fmt.Errorf("list rdma failed, %v", err)
-		}
-		log.Info("Found rdma interfaces: %v", rdmaInterfaces)
-
-		var output *ecs.DescribeInstancesOutput
-		var inErr error
-		err = wait.ExponentialBackoff(backoff.BackOff(backoff.APIFastRetry), func() (bool, error) {
-			output, inErr = d.ecsMetaGetter.DescribeInstances(&ecs.DescribeInstancesInput{
-				VpcId:       volcengine.String(d.instanceMeta.GetVpcId()),
-				InstanceIds: []*string{volcengine.String(d.instanceMeta.GetInstanceId())},
-			})
-			return inErr == nil, nil
-		})
-		if err = apiErr.BackoffErrWrapper(err, inErr); err != nil {
-			return nil, fmt.Errorf("get rdma info failed, %v", err)
-		}
-		rdmaIpAddresses := volcengine.StringValueSlice(output.Instances[0].RdmaIpAddresses)
-		if len(rdmaIpAddresses) == 0 {
-			return &info, nil
-		}
-		if len(rdmaInterfaces) != len(rdmaIpAddresses) {
-			return nil, fmt.Errorf("number of rdma get from local is %d, not equal to %d get from remote",
-				len(rdmaInterfaces), len(rdmaIpAddresses))
-		}
-
-		for _, r := range rdmaInterfaces {
-			link, mErr := netlink.LinkByName(r.NetName)
-			if mErr != nil {
-				return nil, mErr
-			}
-			for _, rdmaIPStr := range rdmaIpAddresses {
-				rdmaIP := net.ParseIP(rdmaIPStr)
-				matches, err2 := linkHasAddresses(link, []net.IPNet{{
-					IP:   rdmaIP,
-					Mask: net.CIDRMask(32, 32),
-				}}, false)
-				if err2 != nil {
-					return nil, fmt.Errorf("find %s on %s failed, %v", rdmaIPStr, link.Attrs().HardwareAddr, err2)
-				}
-				if len(matches) == 1 {
-					log.Infof("Found %v match %s on %s", matches, rdmaIPStr, r.NetName)
-					info.RdmaInterfaces = append(info.RdmaInterfaces, types.RdmaInterface{
-						IfName:   link.Attrs().Name,
-						Mac:      link.Attrs().HardwareAddr.String(),
-						DeviceId: r.PciAddr,
-						Cidr:     matches[0].String(),
-					})
-				}
-			}
-		}
-
-		if len(rdmaIpAddresses) != len(info.RdmaInterfaces) {
-			return nil, fmt.Errorf("not found all rdma interfaces, rdma from remote: %v, from local: %v", rdmaIpAddresses, info.RdmaInterfaces)
-		}
-		hpcRoute, err := getHpcRoute(info.RdmaInterfaces)
-		if err != nil {
-			return nil, fmt.Errorf("get hpc route failed, %v", err)
-		}
-		info.HpcRoute = *hpcRoute
+	// find rdma
+	rdmaInterfaces, err := device.ListRdma()
+	if err != nil {
+		return nil, fmt.Errorf("list rdma failed, %v", err)
 	}
+	log.Info("Found rdma interfaces: %v", rdmaInterfaces)
+
+	var output *ecs.DescribeInstancesOutput
+	var inErr error
+	err = wait.ExponentialBackoff(backoff.BackOff(backoff.APIFastRetry), func() (bool, error) {
+		output, inErr = d.ecsMetaGetter.DescribeInstances(&ecs.DescribeInstancesInput{
+			VpcId:       volcengine.String(d.instanceMeta.GetVpcId()),
+			InstanceIds: []*string{volcengine.String(d.instanceMeta.GetInstanceId())},
+		})
+		return inErr == nil, nil
+	})
+	if err = apiErr.BackoffErrWrapper(err, inErr); err != nil {
+		return nil, fmt.Errorf("get rdma info failed, %v", err)
+	}
+	rdmaIpAddresses := volcengine.StringValueSlice(output.Instances[0].RdmaIpAddresses)
+	if len(rdmaIpAddresses) == 0 {
+		return &info, nil
+	}
+	if len(rdmaInterfaces) != len(rdmaIpAddresses) {
+		return nil, fmt.Errorf("number of rdma get from local is %d, not equal to %d get from remote",
+			len(rdmaInterfaces), len(rdmaIpAddresses))
+	}
+
+	for _, r := range rdmaInterfaces {
+		link, mErr := netlink.LinkByName(r.NetName)
+		if mErr != nil {
+			return nil, mErr
+		}
+		for _, rdmaIPStr := range rdmaIpAddresses {
+			rdmaIP := net.ParseIP(rdmaIPStr)
+			matches, err2 := linkHasAddresses(link, []net.IPNet{{
+				IP:   rdmaIP,
+				Mask: net.CIDRMask(32, 32),
+			}}, false)
+			if err2 != nil {
+				return nil, fmt.Errorf("find %s on %s failed, %v", rdmaIPStr, link.Attrs().HardwareAddr, err2)
+			}
+			if len(matches) == 1 {
+				log.Infof("Found %v match %s on %s", matches, rdmaIPStr, r.NetName)
+				info.RdmaInterfaces = append(info.RdmaInterfaces, types.RdmaInterface{
+					IfName:   link.Attrs().Name,
+					Mac:      link.Attrs().HardwareAddr.String(),
+					DeviceId: r.PciAddr,
+					Cidr:     matches[0].String(),
+				})
+			}
+		}
+	}
+
+	if len(rdmaIpAddresses) != len(info.RdmaInterfaces) {
+		return nil, fmt.Errorf("not found all rdma interfaces, rdma from remote: %v, from local: %v", rdmaIpAddresses, info.RdmaInterfaces)
+	}
+	hpcRoute, err := getHpcRoute(info.RdmaInterfaces)
+	if err != nil {
+		return nil, fmt.Errorf("get hpc route failed, %v", err)
+	}
+	info.HpcRoute = *hpcRoute
+
 	return &info, nil
 }
 
 func (d *daemon) initRdmaIpamManager() error {
-	info, err := d.getRdmaInfo()
-	if err != nil || len(info.RdmaInterfaces) == 0 {
+	var rdmaInfo *types.RdmaInfo
+
+	if datatype.BoolValue(d.cfg.ProbeRdma) {
+		info, err := d.getRdmaInfo()
 		if err != nil {
 			log.Warnf("Get rdma info failed, %v, try get from node annotation", err)
 		} else {
-			log.Warnf("Get rdma info failed, %d rdma interfaces found, try get from node annotation", len(info.RdmaInterfaces))
+			rdmaInfo = info
 		}
+	}
 
+	if rdmaInfo == nil || len(rdmaInfo.RdmaInterfaces) == 0 {
+		log.Warnf("Unable to get RDMA information, try get from node annotation")
 		anno, inErr := d.k8s.GetNodeAnnotation()
 		if inErr != nil {
 			return inErr
 		}
 		oldInfo := types.RdmaInfo{}
 		if infoStr, exist := anno[types.AnnotationRdmaInfo]; exist {
-			err = json.Unmarshal([]byte(infoStr), &oldInfo)
+			err := json.Unmarshal([]byte(infoStr), &oldInfo)
 			if err != nil {
 				return err
 			}
 		}
-		info = &oldInfo
+		rdmaInfo = &oldInfo
 	} else {
 		// patch info
-		b, inErr := json.Marshal(*info)
+		b, inErr := json.Marshal(*rdmaInfo)
 		if inErr != nil {
 			return fmt.Errorf("marshal rdma info failed, %v", inErr)
 		}
@@ -183,7 +187,7 @@ func (d *daemon) initRdmaIpamManager() error {
 		}
 	}
 
-	if len(info.RdmaInterfaces) == 0 {
+	if len(rdmaInfo.RdmaInterfaces) == 0 {
 		log.Infof("Skip rdma ipam init due to no rdma info")
 		return nil
 	}
@@ -195,7 +199,7 @@ func (d *daemon) initRdmaIpamManager() error {
 	}
 
 	rdmaInterfaces := map[string]types.RdmaInterface{}
-	for _, i := range info.RdmaInterfaces {
+	for _, i := range rdmaInfo.RdmaInterfaces {
 		rdmaInterfaces[i.DeviceId] = i
 		ipAddr, subnet, inErr := net.ParseCIDR(i.Cidr)
 		if inErr != nil {
@@ -213,7 +217,7 @@ func (d *daemon) initRdmaIpamManager() error {
 		}}
 	}
 
-	err = cidr.PrepareConfig(ipamCfg)
+	err := cidr.PrepareConfig(ipamCfg)
 	if err != nil {
 		return fmt.Errorf("rdma ipam config err, %v", err)
 	}
@@ -223,7 +227,7 @@ func (d *daemon) initRdmaIpamManager() error {
 	}
 	d.rdmaIpamManager = &RdmaIpamManager{
 		ipams:          ipam,
-		hpcRoute:       info.HpcRoute,
+		hpcRoute:       rdmaInfo.HpcRoute,
 		rdmaInterfaces: rdmaInterfaces,
 	}
 	log.Infof("Init rdma ipam manager success")
