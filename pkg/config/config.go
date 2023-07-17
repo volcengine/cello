@@ -41,8 +41,8 @@ const (
 	DefaultDebugPort                   = 11414
 	DefaultPoolTargetLimit             = 1
 	DefaultPoolMonitorIntervalSec      = 120
-	DefaultSubnetStatAgingSec          = 40
-	DefaultSubnetStatUpdateIntervalSec = 60
+	DefaultSubnetStatAgingSec          = 60
+	DefaultSubnetStatUpdateIntervalSec = 300
 	DefaultReconcileIntervalSec        = 1200
 	DefaultGcProtectPeriodSec          = 120
 
@@ -289,7 +289,7 @@ func verifyConfig(cfg *Config) error {
 	log.Infof("--Platform=%s", datatype.StringValue(cfg.Platform))
 
 	if cfg.EnableRdmaIpam == nil {
-		cfg.EnableRdmaIpam = datatype.Bool(false)
+		cfg.EnableRdmaIpam = datatype.Bool(true)
 	}
 	log.Infof("--EnableRdmaIpam=%t", datatype.BoolValue(cfg.EnableRdmaIpam))
 
