@@ -49,7 +49,7 @@ const (
 	// Default apiserver client config
 	DefaultKubeClientQPS   = 5.0
 	DefaultKubeClientBurst = 10
-	DefaultKubeContentType = runtime.ContentTypeProtobuf
+	DefaultKubeContentType = runtime.ContentTypeJSON
 
 	DefaultRdmaIpamDataDir = "/var/run/cello/rdma-ipam"
 )
