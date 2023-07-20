@@ -122,7 +122,7 @@ func generateENIPoolCfg(cfg *config.Config, limits helper.InstanceLimits) pool.C
 func newEniResourceManager(cfg *config.Config, subnet helper.SubnetManager, secManager helper.SecurityGroupManager, volcApi helper.VolcAPI, allocatedResource map[string]types.NetResourceAllocated, k8s k8s.Service) (*eniResourceManager, error) {
 	log.InfoS("Creating EniResourceManager")
 	m := &eniResourceManager{}
-	limit, err := helper.NewInstanceLimitManager(volcApi)
+	limit, err := helper.NewInstanceLimitManager(volcApi, cfg)
 	if err != nil {
 		return nil, err
 	}
