@@ -41,12 +41,11 @@ const (
 	DefaultDebugPort                   = 11414
 	DefaultPoolTargetLimit             = 1
 	DefaultPoolMonitorIntervalSec      = 120
-	DefaultSubnetStatAgingSec          = 60
-	DefaultSubnetStatUpdateIntervalSec = 300
+	DefaultSubnetStatAgingSec          = 40
+	DefaultSubnetStatUpdateIntervalSec = 120
 	DefaultReconcileIntervalSec        = 1200
 	DefaultGcProtectPeriodSec          = 120
 
-	// Default apiserver client config
 	DefaultKubeClientQPS   = 5.0
 	DefaultKubeClientBurst = 10
 	DefaultKubeContentType = runtime.ContentTypeJSON
@@ -337,7 +336,7 @@ func verifyStaticConfig(cfg *Config) error {
 	return nil
 }
 
-// Get configMap from mounted config file, note this func does not fill config with default data
+// ParseStaticConfig Get configMap from mounted config file, note this func does not fill config with default data
 func ParseStaticConfig(configPath string) (*Config, error) {
 	configMapFile, err := os.ReadFile(configPath)
 	if err != nil {
