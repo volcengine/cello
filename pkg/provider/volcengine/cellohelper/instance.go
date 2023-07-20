@@ -77,6 +77,8 @@ type InstanceLimitManager interface {
 	CordonCreate(name string)
 	// UnCordonCreate unCordon create eni
 	UnCordonCreate(name string)
+	// CordonState return cordon state
+	CordonState() bool
 	// NotifyWatcher send a signal to all instance limit watcher
 	NotifyWatcher()
 }
@@ -231,6 +233,12 @@ func (m *defaultInstanceLimit) UnCordonCreate(name string) {
 	log.InfoS("UnCordon eni create", "name", name)
 	m.limit.Cordon = false
 	m.notifyWatcherLocked()
+}
+
+func (m *defaultInstanceLimit) CordonState() bool {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.limit.Cordon
 }
 
 func NewInstanceLimitManager(api VolcAPI) (InstanceLimitManager, error) {

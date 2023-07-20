@@ -297,6 +297,9 @@ func (f *eniFactory) GetResourceLimit() int {
 
 func (f *eniFactory) monitor(subnetPeriod, limitPeriod time.Duration) {
 	go wait.Forever(func() {
+		if !f.limit.CordonState() {
+			return
+		}
 		log.DebugS("Monitor check subnet")
 		defer runtime.HandleCrash(log)
 		if subnet := f.subnets.SelectSubnet(f.ipFamily, helper.WithAging(subnetAging)); subnet != nil {

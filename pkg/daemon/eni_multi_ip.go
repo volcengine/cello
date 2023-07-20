@@ -988,6 +988,22 @@ func (f *eniIPFactory) List() (map[types.ResStatus]map[string]types.NetResource,
 
 func (f *eniIPFactory) subnetMonitor(updateInterval, aging time.Duration) {
 	go wait.JitterUntil(func() {
+		skip := true
+		f.Lock()
+		for _, eni := range f.enis {
+			if eni.ENI == nil {
+				continue
+			}
+			if eni.forbidAssign {
+				skip = false
+			}
+		}
+		f.Unlock()
+
+		if skip {
+			return
+		}
+
 		err := f.eniFactory.subnets.UpdateSubnetsStatus(helper.WithAging(aging))
 		if err != nil {
 			log.ErrorS(err, "SubnetMonitor reconcile failed")
