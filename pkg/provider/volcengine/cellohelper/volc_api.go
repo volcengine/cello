@@ -786,7 +786,7 @@ func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
 		return nil, fmt.Errorf("limits of instance %s invalid, %s", e.GetInstanceId(), limit.String())
 	}
 	log.WithFields(logger.Fields{"InstanceID": e.GetInstanceId(), "RequestID": resp.Metadata.RequestId}).
-		InfoS("Limits", "limit", limit.String())
+		InfoS("Instance limits", "limit", limit.String())
 	return limit, nil
 }
 
