@@ -72,7 +72,12 @@ func GetMergedConfigFromConfigMap(k8s k8s.Service) (*Config, error) {
 	if nodeConfig.Subnets != nil {
 		clusterConfig.Subnets = nodeConfig.Subnets
 	}
-
+	if nodeConfig.CustomENIQuota != nil {
+		clusterConfig.CustomENIQuota = nodeConfig.CustomENIQuota
+	}
+	if nodeConfig.CustomBranchENIQuota != nil {
+		clusterConfig.CustomBranchENIQuota = nodeConfig.CustomBranchENIQuota
+	}
 	clusterConfig.Source = datatype.String(SourceNodeMerged)
 	return clusterConfig, nil
 }

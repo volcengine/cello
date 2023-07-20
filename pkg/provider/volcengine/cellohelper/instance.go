@@ -23,8 +23,10 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/volcengine/cello/pkg/config"
 	"github.com/volcengine/cello/pkg/provider/volcengine/metadata"
 	"github.com/volcengine/cello/pkg/tracing"
+	"github.com/volcengine/cello/pkg/utils/math"
 	"github.com/volcengine/cello/types"
 )
 
@@ -96,7 +98,11 @@ func (l *InstanceLimits) ENIAvailable() int {
 }
 
 func (l *InstanceLimits) BranchENI() int {
-	return l.ENITotal - l.ENIQuota
+	cnt := l.ENITotal - l.ENIQuota
+	if cnt < 0 {
+		return 0
+	}
+	return cnt
 }
 
 type defaultInstanceLimit struct {
@@ -105,6 +111,9 @@ type defaultInstanceLimit struct {
 	limit         InstanceLimits
 	lastUpdate    time.Time
 	eventWatchers []chan<- struct{}
+
+	customENIQuota       int
+	customBranchENIQuota int
 }
 
 var instanceLimitManager *defaultInstanceLimit
@@ -161,6 +170,14 @@ func (m *defaultInstanceLimit) updateLocked() error {
 	if err != nil {
 		return err
 	}
+	eniQuota := newLimit.InstanceLimitsAttr.ENIQuota
+	branchQuota := newLimit.BranchENI()
+	if m.customENIQuota > 0 {
+		eniQuota = math.Min(eniQuota, m.customENIQuota)
+	}
+	if m.customBranchENIQuota > 0 {
+		branchQuota = math.Min(branchQuota, m.customBranchENIQuota)
+	}
 
 	oldLimit := m.limit.InstanceLimitsAttr
 	emptyLimit := InstanceLimitsAttr{}
@@ -181,6 +198,11 @@ func (m *defaultInstanceLimit) updateLocked() error {
 		return err
 	}
 	m.limit.ENICustomer = total - len(created) - 1 // contains primary eni
+
+	eniQuota = math.Max(eniQuota, total)
+	newLimit.InstanceLimitsAttr.ENIQuota = eniQuota
+	newLimit.InstanceLimitsAttr.ENITotal = branchQuota + eniQuota
+
 	for _, e := range created {
 		if e.Trunk {
 			m.limit.TrunkENI = e
@@ -241,15 +263,17 @@ func (m *defaultInstanceLimit) CordonState() bool {
 	return m.limit.Cordon
 }
 
-func NewInstanceLimitManager(api VolcAPI) (InstanceLimitManager, error) {
+func NewInstanceLimitManager(api VolcAPI, cfg *config.Config) (InstanceLimitManager, error) {
 	if instanceLimitManager != nil {
 		return instanceLimitManager, nil
 	}
 
 	instanceLimitManager = &defaultInstanceLimit{
-		lock:          sync.RWMutex{},
-		api:           api,
-		eventWatchers: []chan<- struct{}{},
+		lock:                 sync.RWMutex{},
+		api:                  api,
+		eventWatchers:        []chan<- struct{}{},
+		customENIQuota:       int(*cfg.CustomENIQuota),
+		customBranchENIQuota: int(*cfg.CustomBranchENIQuota),
 	}
 	if err := instanceLimitManager.update(); err != nil {
 		return nil, err

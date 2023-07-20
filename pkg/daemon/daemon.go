@@ -206,7 +206,7 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 		managers:                 map[string]ResourceManager{},
 		UnimplementedCelloServer: pbrpc.UnimplementedCelloServer{},
 	}
-	d.instanceLimit, err = helper.NewInstanceLimitManager(volcApi)
+	d.instanceLimit, err = helper.NewInstanceLimitManager(volcApi, cfg)
 	if err != nil {
 		return nil, err
 	}

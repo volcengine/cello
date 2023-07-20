@@ -148,6 +148,12 @@ type Config struct {
 
 	// ProbeRdma enable probe rdma interfaces
 	ProbeRdma *bool `yaml:"probeRdma" json:"probeRdma,omitempty"`
+
+	// CustomENIQuota specify eni quota
+	CustomENIQuota *uint32 `yaml:"customENIQuota" json:"customENIQuota,omitempty"`
+
+	// CustomBranchENIQuota specify branch eni quota
+	CustomBranchENIQuota *uint32 `yaml:"customBranchENIQuota" json:"customBranchENIQuota,omitempty"`
 }
 
 // verifyConfig verify Config.
@@ -302,6 +308,15 @@ func verifyConfig(cfg *Config) error {
 	}
 	log.Infof("--ProbeRdma=%t", datatype.BoolValue(cfg.ProbeRdma))
 
+	if cfg.CustomENIQuota == nil {
+		cfg.CustomENIQuota = datatype.Uint32(0)
+	}
+	log.Infof("--CustomENIQuota=%d", datatype.Uint32Value(cfg.CustomENIQuota))
+
+	if cfg.CustomBranchENIQuota == nil {
+		cfg.CustomBranchENIQuota = datatype.Uint32(0)
+	}
+	log.Infof("--CustomBranchENIQuota=%d", datatype.Uint32Value(cfg.CustomBranchENIQuota))
 	return nil
 }
 
