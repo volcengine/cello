@@ -36,6 +36,8 @@ import (
 
 var ipvlanLg = log.Log.WithFields(logger.Fields{"component": "ipvlan driver"})
 
+const qdiscHandle = uint32(netlink.HANDLE_CLSACT&0xffff0000 | netlink.HANDLE_MIN_EGRESS&0x0000ffff)
+
 // IPVlanDriver is used in shared ENI mode.
 type IPVlanDriver struct{}
 
