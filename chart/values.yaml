@@ -1,7 +1,7 @@
 image:
-  repository: "cr-cn-beijing.volces.com/cello/cello"
-  tag: v1.6.2
-  pullPolicy: "Always"
+  repository: "cr-norm-cn-beijing.cr.volces.com/cello/cello"
+  tag: v1.6.5
+  pullPolicy: "IfNotPresent"
 
 cello:
   # IDs of the subnets to be used by Pods.
