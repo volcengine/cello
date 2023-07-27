@@ -438,8 +438,7 @@ func TestDataPathUseSharedENI(t *testing.T) {
 	assert.True(t, hasFastPath)
 
 	// Check for filters.
-	filters, err := netlink.FilterList(eni,
-		uint32(netlink.HANDLE_CLSACT&0xffff0000|netlink.HANDLE_MIN_EGRESS&0x0000ffff))
+	filters, err := netlink.FilterList(eni, qdiscHandle)
 	assert.NoError(t, err)
 	assert.NotEqual(t, 0, len(filters))
 	hasV4SrcEgressFilter := false
@@ -464,10 +463,38 @@ func TestDataPathUseSharedENI(t *testing.T) {
 		if flower.DestIP.Equal(redirV4CIDR.IP) &&
 			flower.DestIPMask.String() == redirV4CIDR.Mask.String() {
 			hasV4DstFilter = true
+			assert.Equal(t, 3, len(flower.Actions))
+			hasMirredAct, hasTunKeyAct, hasSkbEditAct := false, false, false
+			for _, act := range flower.Actions {
+				switch act.Type() {
+				case "tunnel_key":
+					hasTunKeyAct = true
+					break
+				case "mirred":
+					hasMirredAct = true
+				case "skbedit":
+					hasSkbEditAct = true
+				}
+			}
+			assert.True(t, hasSkbEditAct && hasTunKeyAct && hasMirredAct)
 		}
 		if flower.DestIP.Equal(redirV6CIDR.IP) &&
 			flower.DestIPMask.String() == redirV6CIDR.Mask.String() {
 			hasV6DstFilter = true
+			assert.Equal(t, 3, len(flower.Actions))
+			hasMirredAct, hasTunKeyAct, hasSkbEditAct := false, false, false
+			for _, act := range flower.Actions {
+				switch act.Type() {
+				case "tunnel_key":
+					hasTunKeyAct = true
+					break
+				case "mirred":
+					hasMirredAct = true
+				case "skbedit":
+					hasSkbEditAct = true
+				}
+			}
+			assert.True(t, hasSkbEditAct && hasTunKeyAct && hasMirredAct)
 		}
 	}
 	assert.True(t, hasV4SrcEgressFilter)
