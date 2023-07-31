@@ -66,6 +66,9 @@ type APIGroupECS interface {
 
 	// DescribeInstanceTypes describe InstanceTypes according to input
 	DescribeInstanceTypes(input *ecs.DescribeInstanceTypesInput) (*DescribeInstanceTypesOutput, error)
+
+	// DescribeHpcInstancePosition describe hps instance position in rdma network
+	DescribeHpcInstancePosition(input *DescribeHpcInstancePositionInput) (*DescribeHpcInstancePositionOutput, error)
 }
 
 type APIGroupTag interface {
