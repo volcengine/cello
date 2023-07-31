@@ -28,8 +28,13 @@ import (
 	"github.com/volcengine/cello/types"
 )
 
+const (
+	fakeNode = "fake-node"
+	testStr  = "test-string"
+)
+
 func TestPatchTrunkInfo(t *testing.T) {
-	nodeName := "fake-node"
+	nodeName := fakeNode
 	k8sClient := fake.NewSimpleClientset()
 
 	_, err := k8sClient.CoreV1().Nodes().Create(context.Background(), &corev1.Node{
@@ -98,7 +103,7 @@ func TestPatchTrunkInfo(t *testing.T) {
 }
 
 func TestPatchNodeAnnotation(t *testing.T) {
-	nodeName := "fake-node"
+	nodeName := fakeNode
 	k8sClient := fake.NewSimpleClientset()
 
 	_, err := k8sClient.CoreV1().Nodes().Create(context.Background(), &corev1.Node{
@@ -131,7 +136,7 @@ func TestPatchNodeAnnotation(t *testing.T) {
 			A string
 			B int
 		}{
-			A: "test-string",
+			A: testStr,
 			B: 666,
 		}
 		b, _ := json.Marshal(info)
@@ -154,7 +159,7 @@ func TestPatchNodeAnnotation(t *testing.T) {
 			A string
 			B int
 		}{
-			A: "test-string",
+			A: testStr,
 			B: 888,
 		}
 		b, _ := json.Marshal(info)
@@ -168,6 +173,58 @@ func TestPatchNodeAnnotation(t *testing.T) {
 		}{}
 		err = json.Unmarshal([]byte(node.Annotations[annoKey]), &getInfo)
 		assert.NoError(t, err)
+		assert.Equal(t, info, getInfo)
+	})
+}
+
+func TestPatchNodeLabels(t *testing.T) {
+	nodeName := fakeNode
+	k8sClient := fake.NewSimpleClientset()
+
+	_, err := k8sClient.CoreV1().Nodes().Create(context.Background(), &corev1.Node{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+		},
+		Spec: corev1.NodeSpec{},
+		Status: corev1.NodeStatus{
+			Addresses: []corev1.NodeAddress{
+				{
+					Type:    corev1.NodeExternalIP,
+					Address: "172.16.0.3",
+				},
+				{
+					Type:    corev1.NodeHostName,
+					Address: "172.16.0.3",
+				},
+			},
+		},
+	}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	k8sService, err := NewK8sService(nodeName, k8sClient)
+	assert.NoError(t, err)
+
+	labelsKey := "labels-test-key"
+	t.Run("TestAdd", func(t *testing.T) {
+		info := testStr
+		err = k8sService.PatchNodeLabels(map[string]string{labelsKey: info})
+		assert.NoError(t, err)
+
+		node, err := k8sService.GetLocalNode(context.Background())
+		assert.NoError(t, err)
+		getInfo := node.GetLabels()[labelsKey]
+		assert.NoError(t, err)
+		assert.Equal(t, info, getInfo)
+	})
+
+	t.Run("TestReplace", func(t *testing.T) {
+		info := "test-string-0"
+		err = k8sService.PatchNodeLabels(map[string]string{labelsKey: info})
+		assert.NoError(t, err)
+		node, err := k8sService.GetLocalNode(context.Background())
+		assert.NoError(t, err)
+		getInfo := node.GetLabels()[labelsKey]
 		assert.Equal(t, info, getInfo)
 	})
 }

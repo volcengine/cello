@@ -294,6 +294,18 @@ func (m *MetricEC2Wrapper) UnassignIpv6Addresses(req *ec2.UnassignIpv6AddressesI
 	return resp, err
 }
 
+func (m *MetricEC2Wrapper) DescribeHpcInstancePosition(req *ec2.DescribeHpcInstancePositionInput) (*ec2.DescribeHpcInstancePositionOutput, error) {
+	start := time.Now()
+	resp, err := m.parent.DescribeHpcInstancePosition(req)
+	duration := MsSince(start)
+	OpenAPILatency.WithLabelValues("DescribeHpcInstancePosition", fmt.Sprint(err != nil), CelloReqErrCode(err), CelloReqId(err)).Observe(duration)
+	if err != nil {
+		OpenAPIErrInc("DescribeHpcInstancePosition", err)
+		apiErr.RecordOpenAPIErrEvent(err, apiErr.EventInfoField{Key: "API", Value: "DescribeHpcInstancePosition"})
+	}
+	return resp, err
+}
+
 func (m *MetricEC2Wrapper) TagResources(req *vpc.TagResourcesInput) (*vpc.TagResourcesOutput, error) {
 	start := time.Now()
 	resp, err := m.parent.TagResources(req)

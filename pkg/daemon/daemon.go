@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/volcengine/volcengine-go-sdk/volcengine"
 	"google.golang.org/grpc"
 	v1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -66,6 +67,7 @@ const (
 	DefaultSocketPath  = "/var/run/cello/cni.socket"
 	podPersistencePath = "/var/run/cello/Resource.db"
 	celloConfigMapPath = "/etc/cello/cello-config"
+	HpcInfoPath        = "/var/run/cello/hpcInstancePosition"
 )
 
 // daemon is the cello daemon that is in charge of manage the resources consumed by kubernetes network.
@@ -320,9 +322,78 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 		if err != nil {
 			return nil, fmt.Errorf("init rdma ipam failed, %v", err)
 		}
+		go wait.PollUntilContextCancel(context.TODO(), 3*time.Hour, true, func(ctx context.Context) (bool, error) {
+			return updateHpcTopologyInfo(d.k8s, apiClient, instanceMeta)
+		})
 	}
 
 	return d, nil
+}
+
+func updateHpcTopologyInfo(k8sService k8s.Service, apiClient ec2.EC2, instanceMeta helper.InstanceMetadataGetter) (bool, error) {
+	// Describe Hpc Instance Position
+	hpcInstPosInfo := &ec2.HpcInstancePositionInfoForDescribeHpcInstancePositionOutput{}
+	// read hpcInstancePosition from hpc info file
+	if content, err := os.ReadFile(HpcInfoPath); err != nil {
+		log.ErrorS(err, "Read hpc instance position info file failed")
+	} else {
+		err = json.Unmarshal(content, hpcInstPosInfo)
+		if err != nil {
+			log.ErrorS(err, "Unmarshal hpcInstPosInfo failed")
+		} else {
+			log.InfoS("Unmarshal hpcInstPosInfo success", "InstanceId", volcengine.StringValue(hpcInstPosInfo.InstanceId),
+				"SwitchName", volcengine.StringValue(hpcInstPosInfo.SwitchName), "RdmaMinipod", volcengine.StringValue(hpcInstPosInfo.RdmaMinipod))
+		}
+	}
+
+	log.InfoS("Start update hpc instance position info")
+	// call open api get hpc instance position
+	if hpcInstPosInfo.SwitchName == nil {
+		log.InfoS("Call DescribeHpcInstancePosition api to get hpc info")
+		out, err := apiClient.DescribeHpcInstancePosition(&ec2.DescribeHpcInstancePositionInput{InstanceId: volcengine.String(instanceMeta.GetInstanceId())})
+		if err != nil {
+			log.ErrorS(err, "DescribeHpcInstancePosition failed")
+			return false, nil
+		}
+		if len(out.HpcInstancePositionInfos) != 1 || out.HpcInstancePositionInfos[0] == nil || out.HpcInstancePositionInfos[0].SwitchName == nil {
+			log.ErrorS(fmt.Errorf("empty resp"), "DescribeHpcInstancePosition failed", "HpcInstancePositionInfos", out.HpcInstancePositionInfos)
+			return false, nil
+		}
+		hpcInstPosInfo = out.HpcInstancePositionInfos[0]
+		log.InfoS("DescribeHpcInstancePosition success", "InstanceId", volcengine.StringValue(hpcInstPosInfo.InstanceId),
+			"SwitchName", volcengine.StringValue(hpcInstPosInfo.SwitchName), "RdmaMinipod", volcengine.StringValue(hpcInstPosInfo.RdmaMinipod))
+		// cache hpc info to file
+		if b, mErr := json.Marshal(hpcInstPosInfo); mErr == nil {
+			if err = os.WriteFile(HpcInfoPath, b, 0644); err != nil {
+				log.ErrorS(err, "Store hpcInstPosInfo to file failed", "HpcInfoPath", HpcInfoPath)
+			}
+		} else {
+			// should never get into here
+			// if Marshal() failed, cello won't WriteFile unless cello restart
+			log.ErrorS(err, "Marshal hpcInstPosInfo failed")
+		}
+	}
+
+	node, err := k8sService.GetLocalNode(context.TODO())
+	if err != nil {
+		log.ErrorS(err, "GetLocalNode failed")
+		return false, nil
+	}
+	hpcInstPos, _ := node.GetLabels()[types.LabelHpcInstanceSwitchPosition]
+	if hpcInstPos != "" && hpcInstPos == volcengine.StringValue(hpcInstPosInfo.SwitchName) {
+		log.InfoS("Skip patch node hpc switch label, node hpc instance position label matching cache",
+			"label", map[string]string{types.LabelHpcInstanceSwitchPosition: hpcInstPos})
+		return true, nil
+	}
+
+	// patch label to Node
+	m := map[string]string{types.LabelHpcInstanceSwitchPosition: volcengine.StringValue(hpcInstPosInfo.SwitchName)}
+	if err = k8sService.PatchNodeLabels(m); err != nil {
+		log.ErrorS(err, "Patch hpc instance switch position label failed", "label", m)
+		return false, nil
+	}
+	log.InfoS("Patch hpc instance switch position label success", "label", m)
+	return true, nil
 }
 
 func (d *daemon) gc() error {
