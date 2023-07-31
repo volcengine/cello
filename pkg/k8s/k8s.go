@@ -97,6 +97,9 @@ type Service interface {
 	// PatchNodeAnnotation patch annotation to node
 	PatchNodeAnnotation(anno map[string]interface{}) error
 
+	// PatchNodeLabels patch labels to node
+	PatchNodeLabels(labels map[string]string) error
+
 	// GetNodeAnnotation get annotation of node
 	GetNodeAnnotation() (map[string]string, error)
 }
@@ -346,6 +349,21 @@ func (k *k8sManager) PatchNodeAnnotation(anno map[string]interface{}) error {
 		patch := map[string]map[string]map[string]interface{}{
 			"metadata": {
 				"annotations": anno,
+			},
+		}
+		patchData, _ := json.Marshal(patch)
+		_, err := k.rawKubeClient.CoreV1().Nodes().Patch(context.TODO(), k.nodeName, k8sTypes.StrategicMergePatchType, patchData, metav1.PatchOptions{})
+		return err
+	})
+}
+
+func (k *k8sManager) PatchNodeLabels(labels map[string]string) error {
+	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
+		return true
+	}, func() error {
+		patch := map[string]map[string]map[string]string{
+			"metadata": {
+				"labels": labels,
 			},
 		}
 		patchData, _ := json.Marshal(patch)

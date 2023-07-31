@@ -21,6 +21,32 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/volcengine/response"
 )
 
+type HpcInstancePositionInfoForDescribeHpcInstancePositionOutput struct {
+	_ struct{} `type:"structure"`
+
+	InstanceId *string `type:"string"`
+
+	RdmaMinipod *string `type:"string"`
+
+	SwitchName *string `type:"string"`
+}
+
+type DescribeHpcInstancePositionInput struct {
+	_ struct{} `type:"structure"`
+
+	AccountId *string `type:"string"`
+
+	InstanceId *string `type:"string"`
+}
+
+type DescribeHpcInstancePositionOutput struct {
+	_ struct{} `type:"structure"`
+
+	Metadata *response.ResponseMetadata
+
+	HpcInstancePositionInfos []*HpcInstancePositionInfoForDescribeHpcInstancePositionOutput `type:"list"`
+}
+
 type AssignIpv6AddressesInput struct {
 	_ struct{} `type:"structure"`
 

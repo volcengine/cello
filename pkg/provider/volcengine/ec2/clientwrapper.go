@@ -178,6 +178,21 @@ func (c *ClientSet) UnassignIpv6Addresses(input *UnassignIpv6AddressesInput) (*U
 	return output, nil
 }
 
+func (c *ClientSet) DescribeHpcInstancePosition(input *DescribeHpcInstancePositionInput) (*DescribeHpcInstancePositionOutput, error) {
+	reqInfo := universal.RequestUniversal{
+		Action:      "DescribeHpcInstancePosition",
+		Version:     "2020-04-01",
+		ServiceName: "ecs",
+		HttpMethod:  universal.GET,
+	}
+	output := &DescribeHpcInstancePositionOutput{}
+	err := c.universal.DoCallWithType(reqInfo, input, output)
+	if err != nil || output.Metadata.Error != nil {
+		return output, apiErr.NewAPIRequestErr(output.Metadata, err)
+	}
+	return output, nil
+}
+
 func (c *ClientSet) DescribeSubnets(input *vpc.DescribeSubnetsInput) (*DescribeSubnetsOutput, error) {
 	reqInfo := universal.RequestUniversal{
 		Action:      "DescribeSubnets",

@@ -23,4 +23,6 @@ const (
 	AnnotationVKEPodNetworks        = AnnotationK8sPrefix + "pod-networks"
 
 	AnnotationRdmaInfo = AnnotationK8sPrefix + "rdma-info"
+
+	LabelHpcInstanceSwitchPosition = "topology.vke.volcengine.com/switch"
 )

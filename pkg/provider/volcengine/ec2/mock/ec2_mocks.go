@@ -124,6 +124,21 @@ func (mr *MockEC2MockRecorder) DeleteNetworkInterface(arg0 interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNetworkInterface", reflect.TypeOf((*MockEC2)(nil).DeleteNetworkInterface), arg0)
 }
 
+// DescribeHpcInstancePosition mocks base method
+func (m *MockEC2) DescribeHpcInstancePosition(arg0 *ec2.DescribeHpcInstancePositionInput) (*ec2.DescribeHpcInstancePositionOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DescribeHpcInstancePosition", arg0)
+	ret0, _ := ret[0].(*ec2.DescribeHpcInstancePositionOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DescribeHpcInstancePosition indicates an expected call of DescribeHpcInstancePosition
+func (mr *MockEC2MockRecorder) DescribeHpcInstancePosition(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DescribeHpcInstancePosition", reflect.TypeOf((*MockEC2)(nil).DescribeHpcInstancePosition), arg0)
+}
+
 // DescribeInstanceTypes mocks base method
 func (m *MockEC2) DescribeInstanceTypes(arg0 *ecs.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
 	m.ctrl.T.Helper()

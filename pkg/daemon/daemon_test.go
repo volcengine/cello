@@ -622,6 +622,9 @@ const (
 	region        = "cn-guilin-boe"
 	primaryENIMac = "00:16:3e:71:7b:68"
 	primaryENIId  = "eni-fake134shf29dahda9s"
+
+	rdmaMinipod = "fake05961ccc28e35be004454bc559b9"
+	switchName  = "fakedcb504f1b8705c3ec2f50c639635"
 )
 
 var (
@@ -973,6 +976,40 @@ func setup(t *testing.T) error {
 		}, nil
 	}).AnyTimes()
 
+	ec2MockClient.EXPECT().DescribeHpcInstancePosition(gomock.Any()).DoAndReturn(func(input *ec2.DescribeHpcInstancePositionInput) (*ec2.DescribeHpcInstancePositionOutput, error) {
+		if input.InstanceId == nil {
+			return &ec2.DescribeHpcInstancePositionOutput{
+				Metadata: &response.ResponseMetadata{
+					RequestId: GenerateRequestId(),
+					Action:    "DescribeHpcInstancePosition",
+					Version:   "2022-04-01",
+					Service:   "ecs",
+					Region:    region,
+					HTTPCode:  http.StatusOK,
+					Error:     nil,
+				},
+			}, nil
+		}
+		return &ec2.DescribeHpcInstancePositionOutput{
+			Metadata: &response.ResponseMetadata{
+				RequestId: GenerateRequestId(),
+				Action:    "DescribeHpcInstancePosition",
+				Version:   "2022-04-01",
+				Service:   "ecs",
+				Region:    region,
+				HTTPCode:  http.StatusOK,
+				Error:     nil,
+			},
+			HpcInstancePositionInfos: []*ec2.HpcInstancePositionInfoForDescribeHpcInstancePositionOutput{
+				{
+					InstanceId:  input.InstanceId,
+					RdmaMinipod: volcengine.String(rdmaMinipod),
+					SwitchName:  volcengine.String(switchName),
+				},
+			},
+		}, nil
+	}).AnyTimes()
+
 	return nil
 }
 
@@ -1061,6 +1098,17 @@ func TestDaemon(t *testing.T) {
 			NetNs:            "cni-b447798f-d564-7d29-8814-715cbd35bd4d",
 		})
 		t.Logf("resp: %v, err: %v", resp, err)
+	})
+
+	t.Run("TestUpdateHpcTopologyInfo", func(t *testing.T) {
+		ok, err := updateHpcTopologyInfo(d.k8s, ec2MockClient, instanceMetaGetter)
+		assert.NoError(t, err)
+		assert.Equal(t, true, ok)
+
+		node, err := d.k8s.GetLocalNode(context.Background())
+		assert.NoError(t, err)
+		getInfo := node.GetLabels()[types.LabelHpcInstanceSwitchPosition]
+		assert.Equal(t, switchName, getInfo)
 	})
 
 	t.Run("TestDeleteEndpoint", func(t *testing.T) {
