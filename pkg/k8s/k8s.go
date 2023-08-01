@@ -378,15 +378,15 @@ func (k *k8sManager) PatchPodAnnotation(ctx context.Context, namespace, name str
 	})
 }
 
-// NewKubernetesClient creates a kubernetes client.
+// NewK8sClient creates a kubernetes client.
 func NewK8sClient(qps *float64, burst *int, contentType *string) (*kubernetes.Clientset, error) {
 	c, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("create incluster config failed: %v", err)
 	}
-	c.QPS = float32(float64(*qps))
-	c.Burst = int(*burst)
-	c.ContentType = string(*contentType)
+	c.QPS = float32(*qps)
+	c.Burst = *burst
+	c.ContentType = *contentType
 
 	c.UserAgent = version.UserAgent()
 
