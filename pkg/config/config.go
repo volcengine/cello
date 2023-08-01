@@ -89,7 +89,7 @@ type Config struct {
 
 	// pool configs of eni or eni-multi-ip mode
 	// PoolTargetLimit the maximum ratio of the number of cached resources to the total quota
-	PoolTargetLimit *float64 `yaml:"PoolTargetLimit" json:"poolTargetLimit,omitempty"`
+	PoolTargetLimit *float64 `yaml:"poolTargetLimit" json:"poolTargetLimit,omitempty"`
 
 	// PoolTarget the target number of cached resources
 	PoolTarget *uint32 `yaml:"poolTarget" json:"poolTarget,omitempty"`
