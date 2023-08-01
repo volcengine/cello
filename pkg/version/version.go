@@ -20,10 +20,11 @@ import (
 	"runtime"
 )
 
-var Version = "v1.7.0"
+var Version = "v1.7.1"
 var ComponentName = "cello-agent"
 var GitCommit = "unset"
+var NodeName = "unset"
 
 func UserAgent() string {
-	return fmt.Sprintf("%s/%s (%s/%s)/%s", ComponentName, Version, runtime.GOOS, runtime.GOARCH, GitCommit)
+	return fmt.Sprintf("%s/%s %s/(%s/%s)/%s", ComponentName, Version, NodeName, runtime.GOOS, runtime.GOARCH, GitCommit)
 }
