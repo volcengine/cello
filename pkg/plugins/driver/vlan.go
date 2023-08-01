@@ -108,9 +108,12 @@ func (d *VlanDriver) SetupNetwork(cfg *types.SetupConfig) (err error) {
 		if inErr != nil {
 			return inErr
 		}
-		inErr = ensureFQ(podLink)
-		if inErr != nil {
-			return inErr
+
+		if cfg.BandWidth != nil && !cfg.BandWidth.IsZero() {
+			inErr = ensureFQ(podLink) //ensure FQ for EDT bandwidth
+			if inErr != nil {
+				return inErr
+			}
 		}
 
 		if setVeth {
