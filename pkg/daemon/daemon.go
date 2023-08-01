@@ -57,6 +57,7 @@ import (
 	"github.com/volcengine/cello/pkg/utils/math"
 	"github.com/volcengine/cello/pkg/utils/netns"
 	"github.com/volcengine/cello/pkg/utils/runtime"
+	"github.com/volcengine/cello/pkg/version"
 	"github.com/volcengine/cello/types"
 )
 
@@ -122,6 +123,7 @@ func NewDaemon() (*daemon, error) {
 	if nodeName == "" {
 		return nil, fmt.Errorf("get env %s failed", envNodeName)
 	}
+	version.NodeName = nodeName
 
 	// mounted json config
 	staticCfg, err := config.ParseStaticConfig(celloConfigMapPath)
