@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -32,6 +33,7 @@ import (
 	cni100 "github.com/containernetworking/cni/pkg/types/100"
 	cniIp "github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
+	"github.com/google/renameio"
 	netutils "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/utils"
 	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
@@ -49,18 +51,19 @@ import (
 )
 
 const (
-	defaultCniTimeout       = 120 * time.Second
-	podNetworkDefinitionKey = "k8s.volcengine.com/pod-networks-definition"
-	PodNetworksKey          = "k8s.volcengine.com/pod-networks"
-	cniConfLocal            = "local"
-	defaultConfDir          = "/etc/cni/net.d"
-	defaultBinDir           = "/opt/cni/bin"
-	defaultCNIDir           = "/var/lib/cni/cello"
-	defaultCNIMetaDir       = "/var/lib/cni/cello-meta"
-	defaultCNIMetaDeviceDir = "/var/lib/cni/cello-meta/devices"
-	networkStatusKey        = "k8s.volcengine.com/network-status"
-	defaultTableBase        = 100
-	fakeIPRangesForDelete   = "127.0.0.0/30" // host-local want ipRanges when CNI DEL
+	defaultCniTimeout        = 120 * time.Second
+	podNetworkDefinitionKey  = "k8s.volcengine.com/pod-networks-definition"
+	PodNetworksKey           = "k8s.volcengine.com/pod-networks"
+	cniConfLocal             = "local"
+	defaultConfDir           = "/etc/cni/net.d"
+	defaultBinDir            = "/opt/cni/bin"
+	defaultCNIDir            = "/var/lib/cni/cello"
+	defaultCNIMetaDir        = "/var/lib/cni/cello-meta"
+	defaultCNIMetaDeviceDir  = "/var/lib/cni/cello-meta/devices"
+	defaultCNIMetaPodInfoDir = "/var/run/cello-meta/pod-info"
+	networkStatusKey         = "k8s.volcengine.com/network-status"
+	defaultTableBase         = 100
+	fakeIPRangesForDelete    = "127.0.0.0/30" // host-local want ipRanges when CNI DEL
 )
 
 var lg = log.Log.WithFields(logger.Fields{"component": "cello-meta CNI"})
@@ -73,7 +76,9 @@ var (
 var (
 	celloClient pbrpc.CelloClient
 	conn        *grpc.ClientConn
-	patchStatus bool
+	// resourceClient kubelet resource client, cache response inside, not threadsafe
+	resourceClient types2.ResourceClient
+	patchStatus    bool
 )
 
 type IPRangeSourceType string
@@ -237,10 +242,12 @@ type MetaRequest struct {
 }
 
 type MetaConfig struct {
-	// IPRanges is only used internal housekeeping
+	// IPRanges is ip ranges for ipam
 	IPRanges []RangeSet `json:"ipRanges,omitempty"`
-	// DeviceID is only used internal housekeeping
+	// DeviceID is device id for network interface, mostly is pciAddress
 	DeviceID string `json:"deviceID,omitempty"`
+	// OriginalDeviceID is original device id for network interface
+	OriginalDeviceID string `json:"originalDeviceId,omitempty"`
 }
 
 type DeviceInfo struct {
@@ -436,6 +443,10 @@ func cmdAdd(args *skel.CmdArgs) error {
 		}
 		duration := metrics.MsSince(start)
 		lg.DebugS("show patchNetworkStatus time(Millisecond)", "cost", fmt.Sprintf("%f", duration))
+	}
+
+	if err = updatePodInfo(string(k8sConfig.K8S_POD_NAMESPACE), string(k8sConfig.K8S_POD_NAME), args.Netns, delegates, netStatus); err != nil {
+		lg.ErrorS(err, "failed to update pod info")
 	}
 
 	return result.Print()
@@ -1227,11 +1238,12 @@ func buildMetaConfigForDelegateNetConf(podNamespace, podName string, delegate *D
 				lg.InfoS("Found device entry", "entry", entry)
 				if idCount := len(entry.DeviceIDs); idCount > 0 && idCount > entry.Index {
 					delegate.MetaConfig.DeviceID = entry.DeviceIDs[entry.Index]
+					delegate.MetaConfig.OriginalDeviceID = delegate.MetaConfig.DeviceID
 					lg.InfoS("show podName and deviceID", "podName", podName, "DeviceID", delegate.MetaConfig.DeviceID)
 					if strings.Contains(delegate.MetaConfig.DeviceID, "@") {
-						old := delegate.MetaConfig.DeviceID
+						// device id map translate
 						delegate.MetaConfig.DeviceID = strings.Split(delegate.MetaConfig.DeviceID, "@")[0]
-						lg.InfoS("Normalize deviceID", "oldDevice", old, "newDeviceID", delegate.MetaConfig.DeviceID)
+						lg.InfoS("Normalize deviceID", "oldDevice", delegate.MetaConfig.OriginalDeviceID, "newDeviceID", delegate.MetaConfig.DeviceID)
 					}
 					entry.Index++ // increment Index for next delegate
 				}
@@ -1260,6 +1272,22 @@ func buildMetaConfigForDelegateNetConf(podNamespace, podName string, delegate *D
 	return nil
 }
 
+// loadResourceClient resource client cache response inside
+func loadResourceClient() (types2.ResourceClient, error) {
+	if resourceClient != nil {
+		return resourceClient, nil
+	}
+
+	ck, err := kubelet.GetResourceClient("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get a ResourceClient instance: %v", err)
+	}
+	resourceClient = ck
+
+	return ck, nil
+
+}
+
 // cache pod resource map, not threadsafe
 var cache map[string]*types2.ResourceInfo
 
@@ -1270,10 +1298,12 @@ func getPodResourceMap(podNamespace, podName string) (map[string]*types2.Resourc
 	if cache != nil {
 		return cache, nil
 	}
-	ck, err := kubelet.GetResourceClient("")
+
+	ck, err := loadResourceClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get a ResourceClient instance: %v", err)
 	}
+
 	resourceMap, err := ck.GetPodResourceMap(podNamespace, podName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resourceMap from ResourceClient: %v", err)
@@ -1281,6 +1311,17 @@ func getPodResourceMap(podNamespace, podName string) (map[string]*types2.Resourc
 	cache = resourceMap
 
 	return resourceMap, nil
+}
+
+// getPodContainerResourceMap return pod container resource map from kubelet
+// NOTICE: not threadsafe
+func getPodContainerResourceMap(podNamespace, podName string) ([]*types2.ContainerResourceInfo, error) {
+	ck, err := loadResourceClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get a ResourceClient instance: %v", err)
+	}
+
+	return ck.GetPodContainerResourceMap(podNamespace, podName)
 }
 
 // matchPodNetworkDefinitionAndPodNetwork return
@@ -1355,6 +1396,10 @@ func cmdDel(args *skel.CmdArgs) error {
 	path := filepath.Join(defaultCNIDir, args.ContainerID)
 	lg.InfoS("cmdDel", "path", path)
 	_ = os.Remove(path)
+
+	if err = removePodInfo(string(k8sConfig.K8S_POD_NAMESPACE), string(k8sConfig.K8S_POD_NAME)); err != nil {
+		lg.ErrorS(err, "Failed to remove pod info")
+	}
 
 	return nil
 }
@@ -1461,4 +1506,70 @@ func tryLoadDelegateNetConfFromCache(containerID, dataDir string) ([]*DelegateNe
 		return nil, err
 	}
 	return netConf, nil
+}
+
+func buildPodInfo(podNamespace, podName, netNs string, confs []*DelegateNetConf, networkStatus []*NetworkStatus) (*types2.PodInfo, error) {
+	var resourceInfoList []*types2.ContainerResourceInfo
+	podInfo := &types2.PodInfo{
+		Version: types2.PodInfoVersion10,
+		NetNs:   netNs,
+	}
+	var err error
+	if len(confs) != len(networkStatus) {
+		return nil, fmt.Errorf("missmatch number delegateNetConf(%d) and networkStatus(%d)", len(confs), len(networkStatus))
+	}
+	for _, conf := range confs {
+		if conf.MetaConfig.DeviceID != "" {
+			if resourceInfoList, err = getPodContainerResourceMap(podNamespace, podName); err != nil {
+				log.Log.Errorf("Get pod %s/%s container resource map failed, %v", podNamespace, podName, err)
+				return nil, err
+			}
+			break
+		}
+	}
+	if len(resourceInfoList) > 0 {
+		podInfo.ResourceMap = &types2.ResourceMap{}
+		for _, resourceInfo := range resourceInfoList {
+			podInfo.ResourceMap.Containers = append(podInfo.ResourceMap.Containers, resourceInfo)
+		}
+	}
+	for i := range confs {
+		ni := &types2.NetworkInterface{
+			Name: networkStatus[i].DeviceInfo.IfName,
+			CNI:  networkStatus[i].CNIName,
+			Mac:  networkStatus[i].DeviceInfo.Mac,
+			IPs:  networkStatus[i].DeviceInfo.IPs,
+		}
+		if confs[i].MetaConfig.DeviceID != "" {
+			ni.NetworkInterfaceResource = &types2.NetworkInterfaceResource{
+				Name:       confs[i].MetaRequest.ResourceName,
+				DeviceID:   confs[i].MetaConfig.OriginalDeviceID,
+				PciAddress: confs[i].MetaConfig.DeviceID,
+			}
+		}
+	}
+
+	return podInfo, nil
+}
+
+func updatePodInfo(podNamespace, podName, netNS string, delegates []*DelegateNetConf, netStatus []*NetworkStatus) error {
+	podInfoFile := path.Join(defaultCNIMetaPodInfoDir, fmt.Sprintf("%s_%s", podNamespace, podName))
+	if podInfo, err := buildPodInfo(podNamespace, podName, netNS, delegates, netStatus); err == nil {
+		podInfoStr, _ := json.Marshal(podInfo)
+		if err = os.MkdirAll(defaultCNIMetaPodInfoDir, 0700); err != nil {
+			return fmt.Errorf("make dir %s failed, %v", defaultCNIMetaPodInfoDir, err)
+		}
+		if err = renameio.WriteFile(podInfoFile, podInfoStr, 0644); err != nil {
+			return fmt.Errorf("write pod info to file %s failed, %v", podInfoFile, err)
+		}
+	} else {
+		return fmt.Errorf("build pod info failed, %v", err)
+	}
+
+	return nil
+}
+
+func removePodInfo(podNamespace, podName string) error {
+	podInfoFile := path.Join(defaultCNIMetaPodInfoDir, fmt.Sprintf("%s_%s", podNamespace, podName))
+	return os.Remove(podInfoFile) // ignore_security_alert
 }

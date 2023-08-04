@@ -21,8 +21,32 @@ type ResourceInfo struct {
 	DeviceIDs []string
 }
 
+// ContainerResourceInfo contains information about the resource assigned to a container
+type ContainerResourceInfo struct {
+	Name    string              `json:"name,omitempty"`
+	Devices []*ContainerDevices `json:"devices,omitempty"`
+}
+
+// ContainerDevices contains information about the devices assigned to a container
+type ContainerDevices struct {
+	ResourceName string        `json:"resource_name,omitempty"`
+	DeviceIds    []string      `json:"device_ids,omitempty"`
+	Topology     *TopologyInfo `json:"topology,omitempty"`
+}
+
+// TopologyInfo describes hardware topology of the resource
+type TopologyInfo struct {
+	Nodes []*NUMANode
+}
+
+// NUMANode representation of NUMA node
+type NUMANode struct {
+	ID int64
+}
+
 // ResourceClient provides a kubelet Pod resource handle.
 type ResourceClient interface {
 	// GetPodResourceMap returns an instance of a map of Pod ResourceInfo given a (Pod name, namespace) tuple.
 	GetPodResourceMap(podNamespace, podName string) (map[string]*ResourceInfo, error)
+	GetPodContainerResourceMap(podNamespace, podName string) ([]*ContainerResourceInfo, error)
 }

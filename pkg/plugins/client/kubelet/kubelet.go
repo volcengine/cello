@@ -148,6 +148,46 @@ func (rc *kubeletClient) GetPodResourceMap(ns, name string) (map[string]*types.R
 	return resourceMap, nil
 }
 
+func (rc *kubeletClient) GetPodContainerResourceMap(ns, name string) ([]*types.ContainerResourceInfo, error) {
+	resourceList := make([]*types.ContainerResourceInfo, 0, 2)
+
+	if name == "" || ns == "" {
+		return nil, fmt.Errorf("GetPodContainerResourceMap: Pod name or namespace cannot be empty")
+	}
+
+	for _, pr := range rc.resources {
+		if pr.Name == name && pr.Namespace == ns {
+			for _, cnt := range pr.Containers {
+				if len(cnt.Devices) == 0 {
+					// skip container if device is empty
+					continue
+				}
+				c := &types.ContainerResourceInfo{
+					Name: cnt.Name,
+				}
+				for _, dev := range cnt.Devices {
+					cds := &types.ContainerDevices{
+						ResourceName: dev.ResourceName,
+					}
+					cds.DeviceIds = append(cds.DeviceIds, dev.DeviceIds...)
+					if dev.Topology != nil {
+						cds.Topology = &types.TopologyInfo{}
+						for _, node := range dev.Topology.Nodes {
+							cds.Topology.Nodes = append(cds.Topology.Nodes, &types.NUMANode{
+								ID: node.ID,
+							})
+						}
+					}
+					c.Devices = append(c.Devices, cds)
+				}
+				resourceList = append(resourceList, c)
+			}
+		}
+	}
+
+	return resourceList, nil
+}
+
 func hasKubeletAPIEndpoint(url *url.URL) bool {
 	// Check for kubelet resource API socket file
 	if _, err := os.Stat(url.Path); err != nil {
