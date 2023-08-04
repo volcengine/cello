@@ -2,6 +2,9 @@
 ARG CILIUM_LLVM_IMAGE=quay.io/cilium/cilium-llvm:0147a23fdada32bd51b4f313c645bcb5fbe188d6@sha256:24fd3ad32471d0e45844c856c38f1b2d4ac8bd0a2d4edf64cffaaa3fd0b21202
 ARG CILIUM_BPFTOOL_IMAGE=quay.io/cilium/cilium-bpftool:b5ba881d2a7ec68d88ecd72efd60ac551c720701@sha256:458282e59657b8f779d52ae2be2cdbeecfe68c3d807ff87c97c8d5c6f97820a9
 ARG CILIUM_IPROUTE2_IMAGE=quay.io/cilium/cilium-iproute2:4db2c4bdf00ce461406e1c82aada461356fac935@sha256:e4c9ba92996a07964c1b7cd97c4aac950754ec75d7ac8c626a99c79acd0479ab
+ARG CILIUM_IPTABLES_IMAGE=quay.io/cilium/iptables-20.04:e6f83206c57e606282056903ffd3aab0183bdaed@sha256:7ce0de449d356a5259021dc13f2b00a8bddfbea57a1c91ff8f146d455cace9e5
+ARG CILIUM_BUILDER_IMAGE=quay.io/cilium/cilium-builder:374a7ec10c5cbc5e9afe4cdd376f95ca592bd9ab@sha256:8d59be6168a25a9855707d63596df9903eef32518710a83879efbf9222f07628
+ARG TARGETPLATFORM
 
 FROM  ${CILIUM_LLVM_IMAGE} as llvm-dist
 FROM  ${CILIUM_BPFTOOL_IMAGE} as bpftool-dist
@@ -58,7 +61,7 @@ ARG GOPROXY
 ENV GOPROXY $GOPROXY
 WORKDIR /go/src/containernetworking
 RUN git clone https://github.com/containernetworking/plugins.git --depth=1 --branch v1.2.0
-RUN cd plugins && bash build_linux.sh
+RUN cd plugins && CGO_ENABLED=0 ./build_linux.sh
 
 # cello
 FROM docker.io/library/golang:1.20-bullseye as cello-builder
@@ -80,9 +83,9 @@ COPY --from=hubble /out/${TARGETOS}/${TARGETARCH}/bin/hubble /bin/hubble
 COPY --from=hubble /out/linux/bash_completion /etc/bash_completion.d/hubble
 
 # cello & cilium bin
-COPY --from=cello-builder /go/src/cello/output /cello
 COPY --from=cni-plugins-builder /go/src/containernetworking/plugins/bin/loopback /containernetworking/plugins/
 COPY --from=cilium-builder /tmp/install/. /
+COPY --from=cello-builder /go/src/cello/output /cello
 RUN mv /opt/cni/bin/cilium-cni /containernetworking/plugins/cilium-cni && \
     ln -s /cello/bin/cello-ctl /bin/cello-ctl && \
     ln -s /cello/bin/cello-agent /bin/cello-agent && \
