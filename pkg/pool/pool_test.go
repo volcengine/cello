@@ -587,6 +587,7 @@ func TestAllocateConcurrencyLessThanCap(t *testing.T) {
 		factory := newMockObjectFactory(arg.maxCap)
 		pool := createPool(factory, 0, 0, arg.maxCap, false, arg.initInuse, arg.initAvailable, arg.initInvalid, defaultMonitorInterval)
 		wg := sync.WaitGroup{}
+		time.Sleep(5 * time.Second)
 		for i := 0; i < math.Max(0, arg.maxCap-arg.initInuse); i++ {
 			wg.Add(1)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
