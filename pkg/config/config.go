@@ -149,10 +149,10 @@ type Config struct {
 	// ProbeRdma enable probe rdma interfaces
 	ProbeRdma *bool `yaml:"probeRdma" json:"probeRdma,omitempty"`
 
-	// CustomENIQuota specify eni quota
+	// CustomENIQuota specify the number of secondary eni that cello managed
 	CustomENIQuota *uint32 `yaml:"customENIQuota" json:"customENIQuota,omitempty"`
 
-	// CustomBranchENIQuota specify branch eni quota
+	// CustomBranchENIQuota specify the number of branch eni that cello report
 	CustomBranchENIQuota *uint32 `yaml:"customBranchENIQuota" json:"customBranchENIQuota,omitempty"`
 }
 
@@ -317,6 +317,7 @@ func verifyConfig(cfg *Config) error {
 		cfg.CustomBranchENIQuota = datatype.Uint32(0)
 	}
 	log.Infof("--CustomBranchENIQuota=%d", datatype.Uint32Value(cfg.CustomBranchENIQuota))
+
 	return nil
 }
 

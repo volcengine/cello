@@ -102,7 +102,7 @@ func (m *eniIPResourceManager) SupportTrunk() bool {
 	return m.trunkEni != nil
 }
 
-func generateIPPoolCfg(cfg *config.Config, limits helper.InstanceLimits) pool.Config {
+func generateIPPoolCfg(cfg *config.Config, limits *helper.InstanceLimits) pool.Config {
 	*cfg.EnableTrunk = *cfg.EnableTrunk && limits.TrunkSupported
 	if *cfg.PoolTargetLimit > 1 {
 		*cfg.PoolTargetLimit = 1
@@ -110,7 +110,7 @@ func generateIPPoolCfg(cfg *config.Config, limits helper.InstanceLimits) pool.Co
 
 	totalMax := int(*cfg.PoolMaxCap)
 	if *cfg.PoolMaxCapProbe {
-		totalMax = limits.ENIAvailable() * limits.IPv4MaxPerENI
+		totalMax = limits.ManageableSecondaryENI() * limits.IPv4MaxPerENI
 	}
 	target := math.Min(int(*cfg.PoolTarget), math.Floor(*cfg.PoolTargetLimit*float64(totalMax)))
 	targetMin := math.Min(int(*cfg.PoolTargetMin), math.Floor(*cfg.PoolTargetLimit*float64(totalMax)))
@@ -134,7 +134,6 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		return nil, err
 	}
 	m := &eniIPResourceManager{}
-	poolConfig := generateIPPoolCfg(cfg, limit.GetLimit())
 
 	created, err := volcApi.GetAttachedENIs(false)
 	if err != nil {
@@ -149,13 +148,17 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 	// trunk
 	m.trunkEni = limit.GetLimit().TrunkENI
 	if *cfg.EnableTrunk && m.trunkEni == nil {
-		res, err := eniFact.CreateWithIPCount(1, true)
-		if err != nil {
-			return nil, fmt.Errorf("alloc trunk eni failed, %v", err)
+		if limit.GetLimit().ManageableSecondaryENI() <= limit.GetLimit().Created {
+			return nil, fmt.Errorf("no eni quota to create trunk eni")
+		}
+		res, inErr := eniFact.CreateWithIPCount(1, true)
+		if inErr != nil {
+			return nil, fmt.Errorf("alloc trunk eni failed, %v", inErr)
 		}
 		m.trunkEni = res.(*types.ENI)
 		limit.UpdateTrunk(m.trunkEni)
 	}
+	poolConfig := generateIPPoolCfg(cfg, limit.GetLimit())
 
 	eniFact.monitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second, time.Duration(*cfg.ReconcileIntervalSec)*time.Second)
 
@@ -297,9 +300,9 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		err = k8s.PatchTrunkInfo(&types.TrunkInfo{
 			EniID:       m.trunkEni.GetID(),
 			Mac:         m.trunkEni.Mac.String(),
-			BranchLimit: limit.GetLimit().ENITotal - limit.GetLimit().ENIQuota,
+			BranchLimit: limit.GetLimit().BranchENI(),
 		})
-		m.branchLimit = limit.GetLimit().ENITotal - limit.GetLimit().ENIQuota
+		m.branchLimit = limit.GetLimit().BranchENI()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("patch trunk info on node failed, %v", err)
@@ -625,7 +628,7 @@ func (f *eniIPFactory) createEniAsync(withIPs int) (*ENI, error) {
 
 	f.Lock()
 	defer f.Unlock()
-	limit := f.getLimit().ENIAvailable()
+	limit := f.getLimit().ManageableSecondaryENI()
 	if len(f.enis) < limit {
 		select {
 		case f.eniPending <- struct{}{}:
@@ -1030,7 +1033,7 @@ func (f *eniIPFactory) subnetMonitor(updateInterval, aging time.Duration) {
 
 func (f *eniIPFactory) getLimit() *helper.InstanceLimits {
 	limit := f.eniFactory.limit.GetLimit()
-	return &limit
+	return limit
 }
 
 func (f *eniIPFactory) GetResourceLimit() int {
@@ -1047,7 +1050,7 @@ func (f *eniIPFactory) GetResourceLimit() int {
 		}
 		eni.Unlock()
 	}
-	return limit.ENIAvailable()*limit.IPv4MaxPerENI - nick
+	return limit.ManageableSecondaryENI()*limit.IPv4MaxPerENI - nick
 }
 
 func (f *eniIPFactory) GC() error {
