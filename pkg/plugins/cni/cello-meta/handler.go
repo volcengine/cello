@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -33,7 +32,6 @@ import (
 	cni100 "github.com/containernetworking/cni/pkg/types/100"
 	cniIp "github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
-	"github.com/google/renameio"
 	netutils "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/utils"
 	"github.com/pkg/errors"
 	"github.com/vishvananda/netlink"
@@ -445,8 +443,8 @@ func cmdAdd(args *skel.CmdArgs) error {
 		lg.DebugS("show patchNetworkStatus time(Millisecond)", "cost", fmt.Sprintf("%f", duration))
 	}
 
-	if err = updatePodInfo(string(k8sConfig.K8S_POD_NAMESPACE), string(k8sConfig.K8S_POD_NAME), args.Netns, delegates, netStatus); err != nil {
-		lg.ErrorS(err, "failed to update pod info")
+	if err = updatePodInfo(string(k8sConfig.K8S_POD_NAMESPACE), string(k8sConfig.K8S_POD_NAME), string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID), args.Netns, delegates, netStatus); err != nil {
+		lg.ErrorS(err, "Failed to update pod info")
 	}
 
 	return result.Print()
@@ -1315,7 +1313,7 @@ func getPodResourceMap(podNamespace, podName string) (map[string]*types2.Resourc
 
 // getPodContainerResourceMap return pod container resource map from kubelet
 // NOTICE: not threadsafe
-func getPodContainerResourceMap(podNamespace, podName string) ([]*types2.ContainerResourceInfo, error) {
+func getPodContainerResourceMap(podNamespace, podName string) ([]*types2.ContainerResource, error) {
 	ck, err := loadResourceClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get a ResourceClient instance: %v", err)
@@ -1397,7 +1395,7 @@ func cmdDel(args *skel.CmdArgs) error {
 	lg.InfoS("cmdDel", "path", path)
 	_ = os.Remove(path)
 
-	if err = removePodInfo(string(k8sConfig.K8S_POD_NAMESPACE), string(k8sConfig.K8S_POD_NAME)); err != nil {
+	if err = removePodInfo(string(k8sConfig.K8S_POD_NAMESPACE), string(k8sConfig.K8S_POD_NAME), string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID)); err != nil {
 		lg.ErrorS(err, "Failed to remove pod info")
 	}
 
@@ -1506,70 +1504,4 @@ func tryLoadDelegateNetConfFromCache(containerID, dataDir string) ([]*DelegateNe
 		return nil, err
 	}
 	return netConf, nil
-}
-
-func buildPodInfo(podNamespace, podName, netNs string, confs []*DelegateNetConf, networkStatus []*NetworkStatus) (*types2.PodInfo, error) {
-	var resourceInfoList []*types2.ContainerResourceInfo
-	podInfo := &types2.PodInfo{
-		Version: types2.PodInfoVersion10,
-		NetNs:   netNs,
-	}
-	var err error
-	if len(confs) != len(networkStatus) {
-		return nil, fmt.Errorf("missmatch number delegateNetConf(%d) and networkStatus(%d)", len(confs), len(networkStatus))
-	}
-	for _, conf := range confs {
-		if conf.MetaConfig.DeviceID != "" {
-			if resourceInfoList, err = getPodContainerResourceMap(podNamespace, podName); err != nil {
-				log.Log.Errorf("Get pod %s/%s container resource map failed, %v", podNamespace, podName, err)
-				return nil, err
-			}
-			break
-		}
-	}
-	if len(resourceInfoList) > 0 {
-		podInfo.ResourceMap = &types2.ResourceMap{}
-		for _, resourceInfo := range resourceInfoList {
-			podInfo.ResourceMap.Containers = append(podInfo.ResourceMap.Containers, resourceInfo)
-		}
-	}
-	for i := range confs {
-		ni := &types2.NetworkInterface{
-			Name: networkStatus[i].DeviceInfo.IfName,
-			CNI:  networkStatus[i].CNIName,
-			Mac:  networkStatus[i].DeviceInfo.Mac,
-			IPs:  networkStatus[i].DeviceInfo.IPs,
-		}
-		if confs[i].MetaConfig.DeviceID != "" {
-			ni.NetworkInterfaceResource = &types2.NetworkInterfaceResource{
-				Name:       confs[i].MetaRequest.ResourceName,
-				DeviceID:   confs[i].MetaConfig.OriginalDeviceID,
-				PciAddress: confs[i].MetaConfig.DeviceID,
-			}
-		}
-	}
-
-	return podInfo, nil
-}
-
-func updatePodInfo(podNamespace, podName, netNS string, delegates []*DelegateNetConf, netStatus []*NetworkStatus) error {
-	podInfoFile := path.Join(defaultCNIMetaPodInfoDir, fmt.Sprintf("%s_%s", podNamespace, podName))
-	if podInfo, err := buildPodInfo(podNamespace, podName, netNS, delegates, netStatus); err == nil {
-		podInfoStr, _ := json.Marshal(podInfo)
-		if err = os.MkdirAll(defaultCNIMetaPodInfoDir, 0700); err != nil {
-			return fmt.Errorf("make dir %s failed, %v", defaultCNIMetaPodInfoDir, err)
-		}
-		if err = renameio.WriteFile(podInfoFile, podInfoStr, 0644); err != nil {
-			return fmt.Errorf("write pod info to file %s failed, %v", podInfoFile, err)
-		}
-	} else {
-		return fmt.Errorf("build pod info failed, %v", err)
-	}
-
-	return nil
-}
-
-func removePodInfo(podNamespace, podName string) error {
-	podInfoFile := path.Join(defaultCNIMetaPodInfoDir, fmt.Sprintf("%s_%s", podNamespace, podName))
-	return os.Remove(podInfoFile) // ignore_security_alert
 }
