@@ -119,6 +119,7 @@ func (rc *kubeletClient) getPodResources(client podresourcesapi.PodResourcesList
 	}
 
 	rc.resources = resp.PodResources
+	lg.DebugS("getPodResources raw", "resources", rc.resources)
 
 	return nil
 }
@@ -148,40 +149,41 @@ func (rc *kubeletClient) GetPodResourceMap(ns, name string) (map[string]*types.R
 	return resourceMap, nil
 }
 
-func (rc *kubeletClient) GetPodContainerResourceMap(ns, name string) ([]*types.ContainerResourceInfo, error) {
-	resourceList := make([]*types.ContainerResourceInfo, 0, 2)
+func (rc *kubeletClient) GetPodContainerResourceMap(ns, name string) ([]*types.ContainerResource, error) {
+	resourceList := make([]*types.ContainerResource, 0, 2)
 
 	if name == "" || ns == "" {
 		return nil, fmt.Errorf("GetPodContainerResourceMap: Pod name or namespace cannot be empty")
 	}
 
 	for _, pr := range rc.resources {
-		if pr.Name == name && pr.Namespace == ns {
-			for _, cnt := range pr.Containers {
-				if len(cnt.Devices) == 0 {
-					// skip container if device is empty
-					continue
-				}
-				c := &types.ContainerResourceInfo{
-					Name: cnt.Name,
-				}
-				for _, dev := range cnt.Devices {
-					cds := &types.ContainerDevices{
-						ResourceName: dev.ResourceName,
-					}
-					cds.DeviceIds = append(cds.DeviceIds, dev.DeviceIds...)
-					if dev.Topology != nil {
-						cds.Topology = &types.TopologyInfo{}
-						for _, node := range dev.Topology.Nodes {
-							cds.Topology.Nodes = append(cds.Topology.Nodes, &types.NUMANode{
-								ID: node.ID,
-							})
-						}
-					}
-					c.Devices = append(c.Devices, cds)
-				}
-				resourceList = append(resourceList, c)
+		if pr.Name != name || pr.Namespace != ns {
+			continue
+		}
+		for _, cnt := range pr.Containers {
+			if len(cnt.Devices) == 0 {
+				// skip container if device is empty
+				continue
 			}
+			c := &types.ContainerResource{
+				Name: cnt.Name,
+			}
+			for _, dev := range cnt.Devices {
+				cds := &types.ContainerDevices{
+					ResourceName: dev.ResourceName,
+				}
+				cds.DeviceIds = append(cds.DeviceIds, dev.DeviceIds...)
+				if dev.Topology != nil {
+					cds.Topology = &types.TopologyInfo{}
+					for _, node := range dev.Topology.Nodes {
+						cds.Topology.Nodes = append(cds.Topology.Nodes, &types.NUMANode{
+							ID: node.ID,
+						})
+					}
+				}
+				c.Devices = append(c.Devices, cds)
+			}
+			resourceList = append(resourceList, c)
 		}
 	}
 
