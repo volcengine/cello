@@ -69,7 +69,7 @@ func showConfig(c *cli.Context) error {
 
 func showIPAMLimit(c *cli.Context) error {
 	url := fmt.Sprintf("%s%s", baseUrl, daemon.IPAMLimitGetPath)
-	limit := helper.InstanceLimitsAttr{}
+	limit := daemon.InstanceLimit{}
 	err := debugClientGet(url, &limit)
 	if err != nil {
 		return err

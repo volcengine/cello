@@ -26,34 +26,36 @@ import (
 	"github.com/volcengine/cello/pkg/config"
 	"github.com/volcengine/cello/pkg/provider/volcengine/metadata"
 	"github.com/volcengine/cello/pkg/tracing"
+	"github.com/volcengine/cello/pkg/utils/datatype"
 	"github.com/volcengine/cello/pkg/utils/math"
 	"github.com/volcengine/cello/types"
 )
 
 // InstanceLimitsAttr contains the basic quota and limit information of ecs instance used by cello.
 type InstanceLimitsAttr struct {
-	ENITotal       int
-	ENIQuota       int
-	IPv4MaxPerENI  int
-	IPv6MaxPerENI  int
-	TrunkSupported bool
-	RdmaSupport    bool
+	ENITotal       int  `json:"eniTotal"`
+	ENIQuota       int  `json:"eniQuota"`
+	IPv4MaxPerENI  int  `json:"ipv4MaxPerENI"`
+	IPv6MaxPerENI  int  `json:"ipv6MaxPerENI"`
+	TrunkSupported bool `json:"trunkSupported"`
+	RdmaSupport    bool `json:"rdmaSupport"`
 }
 
 // InstanceLimits quota and limit.
 type InstanceLimits struct {
 	InstanceLimitsAttr
-	ENICustomer int
+	UnmanagedENICnt int // contains primary eni
 	// currently support only one
-	TrunkENI *types.ENI
+	TrunkENI     *types.ENI
+	BranchENICnt int
 
 	Created int
 	Cordon  bool
 }
 
 func (l *InstanceLimits) String() string {
-	return fmt.Sprintf("{ENITotal: %d, ENIQuota: %d, IPv4MaxPerENI: %d, IPv6MaxPerENI: %d, TrunkSupported: %t, RdmaSupport: %t, ENICustomer: %d, Created: %d, Cordon: %t}",
-		l.ENITotal, l.ENIQuota, l.IPv4MaxPerENI, l.IPv6MaxPerENI, l.TrunkSupported, l.RdmaSupport, l.ENICustomer, l.Created, l.Cordon)
+	return fmt.Sprintf("{ENITotal: %d, ENIQuota: %d, IPv4MaxPerENI: %d, IPv6MaxPerENI: %d, TrunkSupported: %t, RdmaSupport: %t, UnmanagedENICnt: %d, Created: %d, Cordon: %t}",
+		l.ENITotal, l.ENIQuota, l.IPv4MaxPerENI, l.IPv6MaxPerENI, l.TrunkSupported, l.RdmaSupport, l.UnmanagedENICnt, l.Created, l.Cordon)
 }
 
 // SupportTrunk support trunk or not.
@@ -68,7 +70,7 @@ func (l *InstanceLimits) NonPrimaryENI() int {
 
 type InstanceLimitManager interface {
 	// GetLimit get InstanceLimits of ecs instance
-	GetLimit() InstanceLimits
+	GetLimit() *InstanceLimits
 	// Update update InstanceLimits of ecs instance
 	Update()
 	// UpdateTrunk update trunk eni to InstanceLimits
@@ -85,24 +87,20 @@ type InstanceLimitManager interface {
 	NotifyWatcher()
 }
 
-// ENIAvailable get quota minus the custom eni and primary eni.
-func (l *InstanceLimits) ENIAvailable() int {
-	cnt := l.ENIQuota - 1 - l.ENICustomer
+// ManageableSecondaryENI get number of secondary eni cello can manage.
+func (l *InstanceLimits) ManageableSecondaryENI() int {
+	cnt := l.ENIQuota - l.UnmanagedENICnt
 	if l.Cordon {
 		cnt = l.Created
 	}
 	if l.TrunkENI != nil {
 		cnt -= 1
 	}
-	return cnt
+	return math.Max(0, cnt)
 }
 
 func (l *InstanceLimits) BranchENI() int {
-	cnt := l.ENITotal - l.ENIQuota
-	if cnt < 0 {
-		return 0
-	}
-	return cnt
+	return l.BranchENICnt
 }
 
 type defaultInstanceLimit struct {
@@ -112,16 +110,16 @@ type defaultInstanceLimit struct {
 	lastUpdate    time.Time
 	eventWatchers []chan<- struct{}
 
-	customENIQuota       int
-	customBranchENIQuota int
+	customENIQuota       uint32
+	customBranchENIQuota uint32
 }
 
 var instanceLimitManager *defaultInstanceLimit
 
-func (m *defaultInstanceLimit) GetLimit() InstanceLimits {
+func (m *defaultInstanceLimit) GetLimit() *InstanceLimits {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
-	return m.limit
+	return &m.limit
 }
 
 func (m *defaultInstanceLimit) Update() {
@@ -171,13 +169,7 @@ func (m *defaultInstanceLimit) updateLocked() error {
 		return err
 	}
 	eniQuota := newLimit.InstanceLimitsAttr.ENIQuota
-	branchQuota := newLimit.BranchENI()
-	if m.customENIQuota > 0 {
-		eniQuota = math.Min(eniQuota, m.customENIQuota)
-	}
-	if m.customBranchENIQuota > 0 {
-		branchQuota = math.Min(branchQuota, m.customBranchENIQuota)
-	}
+	branchQuota := math.Max(0, newLimit.ENITotal-newLimit.ENIQuota)
 
 	oldLimit := m.limit.InstanceLimitsAttr
 	emptyLimit := InstanceLimitsAttr{}
@@ -197,11 +189,21 @@ func (m *defaultInstanceLimit) updateLocked() error {
 	if err != nil {
 		return err
 	}
-	m.limit.ENICustomer = total - len(created) - 1 // contains primary eni
+	m.limit.UnmanagedENICnt = total - len(created)
 
-	eniQuota = math.Max(eniQuota, total)
-	newLimit.InstanceLimitsAttr.ENIQuota = eniQuota
-	newLimit.InstanceLimitsAttr.ENITotal = branchQuota + eniQuota
+	if m.customENIQuota != 0 {
+		maxCelloAvailable := math.Max(0, eniQuota-m.limit.UnmanagedENICnt)
+		celloAvailable := math.Min(maxCelloAvailable, int(m.customENIQuota))
+		celloAvailable = math.Max(celloAvailable, m.limit.Created)
+		m.limit.UnmanagedENICnt = math.Max(0, eniQuota-celloAvailable)
+		log.InfoS("ENI quota of cello managed specified", "value", celloAvailable)
+	}
+
+	if m.customBranchENIQuota != 0 {
+		branchQuota = math.Min(branchQuota, int(m.customBranchENIQuota))
+		log.InfoS("Branch quota of cello report specified", "value", branchQuota)
+	}
+	m.limit.BranchENICnt = branchQuota
 
 	for _, e := range created {
 		if e.Trunk {
@@ -272,8 +274,8 @@ func NewInstanceLimitManager(api VolcAPI, cfg *config.Config) (InstanceLimitMana
 		lock:                 sync.RWMutex{},
 		api:                  api,
 		eventWatchers:        []chan<- struct{}{},
-		customENIQuota:       int(*cfg.CustomENIQuota),
-		customBranchENIQuota: int(*cfg.CustomBranchENIQuota),
+		customENIQuota:       datatype.Uint32Value(cfg.CustomENIQuota),
+		customBranchENIQuota: datatype.Uint32Value(cfg.CustomBranchENIQuota),
 	}
 	if err := instanceLimitManager.update(); err != nil {
 		return nil, err

@@ -368,6 +368,9 @@ func (e *VolcApiImpl) GetAttachedENIs(withTrunk bool) (result []*types.ENI, err 
 	var macs []string
 	celloCreatedEni := map[string]*ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput{}
 	for _, eni := range enis {
+		if !withTrunk && volcengine.StringValue(eni.Type) == ENITypeTrunk {
+			continue
+		}
 		celloCreatedEni[volcengine.StringValue(eni.NetworkInterfaceId)] = eni
 		macs = append(macs, volcengine.StringValue(eni.MacAddress))
 	}
@@ -380,9 +383,6 @@ func (e *VolcApiImpl) GetAttachedENIs(withTrunk bool) (result []*types.ENI, err 
 		}
 		if item, exist := celloCreatedEni[eni.ID]; exist {
 			eni.Trunk = volcengine.StringValue(item.Type) == ENITypeTrunk
-			if eni.Trunk && !withTrunk {
-				continue
-			}
 			if e.ipFamily.EnableIPv6() && len(item.IPv6Sets) > 0 {
 				eni.PrimaryIP.IPv6 = net.ParseIP(volcengine.StringValue(item.IPv6Sets[0]))
 			}
