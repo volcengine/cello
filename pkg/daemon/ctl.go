@@ -53,7 +53,7 @@ const (
 	EcsMetaInfoGetPath = "/ecs/info/get"
 	// TaskStatusGetPath is the HTTP path to get task status.
 	TaskStatusGetPath = "/task/status/get"
-	// PerfTest for kubecliet qps for apiserver
+	// PerfApiServerQPSPath perf test for kube client qps for api server
 	PerfApiServerQPSPath = "/perf/apiserver/qps"
 )
 
@@ -175,9 +175,20 @@ type getInstanceLimit struct {
 	limit helper.InstanceLimitManager
 }
 
+type InstanceLimit struct {
+	helper.InstanceLimitsAttr
+	// contains primary eni
+	UnmanagedENICnt int `json:"unmanagedENICnt"`
+	BranchENICnt    int `json:"branchENICnt"`
+}
+
 func (l *getInstanceLimit) Handle(c *gin.Context) {
 	limit := l.limit.GetLimit()
-	c.JSON(http.StatusOK, limit.InstanceLimitsAttr)
+	c.JSON(http.StatusOK, InstanceLimit{
+		InstanceLimitsAttr: limit.InstanceLimitsAttr,
+		UnmanagedENICnt:    limit.UnmanagedENICnt,
+		BranchENICnt:       limit.BranchENICnt,
+	})
 }
 
 func newInstanceLimitHandler(limit helper.InstanceLimitManager) Handler {

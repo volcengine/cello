@@ -93,7 +93,7 @@ func (e *eniResourceManager) SupportTrunk() bool {
 	return e.trunkEni != nil
 }
 
-func generateENIPoolCfg(cfg *config.Config, limits helper.InstanceLimits) pool.Config {
+func generateENIPoolCfg(cfg *config.Config, limits *helper.InstanceLimits) pool.Config {
 	*cfg.EnableTrunk = *cfg.EnableTrunk && limits.TrunkSupported
 	if *cfg.PoolTargetLimit > 1 {
 		*cfg.PoolTargetLimit = 1
@@ -101,7 +101,7 @@ func generateENIPoolCfg(cfg *config.Config, limits helper.InstanceLimits) pool.C
 
 	totalMax := int(*cfg.PoolMaxCap)
 	if *cfg.PoolMaxCapProbe {
-		totalMax = limits.ENIAvailable()
+		totalMax = limits.ManageableSecondaryENI()
 	}
 
 	target := math.Min(int(*cfg.PoolTarget), math.Floor(*cfg.PoolTargetLimit*float64(totalMax)))
@@ -126,7 +126,7 @@ func newEniResourceManager(cfg *config.Config, subnet helper.SubnetManager, secM
 	if err != nil {
 		return nil, err
 	}
-	poolConfig := generateENIPoolCfg(cfg, limit.GetLimit())
+
 	created, err := volcApi.GetAttachedENIs(false)
 	if err != nil {
 		return nil, fmt.Errorf("get attached enis failed while init, %v", err)
@@ -136,19 +136,23 @@ func newEniResourceManager(cfg *config.Config, subnet helper.SubnetManager, secM
 	if err != nil {
 		return nil, fmt.Errorf("create eni factory failed, %v", err)
 	}
-	poolConfig.Factory = factory
 
 	// Trunk
 	m.trunkEni = limit.GetLimit().TrunkENI
 	if *cfg.EnableTrunk && m.trunkEni == nil {
-		res, err := factory.CreateWithIPCount(1, true)
-		if err != nil {
-			return nil, fmt.Errorf("alloc trunk eni failed, %v", err)
+		if limit.GetLimit().ManageableSecondaryENI() <= limit.GetLimit().Created {
+			return nil, fmt.Errorf("no eni quota to create trunk eni")
+		}
+		res, inErr := factory.CreateWithIPCount(1, true)
+		if inErr != nil {
+			return nil, fmt.Errorf("alloc trunk eni failed, %v", inErr)
 		}
 		m.trunkEni = res.(*types.ENI)
 		limit.UpdateTrunk(m.trunkEni)
 	}
 
+	poolConfig := generateENIPoolCfg(cfg, limit.GetLimit())
+	poolConfig.Factory = factory
 	poolConfig.PreStart = func(pool pool.ResourcePoolOp) error {
 		for _, e := range created {
 			if item, exist := allocatedResource[e.GetID()]; exist {
@@ -174,9 +178,9 @@ func newEniResourceManager(cfg *config.Config, subnet helper.SubnetManager, secM
 		err = k8s.PatchTrunkInfo(&types.TrunkInfo{
 			EniID:       m.trunkEni.GetID(),
 			Mac:         m.trunkEni.Mac.String(),
-			BranchLimit: limit.GetLimit().ENITotal - limit.GetLimit().ENIQuota,
+			BranchLimit: limit.GetLimit().BranchENI(),
 		})
-		m.branchLimit = limit.GetLimit().ENITotal - limit.GetLimit().ENIQuota
+		m.branchLimit = limit.GetLimit().BranchENI()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("patch trunk info on node failed, %v", err)
@@ -292,7 +296,7 @@ func (f *eniFactory) GC() error {
 // GetResourceLimit returns the limit of NetResource.
 func (f *eniFactory) GetResourceLimit() int {
 	limit := f.limit.GetLimit()
-	return limit.ENIAvailable()
+	return limit.ManageableSecondaryENI()
 }
 
 func (f *eniFactory) monitor(subnetPeriod, limitPeriod time.Duration) {
