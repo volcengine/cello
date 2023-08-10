@@ -103,7 +103,6 @@ func (m *eniIPResourceManager) SupportTrunk() bool {
 }
 
 func generateIPPoolCfg(cfg *config.Config, limits *helper.InstanceLimits) pool.Config {
-	*cfg.EnableTrunk = *cfg.EnableTrunk && limits.TrunkSupported
 	if *cfg.PoolTargetLimit > 1 {
 		*cfg.PoolTargetLimit = 1
 	}
@@ -146,6 +145,7 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 	}
 
 	// trunk
+	*cfg.EnableTrunk = *cfg.EnableTrunk && limit.GetLimit().TrunkSupported
 	m.trunkEni = limit.GetLimit().TrunkENI
 	if *cfg.EnableTrunk && m.trunkEni == nil {
 		if limit.GetLimit().ManageableSecondaryENI() <= limit.GetLimit().Created {
