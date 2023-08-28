@@ -125,10 +125,10 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 			})
 		}
 
-		for _, ro := range config.ExtraRoutes {
+		for i := range config.ExtraRoutes {
 			linkConfig.Routes = append(linkConfig.Routes, &netlink.Route{
-				Dst:       &ro.Dst,
-				Gw:        ro.GW,
+				Dst:       &config.ExtraRoutes[i].Dst,
+				Gw:        config.ExtraRoutes[i].GW,
 				LinkIndex: podLink.Attrs().Index,
 				Scope:     netlink.SCOPE_UNIVERSE,
 				Flags:     int(netlink.FLAG_ONLINK),
