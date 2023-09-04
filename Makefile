@@ -5,8 +5,8 @@ DATE = $(shell date +"%Y-%m-%d_%H:%M:%S")
 COMMIT = $(shell git rev-parse HEAD | head -c 8)
 
 # Information of OS and ARCH
-OS = $(shell uname -s)
-ARCH = $(shell uname -m)
+OS ?= $(shell uname -s | tr A-Z a-z)
+ARCH ?= $(shell uname -m)
 
 # Output Directory
 OUTPUT ?= output
