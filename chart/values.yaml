@@ -1,6 +1,6 @@
 image:
-  repository: "cr-cn-beijing.volces.com/cello/cello"
-  tag: v1.6.8
+  repository: "cr-norm-cn-beijing.cr.volces.com/cello/cello"
+  tag: v1.7.1
   pullPolicy: "Always"
 
 cello:
@@ -23,7 +23,7 @@ cello:
   k8sServiceHost: ""
   # Kubernetes service port.
   k8sServicePort: ""
-  #health check port
+  # Health check port.
   healthCheckPort: 11414
 cilium:
   debug: false
