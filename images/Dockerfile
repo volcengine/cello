@@ -80,7 +80,7 @@ RUN groupadd -f cilium && echo ". /etc/profile.d/bash_completion.sh" >> /etc/bas
 
 ENV HUBBLE_SERVER=unix:///var/run/cilium/hubble.sock
 COPY --from=hubble /out/${TARGETOS}/${TARGETARCH}/bin/hubble /bin/hubble
-COPY --from=hubble /out/linux/bash_completion /etc/bash_completion.d/hubble
+COPY --from=hubble /out/${TARGETOS}/bash_completion /etc/bash_completion.d/hubble
 
 # cello & cilium bin
 COPY --from=cni-plugins-builder /go/src/containernetworking/plugins/bin/loopback /containernetworking/plugins/
