@@ -98,17 +98,20 @@ cd cello
 ./tests/test.sh
 ```
 
-## Community
-### Contributing
+## 社区
+### 贡献
 详情见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
-### Contact
-欢迎通过 Github `issues` 和 `pull requests` 进行交流， 也可以通过邮件或扫描下方飞书二维码与我们取得联系。  
+### 联系方式
+欢迎通过 Github `issues` 和 `pull requests` 进行交流， 也可以通过邮件与我们进行交流,欢迎点击[链接](https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=f55qe2de-ddae-4d89-a262-9eee33c5f5d2)或扫描下方飞书二维码加入Cello开源交流群进行咨询。  
 
 <img alt="feishu" height="300" src="./docs/images/feishu.png"/>
 
 
-### License
+### 加入我们
+为cello项目反馈贡献的最好方式就是加入我们, 如果您对云网络或云原生开发感兴趣欢迎点击[链接](https://job.toutiao.com/s/iePyAdS4)获取更多详情。
+
+### 许可证
 Cello 使用 Apache 2.0 证书, 详情见 [LICENSE](./LICENSE)。
 
 
