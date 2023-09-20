@@ -68,8 +68,13 @@ type APIGroupECS interface {
 	DescribeInstanceTypes(input *ecs.DescribeInstanceTypesInput) (*DescribeInstanceTypesOutput, error)
 }
 
+type APIGroupTag interface {
+	TagResources(input *vpc.TagResourcesInput) (*vpc.TagResourcesOutput, error)
+}
+
 type EC2 interface {
 	APIGroupENI
 	APIGroupSubnet
 	APIGroupECS
+	APIGroupTag
 }

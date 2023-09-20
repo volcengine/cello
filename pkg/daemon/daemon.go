@@ -58,6 +58,8 @@ import (
 	"github.com/volcengine/cello/pkg/utils/logger"
 	"github.com/volcengine/cello/pkg/utils/math"
 	"github.com/volcengine/cello/pkg/utils/netns"
+	"github.com/volcengine/cello/pkg/utils/runtime"
+	"github.com/volcengine/cello/pkg/version"
 	"github.com/volcengine/cello/types"
 )
 
@@ -83,7 +85,7 @@ type daemon struct {
 	eniManager            *eniResourceManager
 	eniIPManager          *eniIPResourceManager
 	managers              map[string]ResourceManager // NetResourceType - ResourceManager
-	devicePlugin          deviceplugin.Manager
+	devicePluginManager   deviceplugin.Manager
 	cfg                   *config.Config
 	lastGC                time.Time
 	pbrpc.UnimplementedCelloServer
@@ -149,11 +151,11 @@ func NewDaemon() (*daemon, error) {
 		return nil, err
 	}
 
-	return newDaemon(k8sService, cfg, apiClient, podPersist, instanceMeta, nil, deviceplugin.NewPluginManagerOption())
+	return newDaemon(k8sService, cfg, apiClient, podPersist, instanceMeta, nil)
 }
 
 func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, podPersist PodPersistenceManager,
-	instanceMeta helper.InstanceMetadataGetter, volcApi helper.VolcAPI, pluginManagerOption *deviceplugin.PluginManagerOption) (*daemon, error) {
+	instanceMeta helper.InstanceMetadataGetter, volcApi helper.VolcAPI) (*daemon, error) {
 	// register metrics
 	metrics.PrometheusRegister()
 
@@ -219,14 +221,20 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 			return nil, fmt.Errorf("create eni resource manager failed, %v", err)
 		}
 		d.managers[types.NetResourceTypeEni] = d.eniManager
-		pluginManagerOption.UseExclusiveENI().WithENILister(func() int {
-			return math.Max(0, d.eniManager.GetResourceLimit()-d.GetStockPodCount())
-		})
+		d.devicePluginManager = deviceplugin.NewResourcePluginManager(context.TODO(),
+			deviceplugin.NewENIDevicePlugin(deviceplugin.ENIResourceName,
+				math.Max(0, d.eniManager.GetResourceLimit()-d.GetStockPodCount())))
 		if d.eniManager.SupportTrunk() {
-			pluginManagerOption.UseBranchENI().WithBranchENILister(func() int {
-				return d.eniManager.GetTrunkBranchLimit()
-			})
+			d.devicePluginManager.AddPlugin(deviceplugin.NewENIDevicePlugin(
+				deviceplugin.BranchENIResourceName,
+				d.eniManager.GetTrunkBranchLimit()))
 		}
+		sigChannel := make(chan struct{}, 1)
+		d.instanceLimit.WatchUpdate("device-plugin-eni", sigChannel)
+		go watchResourceNum(context.TODO(), d.devicePluginManager, deviceplugin.ENIResourceName, func() int {
+			return math.Max(0, d.eniManager.GetResourceLimit()-d.GetStockPodCount())
+		}, sigChannel)
+
 	case config.NetworkModeENIShare:
 		d.eniIPManager, err = newEniIPResourceManager(cfg, subnetManager, secGrpManager,
 			volcApi, allocatedResMap[types.NetResourceTypeEniIp], k8sService)
@@ -234,19 +242,22 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 			return nil, fmt.Errorf("create eniIP resource manager failed, %v", err)
 		}
 		d.managers[types.NetResourceTypeEniIp] = d.eniIPManager
-		pluginManagerOption.UseSharedENI().WithIPLister(func() int {
-			return math.Max(0, d.eniIPManager.GetResourceLimit()-d.GetStockPodCount())
-		})
+		d.devicePluginManager = deviceplugin.NewResourcePluginManager(context.TODO(),
+			deviceplugin.NewENIDevicePlugin(deviceplugin.ENIIPResourceName,
+				math.Max(0, d.eniIPManager.GetResourceLimit()-d.GetStockPodCount())))
 		if d.eniIPManager.SupportTrunk() {
-			pluginManagerOption.UseBranchENI().WithBranchENILister(func() int {
-				return d.eniIPManager.GetTrunkBranchLimit()
-			})
+			d.devicePluginManager.AddPlugin(deviceplugin.NewENIDevicePlugin(
+				deviceplugin.BranchENIResourceName,
+				d.eniIPManager.GetTrunkBranchLimit()))
 		}
+		sigChannel := make(chan struct{}, 1)
+		d.instanceLimit.WatchUpdate("device-plugin-eniip", sigChannel)
+		go watchResourceNum(context.TODO(), d.devicePluginManager, deviceplugin.ENIIPResourceName, func() int {
+			return math.Max(0, d.eniIPManager.GetResourceLimit()-d.GetStockPodCount())
+		}, sigChannel)
 	default:
 		return nil, fmt.Errorf("no support network mode %s", d.networkMode)
 	}
-
-	d.devicePlugin = pluginManagerOption.BuildManager()
 
 	if datatype.StringValue(cfg.Source) == config.SourceClusterConfigMap {
 		d.k8s.AddConfigMapEventHandler(cache.ResourceEventHandlerFuncs{
@@ -453,6 +464,7 @@ func (d *daemon) CreateEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRe
 	})
 	lg.Infof("Handle CreateEndpoint")
 
+	defer runtime.HandleCrash(lg)
 	defer func() {
 		if err != nil {
 			lg.Warnf("Fail to handle CreateEndpoint: %v", err)
@@ -608,6 +620,7 @@ func (d *daemon) DeleteEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRe
 		"SandboxContainerId": req.InfraContainerId,
 	})
 	lg.Infof("Handle DeleteEndpoint")
+	defer runtime.HandleCrash(lg)
 	defer func() {
 		if err != nil {
 			lg.Warnf("Fail to handle DeleteEndpoint: %s", err.Error())
@@ -678,6 +691,7 @@ func (d *daemon) DeleteEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRe
 
 // GetPodMetaInfo returns Pod metadata.
 func (d *daemon) GetPodMetaInfo(ctx context.Context, request *pbrpc.GetPodMetaRequest) (*pbrpc.GetPodMetaResponse, error) {
+	defer runtime.HandleCrash(log)
 	pod, err := d.k8s.GetCachedPod(request.GetNamespace(), request.GetName())
 	if err != nil {
 		return nil, err
@@ -693,6 +707,7 @@ func (d *daemon) GetPodMetaInfo(ctx context.Context, request *pbrpc.GetPodMetaRe
 
 // PatchPodAnnotation patches pod annotation.
 func (d *daemon) PatchPodAnnotation(ctx context.Context, request *pbrpc.PatchPodAnnotationRequest) (*pbrpc.PatchPodAnnotationResponse, error) {
+	defer runtime.HandleCrash(log)
 	return &pbrpc.PatchPodAnnotationResponse{}, d.k8s.PatchPodAnnotation(ctx, request.GetNamespace(), request.GetName(), request.GetAnnotations())
 }
 
@@ -707,6 +722,8 @@ func NewKubernetesClient() (*kubernetes.Clientset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create incluster config failed: %v", err)
 	}
+	c.UserAgent = version.UserAgent()
+
 	return kubernetes.NewForConfig(c)
 }
 
@@ -752,11 +769,11 @@ func (d *daemon) syncPodPersistence() error {
 func (d *daemon) startServers(stopCh chan struct{}) error {
 	log.Infof("Cello daemon ready, start service")
 
-	err := d.devicePlugin.Serve(stopCh)
+	err := d.devicePluginManager.Serve(stopCh)
 	if err != nil {
 		return fmt.Errorf("device plugin start failed: %v", err)
 	}
-	defer d.devicePlugin.Stop()
+	defer d.devicePluginManager.Stop()
 
 	grpcServer, err := d.startEndpointGrpcServer()
 	if err != nil {
@@ -851,11 +868,7 @@ func (d *daemon) startDebugServer() (*http.Server, error) {
 	}
 
 	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Errorf("DebugServer panic, %v", err)
-			}
-		}()
+		defer runtime.HandleCrash(log)
 		log.Infof("Start debug server")
 		err := server.ListenAndServe()
 		if err != nil {
@@ -1015,19 +1028,39 @@ func isHostNetwork(pod *v1.Pod) bool {
 func hasRequestAndLimitsFields(pod *v1.Pod) bool {
 	for _, c := range pod.Spec.Containers {
 		if c.Resources.Requests != nil {
-			_, ok := c.Resources.Requests[deviceplugin.ENIResourceName]
+			_, ok := c.Resources.Requests[deviceplugin.VolcNameSpace+deviceplugin.ENIResourceName]
 			if ok {
 				return true
 			}
-			_, ok = c.Resources.Requests[deviceplugin.ENIIPResourceName]
+			_, ok = c.Resources.Requests[deviceplugin.VolcNameSpace+deviceplugin.ENIIPResourceName]
 			if ok {
 				return true
 			}
-			_, ok = c.Resources.Requests[deviceplugin.BranchENIResourceName]
+			_, ok = c.Resources.Requests[deviceplugin.VolcNameSpace+deviceplugin.BranchENIResourceName]
 			if ok {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func watchResourceNum(ctx context.Context, pluginManger deviceplugin.Manager, resName string, lister func() int, updateSignal <-chan struct{}) {
+	// A ticker for resync resourceNum
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	var err error
+	for {
+		select {
+		case <-ticker.C:
+			err = pluginManger.Update(resName, lister())
+		case <-updateSignal:
+			err = pluginManger.Update(resName, lister())
+		case <-ctx.Done():
+			return
+		}
+		if err != nil {
+			log.Errorf("update resource for %s failed, %v", resName, err)
+		}
+	}
 }

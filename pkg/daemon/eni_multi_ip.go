@@ -157,6 +157,8 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		limit.UpdateTrunk(m.trunkEni)
 	}
 
+	eniFact.monitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second, time.Duration(*cfg.ReconcileIntervalSec)*time.Second)
+
 	factory := &eniIPFactory{
 		eniFactory:    eniFact,
 		RWMutex:       sync.RWMutex{},
@@ -280,7 +282,7 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		}
 		return nil
 	}
-	go factory.subnetMonitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second,
+	factory.subnetMonitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second,
 		time.Duration(*cfg.SubnetStatAgingSec)*time.Second)
 	p, err := pool.NewResourcePool(poolConfig)
 	if err != nil {
@@ -424,10 +426,15 @@ func (f *eniIPFactory) Name() string {
 func (f *eniIPFactory) receiveRes() (ip *types.ENIIP, err error) {
 	eniIP := <-f.eniIpReceiver
 	resErr := eniIP.err
-	if resErr != nil && (strings.Contains(resErr.Error(), apiErr.LimitExceededPrivateIpsPerEni) ||
-		strings.Contains(resErr.Error(), apiErr.LimitExceededIpv6AddressesPerEni)) {
-		f.eniFactory.limit.Update()
-		signal.NotifySignal(signal.WakeGC, signal.SigWakeGC)
+	if resErr != nil {
+		if strings.Contains(resErr.Error(), apiErr.LimitExceededPrivateIpsPerEni) ||
+			strings.Contains(resErr.Error(), apiErr.LimitExceededIpv6AddressesPerEni) {
+			f.eniFactory.limit.Update()
+			signal.NotifySignal(signal.WakeGC, signal.SigWakeGC)
+		}
+		if strings.Contains(resErr.Error(), apiErr.InsufficientIpInSubnet) {
+			f.eniFactory.limit.NotifyWatcher()
+		}
 	}
 
 	if eniIP.ENIIP == nil || resErr != nil {

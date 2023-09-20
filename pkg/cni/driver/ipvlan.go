@@ -32,6 +32,8 @@ import (
 	"github.com/volcengine/cello/pkg/cni/utils"
 )
 
+const qdiscHandle = uint32(netlink.HANDLE_CLSACT&0xffff0000 | netlink.HANDLE_MIN_EGRESS&0x0000ffff)
+
 // IPVlanDriver is used in shared ENI mode.
 type IPVlanDriver struct{}
 
@@ -365,13 +367,12 @@ func (d *IPVlanDriver) setupFilters(link netlink.Link, srcEgressRedirectCIDRs []
 		ruleInFilter[rule] = false
 	}
 
-	parent := uint32(netlink.HANDLE_CLSACT&0xffff0000 | netlink.HANDLE_MIN_EGRESS&0x0000ffff)
 	if err != nil {
 		return fmt.Errorf("list egress filter for %s error, %w", link.Attrs().Name, err)
 	}
 
 	filtersToDeleted := make([]netlink.Filter, 0)
-	filters, err := netlink.FilterList(link, parent)
+	filters, err := netlink.FilterList(link, qdiscHandle)
 	if err != nil {
 		log.Log.Errorf("failed to get filter list, %v", err)
 	}
@@ -401,7 +402,7 @@ func (d *IPVlanDriver) setupFilters(link netlink.Link, srcEgressRedirectCIDRs []
 	for rule, in := range ruleInFilter {
 		if !in {
 			filter := rule.toFlower()
-			filter.Parent = parent
+			filter.Parent = qdiscHandle
 			if err := netlink.FilterReplace(filter); err != nil && !os.IsExist(err) {
 				return fmt.Errorf("add filter for %s error, %w", link.Attrs().Name, err)
 			}
@@ -477,14 +478,17 @@ func gernerateDstRedirRule(index int, ip *net.IPNet, dstIfIndex int, redir netli
 
 	var actions []netlink.Action
 
-	skbedit := netlink.NewSkbEditAction()
+	tunnelKeyAct := netlink.NewTunnelKeyAction()
+	tunnelKeyAct.Action = netlink.TCA_TUNNEL_KEY_UNSET
+
+	skbeditAct := netlink.NewSkbEditAction()
 	ptype := uint16(unix.PACKET_HOST)
-	skbedit.PType = &ptype
+	skbeditAct.PType = &ptype
 
 	mirredAct := netlink.NewMirredAction(dstIfIndex)
 	mirredAct.MirredAction = redir
 
-	actions = append(actions, skbedit, mirredAct)
+	actions = append(actions, tunnelKeyAct, skbeditAct, mirredAct)
 	return &redirectRule{
 		linkIndex:    index,
 		proto:        proto,

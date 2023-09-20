@@ -15,18 +15,25 @@
 
 package mock
 
+import "github.com/volcengine/cello/pkg/deviceplugin"
+
 type PluginManager struct{}
+
+func (p PluginManager) Plugin(resourceName string) deviceplugin.Plugin {
+	return nil
+}
+
+func (p PluginManager) AddPlugin(plugin deviceplugin.Plugin) {
+	return
+}
+
+func (p PluginManager) Update(resourceName string, count int) error {
+	return nil
+}
 
 func (p PluginManager) Serve(_ chan struct{}) error {
 	return nil
 }
 
 func (p PluginManager) Stop() {
-}
-
-func (p PluginManager) Update(_ int) {
-}
-
-func New() *PluginManager {
-	return &PluginManager{}
 }

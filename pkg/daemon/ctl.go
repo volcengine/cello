@@ -23,6 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	helper "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper"
+	"github.com/volcengine/cello/pkg/utils/runtime"
 )
 
 const (
@@ -114,11 +115,7 @@ func (c *celloCtlAPI) start() (*http.Server, error) {
 	}
 
 	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				log.Errorf("CliServer panic, %v", err)
-			}
-		}()
+		defer runtime.HandleCrash(log)
 		log.Infof("Start ctl http server")
 		err := server.Serve(l)
 		if err != nil {

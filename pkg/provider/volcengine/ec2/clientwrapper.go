@@ -31,6 +31,7 @@ import (
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 	"github.com/volcengine/cello/pkg/provider/volcengine/credential"
 	"github.com/volcengine/cello/pkg/utils/logger"
+	"github.com/volcengine/cello/pkg/version"
 )
 
 type ClientSet struct {
@@ -207,6 +208,14 @@ func (c *ClientSet) DescribeSubnetAttributes(input *vpc.DescribeSubnetAttributes
 	return output, nil
 }
 
+func (c *ClientSet) TagResources(input *vpc.TagResourcesInput) (*vpc.TagResourcesOutput, error) {
+	output, err := c.VpcSvc.TagResourcesWithContext(context.TODO(), input)
+	if err != nil || output.Metadata.Error != nil {
+		return output, apiErr.NewAPIRequestErr(output.Metadata, err)
+	}
+	return output, nil
+}
+
 func NewClient(region, endpoint string, credentialProvider credential.Provider) *ClientSet {
 	config := volcengine.NewConfig().
 		WithRegion(region).
@@ -218,7 +227,8 @@ func NewClient(region, endpoint string, credentialProvider credential.Provider) 
 			cred := credentialProvider.Get()
 			return credentials.NewStaticCredentials(cred.AccessKeyId, cred.SecretAccessKey, cred.SessionToken), volcengine.String(region)
 		}).
-		WithEndpoint(volcengineutil.NewEndpoint().WithCustomerEndpoint(endpoint).GetEndpoint())
+		WithEndpoint(volcengineutil.NewEndpoint().WithCustomerEndpoint(endpoint).GetEndpoint()).
+		WithExtraUserAgent(volcengine.String(version.UserAgent()))
 
 	if logger.GetLogLevel() == "trace" {
 		config = config.WithLogger(volcengine.NewDefaultLogger()).

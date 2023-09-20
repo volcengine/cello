@@ -17,6 +17,8 @@ package main
 
 import (
 	"github.com/volcengine/cello/pkg/daemon"
+
+	_ "go.uber.org/automaxprocs"
 )
 
 func main() {

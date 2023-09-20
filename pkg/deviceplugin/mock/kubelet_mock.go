@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 
-package deviceplugin
+package mock
 
 import (
 	"context"
@@ -29,10 +29,13 @@ import (
 
 // Kubelet MockClient is a mock RPC client of kubelet for testing purpose.
 type Kubelet struct {
-	srv        *grpc.Server
-	sock       net.Listener
-	Res        []deviceResource
-	registered bool
+	srv              *grpc.Server
+	sock             net.Listener
+	Res              []deviceResource
+	devicepluginPath string
+	registered       bool
+	ctx              context.Context
+	cancel           context.CancelFunc
 	sync.Mutex
 }
 
@@ -43,11 +46,15 @@ type deviceResource struct {
 	Watcher  pluginapi.DevicePlugin_ListAndWatchClient
 }
 
-func NewMockClient() *Kubelet {
+func NewMockKubelet(devicepluginPath string) *Kubelet {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Kubelet{
-		srv:  nil,
-		sock: nil,
-		Res:  make([]deviceResource, 0),
+		devicepluginPath: devicepluginPath,
+		srv:              nil,
+		sock:             nil,
+		Res:              make([]deviceResource, 0),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 }
 
@@ -60,7 +67,7 @@ func (m *Kubelet) Register(_ context.Context, request *pluginapi.RegisterRequest
 	m.registered = true
 	m.Mutex.Unlock()
 
-	conn, err := grpc.DialContext(context.Background(), path.Join(DevicePluginPath, request.Endpoint),
+	conn, err := grpc.DialContext(m.ctx, path.Join(m.devicepluginPath, request.Endpoint),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
 			socketAddr, err := net.ResolveUnixAddr("unix", addr)
@@ -73,16 +80,17 @@ func (m *Kubelet) Register(_ context.Context, request *pluginapi.RegisterRequest
 		return &pluginapi.Empty{}, err
 	}
 	m.Res[len(m.Res)-1].Client = pluginapi.NewDevicePluginClient(conn)
-	m.Res[len(m.Res)-1].Watcher, _ = m.Res[0].Client.ListAndWatch(context.Background(), &pluginapi.Empty{})
+	m.Res[len(m.Res)-1].Watcher, _ = m.Res[0].Client.ListAndWatch(m.ctx, &pluginapi.Empty{})
 
 	return &pluginapi.Empty{}, nil
 }
 
 func (m *Kubelet) StartServer() error {
-	socket, err := net.Listen("unix", KubeletSocket)
+	kubeletSock := path.Join(m.devicepluginPath, "kubelet.sock")
+	socket, err := net.Listen("unix", kubeletSock)
 	if err != nil {
-		_ = os.Remove(KubeletSocket)
-		socket, err = net.Listen("unix", KubeletSocket)
+		_ = os.Remove(kubeletSock)
+		socket, err = net.Listen("unix", kubeletSock)
 	}
 	if err != nil {
 		return err
@@ -96,7 +104,7 @@ func (m *Kubelet) StartServer() error {
 	}
 	m.Res = []deviceResource{}
 
-	_, err = grpc.DialContext(context.Background(), path.Join(DevicePluginPath, KubeletSocket),
+	_, err = grpc.DialContext(m.ctx, kubeletSock,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
 			socketAddr, err := net.ResolveUnixAddr("unix", addr)
@@ -111,9 +119,11 @@ func (m *Kubelet) StartServer() error {
 
 func (m *Kubelet) Stop() error {
 	m.registered = false
+	m.cancel()
 	m.srv.Stop()
 	m.srv = nil
-	err := os.Remove(KubeletSocket)
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+	err := os.Remove(path.Join(m.devicepluginPath, "kubelet.sock"))
 	if err != nil {
 		return err
 	}
