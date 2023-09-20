@@ -2,6 +2,7 @@
 VERSION ?= $(shell git log -1 --date='format:%Y%m%d' --format='format:%ad').$(shell git describe --always --contains HEAD)
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 DATE = $(shell date +"%Y-%m-%d_%H:%M:%S")
+
 COMMIT = $(shell git rev-parse HEAD | head -c 8)
 
 # Information of OS and ARCH

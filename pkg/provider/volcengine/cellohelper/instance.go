@@ -170,6 +170,11 @@ func (m *defaultInstanceLimit) updateLocked() error {
 	if err != nil {
 		return err
 	}
+  
+	total, err := m.api.GetTotalAttachedEniCnt()
+	if err != nil {
+		return err
+	}
 
 	m.limit.Created = len(created)
 

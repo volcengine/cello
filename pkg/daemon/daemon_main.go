@@ -29,6 +29,7 @@ import (
 func Execute() {
 	if err := PreHookAction(); err != nil {
 		log.Fatalf("PreHook action execute failed, %v", err)
+
 	}
 
 	d, err := NewDaemon()
