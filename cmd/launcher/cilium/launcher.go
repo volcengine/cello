@@ -25,18 +25,15 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/volcengine/cello/pkg/config"
 	"github.com/volcengine/cello/pkg/utils/datatype"
-	"github.com/volcengine/cello/pkg/utils/kernel"
 	"github.com/volcengine/cello/pkg/utils/logger"
 	"github.com/volcengine/cello/pkg/utils/sysctl"
 	"github.com/volcengine/cello/types"
@@ -45,7 +42,6 @@ import (
 // cilium Launcher pre_start_check and start cilium while work with cello
 
 const (
-	bpfFsPath        = "/sys/fs/bpf"
 	ciliumConfigPath = "/etc/cilium/cilium-config"
 	celloConfigPath  = "/etc/cilium/cello-config"
 )
@@ -146,30 +142,11 @@ func main() {
 	}
 	log.Infof("Cello ready, launch cilium...")
 
-	// kernel version must equal and above 4.19
-	if !kernel.CheckKernelVersion(4, 19, 0) {
-		log.Fatalf("Linux kernel version < 4.19, skipping load cilium")
-	}
-
-	// ensure bpf mount
-	err := ensureBpfFsMounted()
-	if err != nil {
-		log.Fatalf("BPF filesystem not mount, %v", err)
-	}
-
 	// disable rp_filter
-	err = sysctl.Disable("net.ipv4.conf.eth0.rp_filter")
+	err := sysctl.Disable("net.ipv4.conf.eth0.rp_filter")
 	if err != nil {
 		log.Fatalf("Disable rp_filter for eth0 failed, %v", err)
 	}
-
-	// modprobe ipvlan
-	cmd := exec.Command("modprobe", "ipvlan")
-	_, err = cmd.Output()
-	if err != nil {
-		log.Fatalf("Modprobe ipvlan failed, %v", err)
-	}
-	log.Infof("Node init success")
 
 	// check apiServer info
 	host := os.Getenv("KUBERNETES_SERVICE_HOST")
@@ -316,48 +293,6 @@ func main() {
 			os.Exit(ciliumCmd.ProcessState.ExitCode())
 		}
 	}
-}
-
-func ensureBpfFsMounted() error {
-	initNs, err := ns.GetNS("/proc/1/ns/net")
-	if err != nil {
-		return fmt.Errorf("nsenter pid 1 failed, %w", err)
-	}
-
-	err = initNs.Do(func(netNS ns.NetNS) error {
-		// not mount
-		if !isBpfMountExist() {
-			// mount
-			log.Infof("Mounting BPF filesystem...")
-			inErr := syscall.Mount("bpffs", bpfFsPath, "bpf", 0, "")
-			if inErr != nil {
-				return fmt.Errorf("mount bpf filesystem failed, %w", err)
-			}
-			log.Infof("BPF filesystem mounted")
-		} else {
-			log.Infof("BPF filesystem has mounted")
-		}
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("ensure bpf filesystem mount failed, %w", err)
-	}
-
-	return nil
-}
-
-func isBpfMountExist() bool {
-	cmd := exec.Command("mount", "-t", "bpf")
-	output, err := cmd.Output()
-	if err != nil {
-		log.Errorf("exec mount command failed, %v", err)
-		return false
-	}
-	if strings.Contains(string(output), bpfFsPath) {
-		return true
-	}
-	return false
 }
 
 func setPolicyState(value string) error {
