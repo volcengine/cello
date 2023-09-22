@@ -2,5 +2,5 @@ apiVersion: v2
 name: vpc-cni
 description: cello
 type: application
-version: v1.6.2
-appVersion: v1.6.2
+version: 1.6.6
+appVersion: v1.6.6
