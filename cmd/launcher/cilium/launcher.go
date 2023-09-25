@@ -142,30 +142,11 @@ func main() {
 	}
 	log.InfoS("Cello ready, launch cilium...")
 
-	// kernel version must equal and above 4.19
-	if !kernel.CheckKernelVersion(4, 19, 0) {
-		log.FatalS(nil, "Linux kernel version < 4.19, skipping load cilium")
-	}
-
-	// ensure bpf mount
-	err := ensureBpfFsMounted()
-	if err != nil {
-		log.FatalS(err, "BPF filesystem not mount")
-	}
-
 	// disable rp_filter
 	err := sysctl.Disable("net.ipv4.conf.eth0.rp_filter")
 	if err != nil {
 		log.FatalS(err, "Disable rp_filter for eth0 failed")
 	}
-
-	// modprobe ipvlan
-	cmd := exec.Command("modprobe", "ipvlan")
-	_, err = cmd.Output()
-	if err != nil {
-		log.FatalS(err, "Modprobe ipvlan failed")
-	}
-	log.InfoS("Node init success")
 
 	// check apiServer info
 	host := os.Getenv("KUBERNETES_SERVICE_HOST")
@@ -312,48 +293,6 @@ func main() {
 			os.Exit(ciliumCmd.ProcessState.ExitCode())
 		}
 	}
-}
-
-func ensureBpfFsMounted() error {
-	initNs, err := ns.GetNS("/proc/1/ns/net")
-	if err != nil {
-		return fmt.Errorf("nsenter pid 1 failed, %w", err)
-	}
-
-	err = initNs.Do(func(netNS ns.NetNS) error {
-		// not mount
-		if !isBpfMountExist() {
-			// mount
-			log.InfoS("Mounting BPF filesystem...")
-			inErr := syscall.Mount("bpffs", bpfFsPath, "bpf", 0, "")
-			if inErr != nil {
-				return fmt.Errorf("mount bpf filesystem failed, %w", err)
-			}
-			log.InfoS("BPF filesystem mounted")
-		} else {
-			log.InfoS("BPF filesystem has mounted")
-		}
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("ensure bpf filesystem mount failed, %w", err)
-	}
-
-	return nil
-}
-
-func isBpfMountExist() bool {
-	cmd := exec.Command("mount", "-t", "bpf")
-	output, err := cmd.Output()
-	if err != nil {
-		log.ErrorS(err, "exec mount command failed")
-		return false
-	}
-	if strings.Contains(string(output), bpfFsPath) {
-		return true
-	}
-	return false
 }
 
 func setPolicyState(value string) error {
