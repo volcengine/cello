@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/volcengine/cello/pkg/backoff"
+	"github.com/volcengine/cello/pkg/config"
 	"github.com/volcengine/cello/pkg/pbrpc"
 	"github.com/volcengine/cello/pkg/plugins/ipam/cidr"
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
@@ -149,7 +150,7 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 func (d *daemon) initRdmaIpamManager() error {
 	var rdmaInfo *types.RdmaInfo
 
-	if datatype.BoolValue(d.cfg.ProbeRdma) {
+	if datatype.BoolValue(config.Config.ProbeRdma) {
 		info, err := d.getRdmaInfo()
 		if err != nil {
 			log.Warnf("Get rdma info failed, %v, try get from node annotation", err)
@@ -194,7 +195,7 @@ func (d *daemon) initRdmaIpamManager() error {
 
 	// init
 	ipamCfg := &cidr.Config{
-		DataDir: datatype.StringValue(d.cfg.RdmaIpamDataDir),
+		DataDir: datatype.StringValue(config.Config.RdmaIpamDataDir),
 		Ranges:  map[string]*allocator.RangeSet{},
 	}
 

@@ -87,7 +87,6 @@ type daemon struct {
 	eniIPManager          *eniIPResourceManager
 	managers              map[string]ResourceManager // NetResourceType - ResourceManager
 	devicePluginManager   deviceplugin.Manager
-	cfg                   *config.Config
 	lastGC                time.Time
 	pbrpc.UnimplementedCelloServer
 
@@ -95,25 +94,25 @@ type daemon struct {
 }
 
 // createEc2 creates an ec2 client.
-func createEc2(cfg *config.Config, instanceMeta helper.InstanceMetadataGetter) (ec2.EC2, error) {
+func createEc2(instanceMeta helper.InstanceMetadataGetter) (ec2.EC2, error) {
 	var credentialProvider credential.Provider
-	if cfg.RamRole != nil {
-		log.InfoS("Set credential provider by ramRole", "RamRole", *cfg.RamRole)
-		credentialProvider = credential.NewTSTProvider(*cfg.RamRole)
-	} else if cfg.CredentialAccessKeyId != nil && cfg.CredentialAccessKeySecret != nil {
+	if config.Config.RamRole != nil {
+		log.InfoS("Set credential provider by ramRole", "RamRole", *config.Config.RamRole)
+		credentialProvider = credential.NewTSTProvider(*config.Config.RamRole)
+	} else if config.Config.CredentialAccessKeyId != nil && config.Config.CredentialAccessKeySecret != nil {
 		log.InfoS("Set credential provider by static ak/sk")
 		credentialProvider = credential.NewStaticProvider(&credential.Credential{
-			AccessKeyId:     datatype.StringValue(cfg.CredentialAccessKeyId),
-			SecretAccessKey: datatype.StringValue(cfg.CredentialAccessKeySecret),
+			AccessKeyId:     datatype.StringValue(config.Config.CredentialAccessKeyId),
+			SecretAccessKey: datatype.StringValue(config.Config.CredentialAccessKeySecret),
 		})
 	} else {
 		return nil, fmt.Errorf("no credential provided")
 	}
 
 	endpoint := ""
-	if cfg.OpenApiAddress != nil {
-		log.InfoS("Set openapi address", "OpenApiAddress", *cfg.OpenApiAddress)
-		endpoint = *cfg.OpenApiAddress
+	if config.Config.OpenApiAddress != nil {
+		log.InfoS("Set openapi address", "OpenApiAddress", *config.Config.OpenApiAddress)
+		endpoint = *config.Config.OpenApiAddress
 	}
 	apiClient := metrics.NewMetricEC2Wrapper(ec2.NewClient(instanceMeta.GetRegion(), endpoint, credentialProvider))
 	return apiClient, nil
@@ -144,7 +143,7 @@ func NewDaemon() (*daemon, error) {
 	}
 
 	// cfg
-	cfg, err := config.ParseConfig(k8sService)
+	err = config.ParseConfig(k8sService)
 	if err != nil {
 		return nil, fmt.Errorf("parse config failed, %v", err)
 	}
@@ -158,15 +157,15 @@ func NewDaemon() (*daemon, error) {
 		return nil, fmt.Errorf("create persistence db failed: %w", err)
 	}
 
-	apiClient, err := createEc2(cfg, instanceMeta)
+	apiClient, err := createEc2(instanceMeta)
 	if err != nil {
 		return nil, err
 	}
 
-	return newDaemon(k8sService, cfg, apiClient, podPersist, instanceMeta, nil)
+	return newDaemon(k8sService, apiClient, podPersist, instanceMeta, nil)
 }
 
-func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, podPersist PodPersistenceManager,
+func newDaemon(k8sService k8s.Service, apiClient ec2.EC2, podPersist PodPersistenceManager,
 	instanceMeta helper.InstanceMetadataGetter, volcApi helper.VolcAPI) (*daemon, error) {
 	// register metrics
 	metrics.PrometheusRegister()
@@ -179,27 +178,26 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 
 	secGrpManager := helper.NewSecurityGroupManager()
 
-	err = subnetManager.FlushSubnets(cfg.Subnets...)
+	err = subnetManager.FlushSubnets(config.Config.Subnets...)
 	if err != nil {
 		return nil, fmt.Errorf("set subnets failed, %v", err)
 	}
 
-	err = secGrpManager.UpdateSecurityGroups(cfg.SecurityGroups)
+	err = secGrpManager.UpdateSecurityGroups(config.Config.SecurityGroups)
 	if err != nil {
 		return nil, fmt.Errorf("set securityGroups failed, %v", err)
 	}
 
 	if volcApi == nil {
-		volcApi, err = helper.New(apiClient, types.IPFamily(*cfg.IPFamily), subnetManager, instanceMeta, datatype.StringValue(cfg.Platform))
+		volcApi, err = helper.New(apiClient, types.IPFamily(*config.Config.IPFamily), subnetManager, instanceMeta, datatype.StringValue(config.Config.Platform))
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	d := &daemon{
-		networkMode:              *cfg.NetworkMode,
+		networkMode:              *config.Config.NetworkMode,
 		apiListenAddress:         DefaultSocketPath,
-		cfg:                      cfg,
 		pendingPods:              sync.Map{},
 		k8s:                      k8sService,
 		instanceMeta:             instanceMeta,
@@ -210,7 +208,7 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 		managers:                 map[string]ResourceManager{},
 		UnimplementedCelloServer: pbrpc.UnimplementedCelloServer{},
 	}
-	d.instanceLimit, err = helper.NewInstanceLimitManager(volcApi, cfg)
+	d.instanceLimit, err = helper.NewInstanceLimitManager(volcApi)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +225,7 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 
 	switch d.networkMode {
 	case config.NetworkModeENIExclusive:
-		d.eniManager, err = newEniResourceManager(cfg, subnetManager, secGrpManager,
+		d.eniManager, err = newEniResourceManager(subnetManager, secGrpManager,
 			volcApi, allocatedResMap[types.NetResourceTypeEni], k8sService)
 		if err != nil {
 			return nil, fmt.Errorf("create eni resource manager failed, %v", err)
@@ -248,7 +246,7 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 		}, sigChannel)
 
 	case config.NetworkModeENIShare:
-		d.eniIPManager, err = newEniIPResourceManager(cfg, subnetManager, secGrpManager,
+		d.eniIPManager, err = newEniIPResourceManager(subnetManager, secGrpManager,
 			volcApi, allocatedResMap[types.NetResourceTypeEniIp], k8sService)
 		if err != nil {
 			return nil, fmt.Errorf("create eniIP resource manager failed, %v", err)
@@ -271,7 +269,7 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 		return nil, fmt.Errorf("no support network mode %s", d.networkMode)
 	}
 
-	if datatype.StringValue(cfg.Source) == config.SourceClusterConfigMap {
+	if datatype.StringValue(config.Config.Source) == config.SourceClusterConfigMap {
 		d.k8s.AddConfigMapEventHandler(cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(_, newObj interface{}) {
 				newConfig, err := config.GetCelloConfigFromConfigMap(newObj)
@@ -280,44 +278,44 @@ func newDaemon(k8sService k8s.Service, cfg *config.Config, apiClient ec2.EC2, po
 					log.ErrorS(err, "Get cello config failed while configmap update")
 					return
 				}
-				if !sets.NewString(d.cfg.Subnets...).Equal(sets.NewString(newConfig.Subnets...)) {
+				if !sets.NewString(config.Config.Subnets...).Equal(sets.NewString(newConfig.Subnets...)) {
 					err = d.subnetManager.FlushSubnets(newConfig.Subnets...)
 					if err != nil {
 						_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventUpdateSubnetFailed, err.Error())
 						log.ErrorS(err, "Update subnet list failed")
 						return
 					}
-					d.cfg.Subnets = newConfig.Subnets
+					config.Config.Subnets = newConfig.Subnets
 				}
 
-				if !sets.NewString(cfg.SecurityGroups...).Equal(sets.NewString(newConfig.SecurityGroups...)) {
+				if !sets.NewString(config.Config.SecurityGroups...).Equal(sets.NewString(newConfig.SecurityGroups...)) {
 					err = d.securityGroupManager.UpdateSecurityGroups(newConfig.SecurityGroups)
 					if err != nil {
 						_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventUpdateSecurityGroupFailed, err.Error())
 						log.ErrorS(err, "Update security group list failed")
 						return
 					}
-					d.cfg.SecurityGroups = newConfig.SecurityGroups
+					config.Config.SecurityGroups = newConfig.SecurityGroups
 				}
 
-				if datatype.Uint32Value(newConfig.PoolTarget) != datatype.Uint32Value(cfg.PoolTarget) ||
-					datatype.Uint32Value(newConfig.PoolTargetMin) != datatype.Uint32Value(cfg.PoolTargetMin) {
+				if datatype.Uint32Value(newConfig.PoolTarget) != datatype.Uint32Value(config.Config.PoolTarget) ||
+					datatype.Uint32Value(newConfig.PoolTargetMin) != datatype.Uint32Value(config.Config.PoolTargetMin) {
 					if d.eniManager != nil {
 						d.eniManager.pool.ReCfgCache(int(datatype.Uint32Value(newConfig.PoolTarget)), int(datatype.Uint32Value(newConfig.PoolTargetMin)))
-						d.cfg.PoolTarget = newConfig.PoolTarget
-						d.cfg.PoolTargetMin = newConfig.PoolTargetMin
+						config.Config.PoolTarget = newConfig.PoolTarget
+						config.Config.PoolTargetMin = newConfig.PoolTargetMin
 					}
 					if d.eniIPManager != nil {
 						d.eniIPManager.pool.ReCfgCache(int(datatype.Uint32Value(newConfig.PoolTarget)), int(datatype.Uint32Value(newConfig.PoolTargetMin)))
-						d.cfg.PoolTarget = newConfig.PoolTarget
-						d.cfg.PoolTargetMin = newConfig.PoolTargetMin
+						config.Config.PoolTarget = newConfig.PoolTarget
+						config.Config.PoolTargetMin = newConfig.PoolTargetMin
 					}
 				}
 			},
 		})
 	}
 
-	if datatype.BoolValue(cfg.EnableRdmaIpam) && d.instanceLimit.GetLimit().RdmaSupport {
+	if datatype.BoolValue(config.Config.EnableRdmaIpam) && d.instanceLimit.GetLimit().RdmaSupport {
 		err = d.initRdmaIpamManager()
 		if err != nil {
 			return nil, fmt.Errorf("init rdma ipam failed, %v", err)
@@ -445,7 +443,7 @@ func (d *daemon) gc() error {
 }
 
 func (d *daemon) start(stopCh chan struct{}) error {
-	period := time.Duration(*d.cfg.ReconcileIntervalSec) * time.Second
+	period := time.Duration(*config.Config.ReconcileIntervalSec) * time.Second
 	once := sync.Once{}
 	sig := make(chan signal.SigData)
 	err := signal.RegisterChannel(signal.WakeGC, sig)
@@ -965,7 +963,7 @@ func (d *daemon) startDebugServer() (*http.Server, error) {
 	metrics.ServeMetrics(serveMux)
 
 	server := &http.Server{
-		Addr:         ":" + strconv.Itoa(int(*d.cfg.HeathAndDebugPort)),
+		Addr:         ":" + strconv.Itoa(int(*config.Config.HeathAndDebugPort)),
 		Handler:      serveMux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,

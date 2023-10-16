@@ -26,6 +26,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/volcengine/cello/pkg/config"
 	helper "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper"
 	"github.com/volcengine/cello/pkg/utils/runtime"
 )
@@ -164,7 +165,7 @@ type getConfig struct {
 }
 
 func (g *getConfig) Handle(c *gin.Context) {
-	c.JSON(http.StatusOK, g.daemon.cfg)
+	c.JSON(http.StatusOK, config.Config)
 }
 
 func newGetConfigHandler(d *daemon) Handler {
