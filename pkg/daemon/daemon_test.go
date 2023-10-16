@@ -32,17 +32,16 @@ import (
 	"github.com/golang/mock/gomock"
 	goipam "github.com/metal-stack/go-ipam"
 	"github.com/stretchr/testify/assert"
+	"github.com/volcengine/volcengine-go-sdk/service/ecs"
+	"github.com/volcengine/volcengine-go-sdk/service/vpc"
+	"github.com/volcengine/volcengine-go-sdk/volcengine"
+	"github.com/volcengine/volcengine-go-sdk/volcengine/response"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/flowcontrol"
-
-	"github.com/volcengine/volcengine-go-sdk/service/ecs"
-	"github.com/volcengine/volcengine-go-sdk/service/vpc"
-	"github.com/volcengine/volcengine-go-sdk/volcengine"
-	"github.com/volcengine/volcengine-go-sdk/volcengine/response"
 
 	"github.com/volcengine/cello/pkg/config"
 	mockDeiveplugin "github.com/volcengine/cello/pkg/deviceplugin/mock"
@@ -751,7 +750,7 @@ func setup(t *testing.T) error {
 
 	podSgs = append(podSgs, GenerateSecurityGroupId(), GenerateSecurityGroupId())
 
-	celloConfig := &config.Config{
+	celloConfig := &config.DaemonConfig{
 		RamRole:                     datatype.String("KubernetesNodeRoleForECS"),
 		OpenApiAddress:              datatype.String("open-boe-stable.volcengineapi.com"),
 		SecurityGroups:              podSgs,
@@ -1021,7 +1020,7 @@ func newMockDaemon() (*daemon, error) {
 	}
 
 	// cfg
-	cfg, err := config.ParseConfig(k8sService)
+	err = config.ParseConfig(k8sService)
 	if err != nil {
 		return nil, fmt.Errorf("parse config failed, %v", err)
 	}
@@ -1032,7 +1031,7 @@ func newMockDaemon() (*daemon, error) {
 		return nil, fmt.Errorf("create persistence db failed: %w", err)
 	}
 
-	d, err := newDaemon(k8sService, cfg, ec2MockClient, podPersist, instanceMetaGetter, volcApi)
+	d, err := newDaemon(k8sService, ec2MockClient, podPersist, instanceMetaGetter, volcApi)
 	if err == nil {
 		d.devicePluginManager = mockDeiveplugin.PluginManager{}
 	}

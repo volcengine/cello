@@ -265,7 +265,7 @@ func (m *defaultInstanceLimit) CordonState() bool {
 	return m.limit.Cordon
 }
 
-func NewInstanceLimitManager(api VolcAPI, cfg *config.Config) (InstanceLimitManager, error) {
+func NewInstanceLimitManager(api VolcAPI) (InstanceLimitManager, error) {
 	if instanceLimitManager != nil {
 		return instanceLimitManager, nil
 	}
@@ -274,8 +274,8 @@ func NewInstanceLimitManager(api VolcAPI, cfg *config.Config) (InstanceLimitMana
 		lock:                 sync.RWMutex{},
 		api:                  api,
 		eventWatchers:        []chan<- struct{}{},
-		customENIQuota:       datatype.Uint32Value(cfg.CustomENIQuota),
-		customBranchENIQuota: datatype.Uint32Value(cfg.CustomBranchENIQuota),
+		customENIQuota:       datatype.Uint32Value(config.Config.CustomENIQuota),
+		customBranchENIQuota: datatype.Uint32Value(config.Config.CustomBranchENIQuota),
 	}
 	if err := instanceLimitManager.update(); err != nil {
 		return nil, err

@@ -33,7 +33,7 @@ const (
 )
 
 // GetMergedConfigFromConfigMap get merged config from all configmaps(cluster scope and node scope).
-func GetMergedConfigFromConfigMap(k8s k8s.Service) (*Config, error) {
+func GetMergedConfigFromConfigMap(k8s k8s.Service) (*DaemonConfig, error) {
 	celloConfigMap, err := k8s.GetConfigMap(context.Background(), Namespace, CelloConfigName)
 	if err != nil {
 		return nil, err
@@ -83,7 +83,7 @@ func GetMergedConfigFromConfigMap(k8s k8s.Service) (*Config, error) {
 }
 
 // getNodeScopeConfig get cello config from configmap which assigned to node by label.
-func getNodeScopeConfig(k8s k8s.Service) (*Config, error) {
+func getNodeScopeConfig(k8s k8s.Service) (*DaemonConfig, error) {
 	cfName := k8s.GetNodeDynamicConfigName()
 	if cfName == "" {
 		return nil, nil
@@ -102,7 +102,7 @@ func getNodeScopeConfig(k8s k8s.Service) (*Config, error) {
 }
 
 // GetCelloConfigFromConfigMap get cello config from configmap object.
-func GetCelloConfigFromConfigMap(obj interface{}) (*Config, error) {
+func GetCelloConfigFromConfigMap(obj interface{}) (*DaemonConfig, error) {
 	configmap, ok := obj.(*v1.ConfigMap)
 	if !ok {
 		return nil, fmt.Errorf("convert to configmap failed")
@@ -111,7 +111,7 @@ func GetCelloConfigFromConfigMap(obj interface{}) (*Config, error) {
 	if !ok {
 		return nil, fmt.Errorf("configmap has no conf field")
 	}
-	celloConfig := &Config{}
+	celloConfig := &DaemonConfig{}
 	err := json.Unmarshal([]byte(confString), &celloConfig)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal config failed, %v", err)

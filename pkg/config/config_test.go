@@ -68,7 +68,7 @@ func TestConfigMerge(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Prepare cluster config
-	clusterConfig := &Config{
+	clusterConfig := &DaemonConfig{
 		RamRole:                     datatype.String("KubernetesNodeRoleForECS"),
 		OpenApiAddress:              datatype.String("open-boe-stable.volcengineapi.com"),
 		SecurityGroups:              []string{"sg-12345", "sg-678910"},
@@ -102,7 +102,7 @@ func TestConfigMerge(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Prepare cluster config
-	nodeConfig := &Config{
+	nodeConfig := &DaemonConfig{
 		RamRole:                     datatype.String("ForTest"),
 		OpenApiAddress:              datatype.String("ForTest"),
 		SecurityGroups:              []string{"sg-abcdef", "sg-ghijklm"},
@@ -136,25 +136,25 @@ func TestConfigMerge(t *testing.T) {
 	}, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	cfg, err := ParseConfig(k8sService)
+	err = ParseConfig(k8sService)
 	assert.NoError(t, err)
-	assert.Equal(t, *clusterConfig.OpenApiAddress, *cfg.OpenApiAddress)
+	assert.Equal(t, *clusterConfig.OpenApiAddress, *Config.OpenApiAddress)
 
 	// pool config
-	assert.Equal(t, *nodeConfig.PoolTarget, *cfg.PoolTarget)
-	assert.Equal(t, *nodeConfig.PoolTargetMin, *cfg.PoolTargetMin)
-	assert.Equal(t, *nodeConfig.PoolTargetLimit, *cfg.PoolTargetLimit)
-	assert.Equal(t, *nodeConfig.EnableTrunk, *cfg.EnableTrunk)
-	assert.Equal(t, SourceNodeMerged, *cfg.Source)
+	assert.Equal(t, *nodeConfig.PoolTarget, *Config.PoolTarget)
+	assert.Equal(t, *nodeConfig.PoolTargetMin, *Config.PoolTargetMin)
+	assert.Equal(t, *nodeConfig.PoolTargetLimit, *Config.PoolTargetLimit)
+	assert.Equal(t, *nodeConfig.EnableTrunk, *Config.EnableTrunk)
+	assert.Equal(t, SourceNodeMerged, *Config.Source)
 
 	// SecurityGroups
-	assert.Equal(t, true, sets.NewString(cfg.SecurityGroups...).Equal(sets.NewString(nodeConfig.SecurityGroups...)))
+	assert.Equal(t, true, sets.NewString(Config.SecurityGroups...).Equal(sets.NewString(nodeConfig.SecurityGroups...)))
 	// Subnets
-	assert.Equal(t, true, sets.NewString(cfg.Subnets...).Equal(sets.NewString(nodeConfig.Subnets...)))
+	assert.Equal(t, true, sets.NewString(Config.Subnets...).Equal(sets.NewString(nodeConfig.Subnets...)))
 }
 
 func TestParseStaticConf(t *testing.T) {
-	conf := &Config{}
+	conf := &DaemonConfig{}
 	byteConf, err := json.Marshal(conf)
 	assert.NoError(t, err)
 	err = os.WriteFile("/tmp/cello_con.json", byteConf, 0666)

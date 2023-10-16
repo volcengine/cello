@@ -102,17 +102,17 @@ func (m *eniIPResourceManager) SupportTrunk() bool {
 	return m.trunkEni != nil
 }
 
-func generateIPPoolCfg(cfg *config.Config, limits *helper.InstanceLimits) pool.Config {
-	if *cfg.PoolTargetLimit > 1 {
-		*cfg.PoolTargetLimit = 1
+func generateIPPoolCfg(limits *helper.InstanceLimits) pool.Config {
+	if *config.Config.PoolTargetLimit > 1 {
+		*config.Config.PoolTargetLimit = 1
 	}
 
-	totalMax := int(*cfg.PoolMaxCap)
-	if *cfg.PoolMaxCapProbe {
+	totalMax := int(*config.Config.PoolMaxCap)
+	if *config.Config.PoolMaxCapProbe {
 		totalMax = limits.ManageableSecondaryENI() * limits.IPv4MaxPerENI
 	}
-	target := math.Min(int(*cfg.PoolTarget), math.Floor(*cfg.PoolTargetLimit*float64(totalMax)))
-	targetMin := math.Min(int(*cfg.PoolTargetMin), math.Floor(*cfg.PoolTargetLimit*float64(totalMax)))
+	target := math.Min(int(*config.Config.PoolTarget), math.Floor(*config.Config.PoolTargetLimit*float64(totalMax)))
+	targetMin := math.Min(int(*config.Config.PoolTargetMin), math.Floor(*config.Config.PoolTargetLimit*float64(totalMax)))
 
 	return pool.Config{
 		Name:            "eniIP",
@@ -120,15 +120,15 @@ func generateIPPoolCfg(cfg *config.Config, limits *helper.InstanceLimits) pool.C
 		TargetMin:       targetMin,
 		Target:          target,
 		MaxCap:          totalMax,
-		MaxCapProbe:     *cfg.PoolMaxCapProbe,
-		MonitorInterval: time.Duration(*cfg.PoolMonitorIntervalSec) * time.Second,
-		GCProtectPeriod: time.Duration(*cfg.PoolGCProtectPeriodSec) * time.Second,
+		MaxCapProbe:     *config.Config.PoolMaxCapProbe,
+		MonitorInterval: time.Duration(*config.Config.PoolMonitorIntervalSec) * time.Second,
+		GCProtectPeriod: time.Duration(*config.Config.PoolGCProtectPeriodSec) * time.Second,
 	}
 }
 
-func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, secManager helper.SecurityGroupManager, volcApi helper.VolcAPI, allocatedResource map[string]types.NetResourceAllocated, k8s k8s.Service) (*eniIPResourceManager, error) {
+func newEniIPResourceManager(subnet helper.SubnetManager, secManager helper.SecurityGroupManager, volcApi helper.VolcAPI, allocatedResource map[string]types.NetResourceAllocated, k8s k8s.Service) (*eniIPResourceManager, error) {
 	log.InfoS("Creating EniIPResourceManager")
-	limit, err := helper.NewInstanceLimitManager(volcApi, cfg)
+	limit, err := helper.NewInstanceLimitManager(volcApi)
 	if err != nil {
 		return nil, err
 	}
@@ -139,15 +139,15 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		return nil, fmt.Errorf("get attached enis failed while init, %v", err)
 	}
 
-	eniFact, err := newEniFactory(secManager, subnet, volcApi, limit, types.IPFamily(*cfg.IPFamily))
+	eniFact, err := newEniFactory(secManager, subnet, volcApi, limit, types.IPFamily(*config.Config.IPFamily))
 	if err != nil {
 		return nil, fmt.Errorf("create eni factory failed, %v", err)
 	}
 
 	// trunk
-	*cfg.EnableTrunk = *cfg.EnableTrunk && limit.GetLimit().TrunkSupported
+	*config.Config.EnableTrunk = *config.Config.EnableTrunk && limit.GetLimit().TrunkSupported
 	m.trunkEni = limit.GetLimit().TrunkENI
-	if *cfg.EnableTrunk && m.trunkEni == nil {
+	if *config.Config.EnableTrunk && m.trunkEni == nil {
 		if limit.GetLimit().ManageableSecondaryENI() <= limit.GetLimit().Created {
 			return nil, fmt.Errorf("no eni quota to create trunk eni")
 		}
@@ -158,9 +158,9 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		m.trunkEni = res.(*types.ENI)
 		limit.UpdateTrunk(m.trunkEni)
 	}
-	poolConfig := generateIPPoolCfg(cfg, limit.GetLimit())
+	poolConfig := generateIPPoolCfg(limit.GetLimit())
 
-	eniFact.monitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second, time.Duration(*cfg.ReconcileIntervalSec)*time.Second)
+	eniFact.monitor(time.Duration(*config.Config.SubnetStatUpdateIntervalSec)*time.Second, time.Duration(*config.Config.ReconcileIntervalSec)*time.Second)
 
 	factory := &eniIPFactory{
 		eniFactory:    eniFact,
@@ -169,7 +169,7 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		volcApi:       volcApi,
 		eniIpReceiver: make(chan *ENIIPRes, defaultOrderCnt),
 		eniPending:    make(chan struct{}, defaultEniPending),
-		ipFamily:      types.IPFamily(*cfg.IPFamily),
+		ipFamily:      types.IPFamily(*config.Config.IPFamily),
 	}
 	poolConfig.Factory = factory
 	poolConfig.PreStart = func(pool pool.ResourcePoolOp) error {
@@ -285,8 +285,8 @@ func newEniIPResourceManager(cfg *config.Config, subnet helper.SubnetManager, se
 		}
 		return nil
 	}
-	factory.subnetMonitor(time.Duration(*cfg.SubnetStatUpdateIntervalSec)*time.Second,
-		time.Duration(*cfg.SubnetStatAgingSec)*time.Second)
+	factory.subnetMonitor(time.Duration(*config.Config.SubnetStatUpdateIntervalSec)*time.Second,
+		time.Duration(*config.Config.SubnetStatAgingSec)*time.Second)
 	p, err := pool.NewResourcePool(poolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create resource pool %s failed, %v", poolConfig.Name, err)
