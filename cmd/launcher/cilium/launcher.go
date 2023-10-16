@@ -163,7 +163,7 @@ func main() {
 	defer celloConfigFile.Close()
 
 	decoder := json.NewDecoder(celloConfigFile)
-	var celloConfig config.Config
+	var celloConfig config.DaemonConfig
 	err = decoder.Decode(&celloConfig)
 	if err != nil {
 		log.FatalS(err, "Decode cello config failed")

@@ -21,7 +21,6 @@ import (
 	"os"
 
 	"github.com/gdexlab/go-render/render"
-	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/volcengine/cello/pkg/k8s"
 	"github.com/volcengine/cello/pkg/utils/datatype"
@@ -30,33 +29,14 @@ import (
 	"github.com/volcengine/cello/types"
 )
 
-const (
-	SourceClusterConfigMap  = "clusterConfigMap"
-	SourceNodeMerged        = "nodeMerged"
-	NetworkModeENIShare     = "eni_shared"
-	NetworkModeENIExclusive = "eni_exclusive"
-	PlatformVKE             = "vke"
-
-	// DefaultDebugPort is the port for debug and prometheus metrics.
-	DefaultDebugPort                   = 11414
-	DefaultPoolTargetLimit             = 1
-	DefaultPoolMonitorIntervalSec      = 120
-	DefaultSubnetStatAgingSec          = 40
-	DefaultSubnetStatUpdateIntervalSec = 120
-	DefaultReconcileIntervalSec        = 1200
-	DefaultGcProtectPeriodSec          = 120
-
-	DefaultKubeClientQPS   = 5.0
-	DefaultKubeClientBurst = 10
-	DefaultKubeContentType = runtime.ContentTypeJSON
-
-	DefaultRdmaIpamDataDir = "/var/run/cello/rdma-ipam"
-)
-
 var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "config"})
 
-// Config configuration of cello daemon.
-type Config struct {
+var (
+	Config = &DaemonConfig{}
+)
+
+// DaemonConfig configuration of cello daemon.
+type DaemonConfig struct {
 	// CredentialServerAddress address of credential server, if not set, take the default value of sdk
 	CredentialServerAddress *string `yaml:"credentialServerAddress" json:"credentialServerAddress,omitempty"`
 
@@ -156,215 +136,216 @@ type Config struct {
 	CustomBranchENIQuota *uint32 `yaml:"customBranchENIQuota" json:"customBranchENIQuota,omitempty"`
 }
 
-// verifyConfig verify Config.
-func verifyConfig(cfg *Config) error {
-	if cfg.RamRole == nil && (cfg.CredentialAccessKeyId == nil || cfg.CredentialAccessKeySecret == nil) {
+// verifyConfig verify DaemonConfig.
+func (c *DaemonConfig) verifyConfig() error {
+	if c.RamRole == nil && (c.CredentialAccessKeyId == nil || c.CredentialAccessKeySecret == nil) {
 		return fmt.Errorf("authentication method for accessing volc api is not provided")
 	}
 
-	if cfg.RamRole != nil {
-		cfg.CredentialAccessKeyId = nil
-		cfg.CredentialAccessKeySecret = nil
-		cfg.CredentialServerAddress = nil
-		if datatype.StringValue(cfg.RamRole) == "" {
+	if c.RamRole != nil {
+		c.CredentialAccessKeyId = nil
+		c.CredentialAccessKeySecret = nil
+		c.CredentialServerAddress = nil
+		if datatype.StringValue(c.RamRole) == "" {
 			return fmt.Errorf("ramRole configured empty")
 		}
-		log.Infof("--RamRole=%s", datatype.StringValue(cfg.RamRole))
+		log.Infof("--RamRole=%s", datatype.StringValue(c.RamRole))
 	}
 
-	if cfg.CredentialAccessKeyId != nil && cfg.CredentialAccessKeySecret != nil {
-		cfg.RamRole = nil
-		if datatype.StringValue(cfg.CredentialAccessKeyId) == "" ||
-			datatype.StringValue(cfg.CredentialAccessKeySecret) == "" {
+	if c.CredentialAccessKeyId != nil && c.CredentialAccessKeySecret != nil {
+		c.RamRole = nil
+		if datatype.StringValue(c.CredentialAccessKeyId) == "" ||
+			datatype.StringValue(c.CredentialAccessKeySecret) == "" {
 			return fmt.Errorf("credential configured empty")
 		}
 		log.Infof("--Use static Credential")
 	}
 
-	if cfg.OpenApiAddress != nil {
-		if datatype.StringValue(cfg.OpenApiAddress) == "" {
+	if c.OpenApiAddress != nil {
+		if datatype.StringValue(c.OpenApiAddress) == "" {
 			return fmt.Errorf("openApiAddress configured empty")
 		}
-		log.Infof("--OpenApiAddress=%s", datatype.StringValue(cfg.OpenApiAddress))
+		log.Infof("--OpenApiAddress=%s", datatype.StringValue(c.OpenApiAddress))
 	}
 
-	if len(cfg.SecurityGroups) == 0 {
-		if len(cfg.LegacySecurityGroups) == 0 {
+	if len(c.SecurityGroups) == 0 {
+		if len(c.LegacySecurityGroups) == 0 {
 			return fmt.Errorf("securityGroups not configured")
 		}
 		log.Infof("Use LegacySecurityGroups security_groups")
-		cfg.SecurityGroups = cfg.LegacySecurityGroups
+		c.SecurityGroups = c.LegacySecurityGroups
 	}
-	log.Infof("--SecurityGroups=%s", cfg.SecurityGroups)
+	log.Infof("--SecurityGroups=%s", c.SecurityGroups)
 
-	if len(cfg.Subnets) == 0 {
+	if len(c.Subnets) == 0 {
 		return fmt.Errorf("subnets not configured")
 	}
-	log.Infof("--Subnets=%s", cfg.Subnets)
+	log.Infof("--Subnets=%s", c.Subnets)
 
-	if datatype.Uint32Value(cfg.ReconcileIntervalSec) == 0 {
-		cfg.ReconcileIntervalSec = datatype.Uint32(DefaultReconcileIntervalSec)
+	if datatype.Uint32Value(c.ReconcileIntervalSec) == 0 {
+		c.ReconcileIntervalSec = datatype.Uint32(DefaultReconcileIntervalSec)
 	}
-	log.Infof("--ReconcileIntervalSec=%d", datatype.Uint32Value(cfg.ReconcileIntervalSec))
+	log.Infof("--ReconcileIntervalSec=%d", datatype.Uint32Value(c.ReconcileIntervalSec))
 
-	cfg.HeathAndDebugPort = datatype.Uint32(DefaultDebugPort) // cilium uses this port to check if the cello is ready
-	log.Infof("--HeathAndDebugPort=%d", datatype.Uint32Value(cfg.HeathAndDebugPort))
+	c.HeathAndDebugPort = datatype.Uint32(DefaultDebugPort) // cilium uses this port to check if the cello is ready
+	log.Infof("--HeathAndDebugPort=%d", datatype.Uint32Value(c.HeathAndDebugPort))
 
-	if l := datatype.Float64Value(cfg.PoolTargetLimit); l <= 0 || l > 1 {
-		cfg.PoolTargetLimit = datatype.Float64(DefaultPoolTargetLimit)
+	if l := datatype.Float64Value(c.PoolTargetLimit); l <= 0 || l > 1 {
+		c.PoolTargetLimit = datatype.Float64(DefaultPoolTargetLimit)
 	}
-	log.Infof("--PoolTargetLimit=%f", datatype.Float64Value(cfg.PoolTargetLimit))
+	log.Infof("--PoolTargetLimit=%f", datatype.Float64Value(c.PoolTargetLimit))
 
-	if cfg.PoolTarget == nil {
-		cfg.PoolTarget = datatype.Uint32(0)
+	if c.PoolTarget == nil {
+		c.PoolTarget = datatype.Uint32(0)
 	}
-	log.Infof("--PoolTarget=%d", datatype.Uint32Value(cfg.PoolTarget))
+	log.Infof("--PoolTarget=%d", datatype.Uint32Value(c.PoolTarget))
 
-	if cfg.PoolTargetMin == nil {
-		cfg.PoolTargetMin = datatype.Uint32(0)
+	if c.PoolTargetMin == nil {
+		c.PoolTargetMin = datatype.Uint32(0)
 	}
-	log.Infof("--PoolTargetMin=%d", datatype.Uint32Value(cfg.PoolTargetMin))
+	log.Infof("--PoolTargetMin=%d", datatype.Uint32Value(c.PoolTargetMin))
 
-	if cfg.PoolMaxCap == nil {
-		cfg.PoolMaxCapProbe = datatype.Bool(true)
-		cfg.PoolMaxCap = datatype.Uint32(0)
+	if c.PoolMaxCap == nil {
+		c.PoolMaxCapProbe = datatype.Bool(true)
+		c.PoolMaxCap = datatype.Uint32(0)
 	}
 
-	log.Infof("--PoolMaxCap=%d", datatype.Uint32Value(cfg.PoolMaxCap))
-	log.Infof("--PoolMaxCapProbe=%t", datatype.BoolValue(cfg.PoolMaxCapProbe))
+	log.Infof("--PoolMaxCap=%d", datatype.Uint32Value(c.PoolMaxCap))
+	log.Infof("--PoolMaxCapProbe=%t", datatype.BoolValue(c.PoolMaxCapProbe))
 
-	if datatype.Uint32Value(cfg.PoolMonitorIntervalSec) == 0 {
-		cfg.PoolMonitorIntervalSec = datatype.Uint32(DefaultPoolMonitorIntervalSec)
+	if datatype.Uint32Value(c.PoolMonitorIntervalSec) == 0 {
+		c.PoolMonitorIntervalSec = datatype.Uint32(DefaultPoolMonitorIntervalSec)
 	}
-	log.Infof("--PoolMonitorIntervalSec=%d", datatype.Uint32Value(cfg.PoolMonitorIntervalSec))
+	log.Infof("--PoolMonitorIntervalSec=%d", datatype.Uint32Value(c.PoolMonitorIntervalSec))
 
-	if datatype.Uint32Value(cfg.SubnetStatAgingSec) == 0 {
-		cfg.SubnetStatAgingSec = datatype.Uint32(DefaultSubnetStatAgingSec)
+	if datatype.Uint32Value(c.SubnetStatAgingSec) == 0 {
+		c.SubnetStatAgingSec = datatype.Uint32(DefaultSubnetStatAgingSec)
 	}
-	log.Infof("--SubnetStatAgingSec=%d", datatype.Uint32Value(cfg.SubnetStatAgingSec))
+	log.Infof("--SubnetStatAgingSec=%d", datatype.Uint32Value(c.SubnetStatAgingSec))
 
-	if datatype.Uint32Value(cfg.SubnetStatUpdateIntervalSec) == 0 {
-		cfg.SubnetStatUpdateIntervalSec = datatype.Uint32(DefaultSubnetStatUpdateIntervalSec)
+	if datatype.Uint32Value(c.SubnetStatUpdateIntervalSec) == 0 {
+		c.SubnetStatUpdateIntervalSec = datatype.Uint32(DefaultSubnetStatUpdateIntervalSec)
 	}
-	log.Infof("--SubnetStatUpdateIntervalSec=%d", datatype.Uint32Value(cfg.SubnetStatUpdateIntervalSec))
+	log.Infof("--SubnetStatUpdateIntervalSec=%d", datatype.Uint32Value(c.SubnetStatUpdateIntervalSec))
 
-	if datatype.Uint32Value(cfg.PoolGCProtectPeriodSec) == 0 {
-		cfg.PoolGCProtectPeriodSec = datatype.Uint32(DefaultGcProtectPeriodSec)
+	if datatype.Uint32Value(c.PoolGCProtectPeriodSec) == 0 {
+		c.PoolGCProtectPeriodSec = datatype.Uint32(DefaultGcProtectPeriodSec)
 	}
-	log.Infof("--PoolGCProtectPeriodSec=%d", datatype.Uint32Value(cfg.PoolGCProtectPeriodSec))
+	log.Infof("--PoolGCProtectPeriodSec=%d", datatype.Uint32Value(c.PoolGCProtectPeriodSec))
 
-	if cfg.EnableTrunk == nil {
-		cfg.EnableTrunk = datatype.Bool(false)
+	if c.EnableTrunk == nil {
+		c.EnableTrunk = datatype.Bool(false)
 	}
-	log.Infof("--EnableTrunk=%t", datatype.BoolValue(cfg.EnableTrunk))
+	log.Infof("--EnableTrunk=%t", datatype.BoolValue(c.EnableTrunk))
 
-	if cfg.NetworkMode == nil {
-		cfg.NetworkMode = datatype.String(NetworkModeENIShare)
+	if c.NetworkMode == nil {
+		c.NetworkMode = datatype.String(NetworkModeENIShare)
 	}
-	log.Infof("--NetworkMode=%s", datatype.StringValue(cfg.NetworkMode))
+	log.Infof("--NetworkMode=%s", datatype.StringValue(c.NetworkMode))
 
-	if cfg.IPFamily == nil {
-		cfg.IPFamily = datatype.String(types.IPFamilyIPv4)
+	if c.IPFamily == nil {
+		c.IPFamily = datatype.String(types.IPFamilyIPv4)
 	}
-	if v := datatype.StringValue(cfg.IPFamily); v != types.IPFamilyIPv4 &&
+	if v := datatype.StringValue(c.IPFamily); v != types.IPFamilyIPv4 &&
 		v != types.IPFamilyIPv6 &&
 		v != types.IPFamilyDual {
-		return fmt.Errorf("IPFamily %s not support", datatype.StringValue(cfg.IPFamily))
+		return fmt.Errorf("IPFamily %s not support", datatype.StringValue(c.IPFamily))
 	}
 	// check host ip family enable
-	ipFamily := types.IPFamily(*cfg.IPFamily)
+	ipFamily := types.IPFamily(*c.IPFamily)
 	hostIPSet, err := iproute.GetHostIP()
 	if err != nil {
 		log.ErrorS(err, "get host ip failed")
 	}
 	if ipFamily.EnableIPv4() && hostIPSet.IPv4 == nil {
-		return fmt.Errorf("IPFamily is %s, ip stack of host does not support, %v", datatype.StringValue(cfg.IPFamily), err)
+		return fmt.Errorf("IPFamily is %s, ip stack of host does not support, %v", datatype.StringValue(c.IPFamily), err)
 	}
 	if ipFamily.EnableIPv6() && hostIPSet.IPv6 == nil {
-		return fmt.Errorf("IPFamily is %s, ip stack of host does not support, %v", datatype.StringValue(cfg.IPFamily), err)
+		return fmt.Errorf("IPFamily is %s, ip stack of host does not support, %v", datatype.StringValue(c.IPFamily), err)
 	}
 
-	log.Infof("--IPFamily=%s", datatype.StringValue(cfg.IPFamily))
+	log.Infof("--IPFamily=%s", datatype.StringValue(c.IPFamily))
 
-	log.Infof("--Source=%s", datatype.StringValue(cfg.Source))
+	log.Infof("--Source=%s", datatype.StringValue(c.Source))
 
-	if cfg.Platform == nil {
-		cfg.Platform = datatype.String(PlatformVKE)
+	if c.Platform == nil {
+		c.Platform = datatype.String(PlatformVKE)
 	}
-	log.Infof("--Platform=%s", datatype.StringValue(cfg.Platform))
+	log.Infof("--Platform=%s", datatype.StringValue(c.Platform))
 
-	if cfg.EnableRdmaIpam == nil {
-		cfg.EnableRdmaIpam = datatype.Bool(true)
+	if c.EnableRdmaIpam == nil {
+		c.EnableRdmaIpam = datatype.Bool(true)
 	}
-	log.Infof("--EnableRdmaIpam=%t", datatype.BoolValue(cfg.EnableRdmaIpam))
+	log.Infof("--EnableRdmaIpam=%t", datatype.BoolValue(c.EnableRdmaIpam))
 
-	if cfg.RdmaIpamDataDir == nil {
-		cfg.RdmaIpamDataDir = datatype.String(DefaultRdmaIpamDataDir)
+	if c.RdmaIpamDataDir == nil {
+		c.RdmaIpamDataDir = datatype.String(DefaultRdmaIpamDataDir)
 	}
-	log.Infof("--RdmaIpamDataDir=%s", datatype.StringValue(cfg.RdmaIpamDataDir))
+	log.Infof("--RdmaIpamDataDir=%s", datatype.StringValue(c.RdmaIpamDataDir))
 
-	if cfg.ProbeRdma == nil {
-		cfg.ProbeRdma = datatype.Bool(true)
+	if c.ProbeRdma == nil {
+		c.ProbeRdma = datatype.Bool(true)
 	}
-	log.Infof("--ProbeRdma=%t", datatype.BoolValue(cfg.ProbeRdma))
+	log.Infof("--ProbeRdma=%t", datatype.BoolValue(c.ProbeRdma))
 
-	if cfg.CustomENIQuota == nil {
-		cfg.CustomENIQuota = datatype.Uint32(0)
+	if c.CustomENIQuota == nil {
+		c.CustomENIQuota = datatype.Uint32(0)
 	}
-	log.Infof("--CustomENIQuota=%d", datatype.Uint32Value(cfg.CustomENIQuota))
+	log.Infof("--CustomENIQuota=%d", datatype.Uint32Value(c.CustomENIQuota))
 
-	if cfg.CustomBranchENIQuota == nil {
-		cfg.CustomBranchENIQuota = datatype.Uint32(0)
+	if c.CustomBranchENIQuota == nil {
+		c.CustomBranchENIQuota = datatype.Uint32(0)
 	}
-	log.Infof("--CustomBranchENIQuota=%d", datatype.Uint32Value(cfg.CustomBranchENIQuota))
+	log.Infof("--CustomBranchENIQuota=%d", datatype.Uint32Value(c.CustomBranchENIQuota))
 
 	return nil
 }
 
-// ParseConfig Parse Config from configmap.
-func ParseConfig(k8s k8s.Service) (*Config, error) {
+// ParseConfig Parse DaemonConfig from configmap.
+func ParseConfig(k8s k8s.Service) error {
 	cfg, err := GetMergedConfigFromConfigMap(k8s)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	err = verifyConfig(cfg)
+	err = cfg.verifyConfig()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return cfg, nil
+	Config = cfg
+	return nil
 }
 
-func verifyStaticConfig(cfg *Config) error {
-	if datatype.Float64Value(cfg.KubeClientQPS) == 0 {
-		cfg.KubeClientQPS = datatype.Float64(DefaultKubeClientQPS)
+func (c *DaemonConfig) verifyStaticConfig() error {
+	if datatype.Float64Value(c.KubeClientQPS) == 0 {
+		c.KubeClientQPS = datatype.Float64(DefaultKubeClientQPS)
 	}
-	log.Infof("--KubeClientQPS=%f", datatype.Float64Value(cfg.KubeClientQPS))
+	log.Infof("--KubeClientQPS=%f", datatype.Float64Value(c.KubeClientQPS))
 
-	if datatype.IntValue(cfg.KubeClientBurst) == 0 {
-		cfg.KubeClientBurst = datatype.Int(DefaultKubeClientBurst)
+	if datatype.IntValue(c.KubeClientBurst) == 0 {
+		c.KubeClientBurst = datatype.Int(DefaultKubeClientBurst)
 	}
-	log.Infof("--KubeClientBurst=%d", datatype.IntValue(cfg.KubeClientBurst))
+	log.Infof("--KubeClientBurst=%d", datatype.IntValue(c.KubeClientBurst))
 
-	if datatype.StringValue(cfg.KubeContentType) == "" {
-		cfg.KubeContentType = datatype.String(DefaultKubeContentType)
+	if datatype.StringValue(c.KubeContentType) == "" {
+		c.KubeContentType = datatype.String(DefaultKubeContentType)
 	}
-	log.Infof("--KubeContentType=%s", datatype.StringValue(cfg.KubeContentType))
+	log.Infof("--KubeContentType=%s", datatype.StringValue(c.KubeContentType))
 	return nil
 }
 
 // ParseStaticConfig Get configMap from mounted config file, note this func does not fill config with default data
-func ParseStaticConfig(configPath string) (*Config, error) {
+func ParseStaticConfig(configPath string) (*DaemonConfig, error) {
 	configMapFile, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
 	}
-	cfg := &Config{}
+	cfg := &DaemonConfig{}
 	err = json.Unmarshal(configMapFile, &cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	err = verifyStaticConfig(cfg)
+	err = cfg.verifyStaticConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +353,7 @@ func ParseStaticConfig(configPath string) (*Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) String() string {
+func (c *DaemonConfig) String() string {
 	if c == nil {
 		return ""
 	}

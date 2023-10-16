@@ -23,7 +23,6 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
 	"github.com/urfave/cli/v2"
-
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 
 	"github.com/volcengine/cello/pkg/config"
@@ -58,12 +57,12 @@ func showInstanceInfo(c *cli.Context) error {
 
 func showConfig(c *cli.Context) error {
 	url := fmt.Sprintf("%s%s", baseUrl, daemon.ConfigGetPath)
-	cfg := &config.Config{}
+	cfg := &config.DaemonConfig{}
 	err := debugClientGet(url, &cfg)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Config: \n%s\n", PrettyJson(cfg))
+	fmt.Printf("DaemonConfig: \n%s\n", PrettyJson(cfg))
 	return nil
 }
 
