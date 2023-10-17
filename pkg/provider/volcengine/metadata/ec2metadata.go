@@ -19,8 +19,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/pkg/errors"
@@ -28,23 +28,30 @@ import (
 
 	"github.com/volcengine/cello/pkg/tracing"
 	"github.com/volcengine/cello/pkg/utils/logger"
+	"github.com/volcengine/cello/pkg/version"
 )
 
 var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "metadata"})
 
 const (
-	metadataURL = "http://100.96.0.96/volcstack/latest"
+	Endpoint = "http://100.96.0.96/volcstack/latest"
 )
 
 var metadataTimeout = time.Second * 5
 
 type EC2Metadata struct {
-	*http.Client
+	endpoint string
+	client   *http.Client
 }
 
 func New() *EC2Metadata {
+	endpoint := os.Getenv("METADATA_ENDPOINT")
+	if endpoint == "" {
+		endpoint = Endpoint
+	}
 	return &EC2Metadata{
-		&http.Client{
+		endpoint: endpoint,
+		client: &http.Client{
 			Timeout: metadataTimeout,
 		},
 	}
@@ -55,7 +62,7 @@ func (c *EC2Metadata) GetMetadata(ctx context.Context, path string) (info string
 	var req *http.Request
 	var resp *http.Response
 	info = ""
-	url := fmt.Sprintf("%s/%s", metadataURL, path)
+	url := fmt.Sprintf("%s/%s", c.endpoint, path)
 
 	defer func() {
 		if err != nil {
@@ -68,8 +75,11 @@ func (c *EC2Metadata) GetMetadata(ctx context.Context, path string) (info string
 	if req, err = http.NewRequestWithContext(ctx, http.MethodGet, url, nil); err != nil {
 		return
 	}
+	
+	// set User-Agent
+	req.Header.Set("User-Agent", version.UserAgent())
 
-	if resp, err = c.Do(req); err != nil {
+	if resp, err = c.client.Do(req); err != nil {
 		return
 	}
 	defer func(Body io.ReadCloser) {
@@ -81,7 +91,7 @@ func (c *EC2Metadata) GetMetadata(ctx context.Context, path string) (info string
 		return
 	}
 	var respBytes []byte
-	if respBytes, err = ioutil.ReadAll(resp.Body); err != nil {
+	if respBytes, err = io.ReadAll(resp.Body); err != nil {
 		return
 	}
 	info = string(respBytes)
