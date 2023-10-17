@@ -37,9 +37,6 @@ var (
 
 // DaemonConfig configuration of cello daemon.
 type DaemonConfig struct {
-	// CredentialServerAddress address of credential server, if not set, take the default value of sdk
-	CredentialServerAddress *string `yaml:"credentialServerAddress" json:"credentialServerAddress,omitempty"`
-
 	// CredentialAccessKeyId used in static authentication
 	CredentialAccessKeyId *string `yaml:"credentialAccessKeyId" json:"credentialAccessKeyId,omitempty"`
 
@@ -145,7 +142,6 @@ func (c *DaemonConfig) verifyConfig() error {
 	if c.RamRole != nil {
 		c.CredentialAccessKeyId = nil
 		c.CredentialAccessKeySecret = nil
-		c.CredentialServerAddress = nil
 		if datatype.StringValue(c.RamRole) == "" {
 			return fmt.Errorf("ramRole configured empty")
 		}

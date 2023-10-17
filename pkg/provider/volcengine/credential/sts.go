@@ -16,25 +16,25 @@
 package credential
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/volcengine/cello/pkg/provider/volcengine/metadata"
 	"github.com/volcengine/cello/pkg/tracing"
 	"github.com/volcengine/cello/pkg/utils/logger"
 )
 
-const (
-	credentialServerAddress = "http://100.96.0.96/volcstack/latest/iam/security_credentials/"
-)
-
 var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "credential"})
 
-// STSProvider provide dynamic Credential.
+const (
+	MetadataCredentialPath = "iam/security_credentials"
+)
+
+// STSProvider provide dynamic Credential from metadata.
 type STSProvider struct {
 	role              string
 	currentCredential *Credential
@@ -45,11 +45,11 @@ func (p *STSProvider) Get() *Credential {
 }
 
 func (p *STSProvider) refresh() *Credential {
-	log.DebugS("start to refresh sts", "role", p.role)
+	log.DebugS("Start to refresh sts", "role", p.role)
 	for {
-		c, err := p.getNewSTS(p.role)
+		c, err := p.getNewSTS()
 		if err != nil {
-			log.ErrorS(err, "failed to get new sts")
+			log.ErrorS(err, "Failed to get new sts")
 			t := time.NewTimer(10 * time.Second)
 			<-t.C
 			continue
@@ -65,7 +65,7 @@ func (p *STSProvider) init() {
 	go func() {
 		for {
 			d := p.currentCredential.ExpiredTime.Sub(p.currentCredential.CurrentTime) / 2
-			log.DebugS("Next refresh task was scheduled", "after", d.String())
+			log.DebugS("Next refresh task will be scheduled", "after", d.String())
 			t := time.NewTimer(d)
 			<-t.C
 			p.currentCredential = p.refresh()
@@ -73,32 +73,22 @@ func (p *STSProvider) init() {
 	}()
 }
 
-func (p *STSProvider) getNewSTS(role string) (cr *Credential, err error) {
-	var resp *http.Response
-
+func (p *STSProvider) getNewSTS() (cr *Credential, err error) {
+	var data string
 	defer func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
 		if err != nil {
-			fmtErr := fmt.Sprintf("get sts failed, %v", err)
-			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventCredentialServiceAbnormal, fmtErr)
+			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventCredentialServiceAbnormal, err.Error())
 		}
 	}()
 
-	if resp, err = http.Get(credentialServerAddress + role); err != nil || resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("get sts with role %s failed, status: %v, err: %v", role, resp.StatusCode, err)
-		return
-	}
-
-	var data []byte
-	if data, err = ioutil.ReadAll(resp.Body); err != nil {
-		err = fmt.Errorf("read response body failed, %s", err.Error())
+	data, err = metadata.New().GetMetadata(context.TODO(), fmt.Sprintf("%s/%s", MetadataCredentialPath, p.role))
+	if err != nil {
+		err = fmt.Errorf("get sts failed, %v", err)
 		return
 	}
 
 	credential := &Credential{}
-	err = json.Unmarshal(data, &credential)
+	err = json.Unmarshal([]byte(data), &credential)
 	if err != nil {
 		return
 	}
@@ -106,7 +96,7 @@ func (p *STSProvider) getNewSTS(role string) (cr *Credential, err error) {
 	return
 }
 
-func NewTSTProvider(role string) *STSProvider {
+func NewSTSProvider(role string) *STSProvider {
 	stsProvider := &STSProvider{
 		role: role,
 	}

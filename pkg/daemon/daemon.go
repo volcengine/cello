@@ -98,7 +98,7 @@ func createEc2(instanceMeta helper.InstanceMetadataGetter) (ec2.EC2, error) {
 	var credentialProvider credential.Provider
 	if config.Config.RamRole != nil {
 		log.InfoS("Set credential provider by ramRole", "RamRole", *config.Config.RamRole)
-		credentialProvider = credential.NewTSTProvider(*config.Config.RamRole)
+		credentialProvider = credential.NewSTSProvider(*config.Config.RamRole)
 	} else if config.Config.CredentialAccessKeyId != nil && config.Config.CredentialAccessKeySecret != nil {
 		log.InfoS("Set credential provider by static ak/sk")
 		credentialProvider = credential.NewStaticProvider(&credential.Credential{
