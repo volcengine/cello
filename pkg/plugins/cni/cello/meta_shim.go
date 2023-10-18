@@ -111,9 +111,15 @@ func (v *celloShim) addServiceChain(delegate *celloMeta.DelegateNetConf) error {
 		tmpMap = append(tmpMap, currentPlugin)
 	}
 
+	cniVersion := "0.3.1"
+	if delegate.ConfList.CNIVersion != "" {
+		cniVersion = delegate.ConfList.CNIVersion
+	}
+
 	tmpMap = append(tmpMap, &cniTypes.NetConf{
-		Name: "cilium",
-		Type: "cilium-cni",
+		CNIVersion: cniVersion,
+		Name:       "cilium",
+		Type:       "cilium-cni",
 	})
 
 	rawConfig["plugins"] = tmpMap
