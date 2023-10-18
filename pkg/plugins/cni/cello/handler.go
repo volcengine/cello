@@ -174,15 +174,13 @@ func InternalAdd(args *skel.CmdArgs) (result cniTypes.Result, err error) {
 	}
 
 	cniResult := &current.Result{
-		CNIVersion: cniVersion.Current(),
+		CNIVersion: cniConfig.CNIVersion,
 		Interfaces: nil,
 		IPs:        nil,
 		Routes:     nil,
 		DNS:        cniTypes.DNS{},
 	}
 	types.AppendNetworkConfigToCNIResult(cniResult, networkConfig)
-	cniResultJson, _ := json.Marshal(cniResult)
-	lg.DebugS("CNI Result", "result", cniResultJson)
 	result = cniResult
 	return
 }
