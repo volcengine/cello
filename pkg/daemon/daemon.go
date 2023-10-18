@@ -114,7 +114,7 @@ func createEc2(instanceMeta helper.InstanceMetadataGetter) (ec2.EC2, error) {
 		log.InfoS("Set openapi address", "OpenApiAddress", *config.Config.OpenApiAddress)
 		endpoint = *config.Config.OpenApiAddress
 	}
-	apiClient := metrics.NewMetricEC2Wrapper(ec2.NewClient(instanceMeta.GetRegion(), endpoint, credentialProvider))
+	apiClient := ec2.NewClient(instanceMeta.GetRegion(), endpoint, credentialProvider)
 	return apiClient, nil
 }
 

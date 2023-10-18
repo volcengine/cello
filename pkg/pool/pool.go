@@ -472,7 +472,7 @@ func (p *poolImpl) tryIncreasePool() {
 		for _, item := range res {
 			p.AddAvailable(item)
 		}
-		p.InfoS("resource increased", "count", len(res))
+		p.InfoS("Resource increased", "count", len(res))
 	}
 }
 
