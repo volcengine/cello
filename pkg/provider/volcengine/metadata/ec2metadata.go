@@ -75,8 +75,7 @@ func (c *EC2Metadata) GetMetadata(ctx context.Context, path string) (info string
 	if req, err = http.NewRequestWithContext(ctx, http.MethodGet, url, nil); err != nil {
 		return
 	}
-	
-	// set User-Agent
+	// Set User-Agent
 	req.Header.Set("User-Agent", version.UserAgent())
 
 	if resp, err = c.client.Do(req); err != nil {
