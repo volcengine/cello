@@ -401,13 +401,14 @@ func (d *daemon) gc() error {
 	signal.MuteChannel(signal.WakeGC)
 	defer signal.UnmuteChannel(signal.WakeGC)
 	var err error
-	log.DebugS("Daemon gc start")
+
+	log.Infof("Daemon GC start")
 	defer func() {
 		if err != nil {
 			log.ErrorS(err, "Daemon gc failed")
 		} else {
 			d.lastGC = time.Now()
-			log.DebugS("Daemon gc finished")
+			log.Infof("Daemon GC finished")
 		}
 	}()
 
