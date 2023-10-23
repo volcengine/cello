@@ -549,27 +549,29 @@ func (f *eniIPFactory) initENI(eni *ENI) {
 		var ok bool
 		eni.ENI, ok = vpcEni.(*types.ENI)
 		if !ok {
-			log.ErrorS(nil, "Net resource created by factory is not expect type eni, try release it")
-			err = f.eniFactory.Release(vpcEni)
-			if err != nil {
-				log.ErrorS(err, "Release unexpect resource failed", "vpcEni", vpcEni, err)
+			err = fmt.Errorf("net resource created by factory is not expect type, get %+v, try release it", vpcEni)
+			log.Error(err)
+			releaseErr := f.eniFactory.Release(vpcEni)
+			if releaseErr != nil {
+				log.Errorf("Release unexpect resource %+v failed, %v", vpcEni, releaseErr)
 			}
 		} else {
 			ipv4s, ipv6s, err = f.volcApi.GetENIIPList(eni.Mac.String())
 			if err != nil {
-				log.ErrorS(err, "Get ip list on eni failed, try release it")
-				err = f.eniFactory.Release(vpcEni)
-				if err != nil {
-					log.ErrorS(err, "Release eni failed", "vpcEni", vpcEni)
+				log.Errorf("Get ip list on eni failed, %v, try release it", err)
+				releaseErr := f.eniFactory.Release(vpcEni)
+				if releaseErr != nil {
+					log.Errorf("Release eni %+v failed, %v", vpcEni, releaseErr)
 				}
 			}
 			if f.ipFamily.EnableIPv4() && f.ipFamily.EnableIPv6() {
 				// check ip pairs
 				if len(ipv4s) != len(ipv6s) {
-					log.ErrorS(nil, "The number of ipv4 and ipv6 not equal on eni, try release it", "vpcEni", vpcEni)
-					err = f.eniFactory.Release(vpcEni)
-					if err != nil {
-						log.ErrorS(err, "Release eni failed", "vpcEni", vpcEni)
+					err = fmt.Errorf("the number of ipv4 and ipv6 not equal on eni %+v, try release it", vpcEni)
+					log.Error(err)
+					releaseErr := f.eniFactory.Release(vpcEni)
+					if releaseErr != nil {
+						log.Errorf("Release eni %+v failed, %v", vpcEni, releaseErr)
 					}
 				}
 			}
