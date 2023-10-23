@@ -533,47 +533,50 @@ func (f *eniIPFactory) deleteEniLocked(eni *ENI) {
 
 // initENI initializes ENI.
 func (f *eniIPFactory) initENI(eni *ENI) {
-	var err error
 	var ipv4s, ipv6s []net.IP
+	var vpcEni types.NetResource
+	var err error // if err is not nil, init eni failed, clean it
 
 	defer func() {
 		<-f.eniPending
 	}()
 
-	vpcEni, err := f.eniFactory.CreateWithIPCount(eni.pending, false)
+	vpcEni, err = f.eniFactory.CreateWithIPCount(eni.pending, false)
 	if err == nil {
 		var ok bool
 		eni.ENI, ok = vpcEni.(*types.ENI)
 		if !ok {
-			log.Errorf("Net resource created by factory is not expect type eni, try release it")
-			err = f.eniFactory.Release(vpcEni)
-			if err != nil {
-				log.Errorf("Release unexpect resource %+v failed, %v", vpcEni, err)
+			err = fmt.Errorf("net resource created by factory is not expect type, get %+v, try release it", vpcEni)
+			log.Error(err)
+			releaseErr := f.eniFactory.Release(vpcEni)
+			if releaseErr != nil {
+				log.Errorf("Release unexpect resource %+v failed, %v", vpcEni, releaseErr)
 			}
 		} else {
 			ipv4s, ipv6s, err = f.volcApi.GetENIIPList(eni.Mac.String())
 			if err != nil {
 				log.Errorf("Get ip list on eni failed, %v, try release it", err)
-				err = f.eniFactory.Release(vpcEni)
-				if err != nil {
-					log.Errorf("Release eni %+v failed, %v", vpcEni, err)
+				releaseErr := f.eniFactory.Release(vpcEni)
+				if releaseErr != nil {
+					log.Errorf("Release eni %+v failed, %v", vpcEni, releaseErr)
 				}
 			}
 			if f.ipFamily.EnableIPv4() && f.ipFamily.EnableIPv6() {
 				// check ip pairs
 				if len(ipv4s) != len(ipv6s) {
-					log.Errorf("The number of ipv4 and ipv6 not equal on eni %+v, try release it", vpcEni)
-					err = f.eniFactory.Release(vpcEni)
-					if err != nil {
-						log.Errorf("Release eni %+v failed, %v", vpcEni, err)
+					err = fmt.Errorf("the number of ipv4 and ipv6 not equal on eni %+v, try release it", vpcEni)
+					log.Error(err)
+					releaseErr := f.eniFactory.Release(vpcEni)
+					if releaseErr != nil {
+						log.Errorf("Release eni %+v failed, %v", vpcEni, releaseErr)
 					}
 				}
 			}
 		}
 	}
 
+	// if err is not nil, init eni failed, clean it
 	if err != nil {
-		// clean
 		eni.Lock()
 		for i := 0; i < eni.pending; i++ {
 			f.eniIpReceiver <- &ENIIPRes{
