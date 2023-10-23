@@ -1087,7 +1087,7 @@ func (d *daemon) translatePod(pod *v1.Pod) *types.Pod {
 		}
 	}
 
-	if value, ok := pod.Annotations[types.EvictionPolicyAnnotation]; ok {
+	if value, ok := pod.Annotations[types.AnnotationEvictionPolicyKey]; ok {
 		result.AllowEviction = value == types.AllowEviction
 	}
 
