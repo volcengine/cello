@@ -60,7 +60,7 @@ const (
 type VolcAPI interface {
 
 	// AllocENI creates an ENI and attaches it to the instance
-	AllocENI(subnet string, securityGroups []string, trunk bool, ipCnt int) (*types.ENI, error)
+	AllocENI(subnet string, securityGroups []string, projectName string, trunk bool, ipCnt int) (*types.ENI, error)
 
 	// FreeENI detaches ENI interface and deletes it
 	FreeENI(eniID string) error
@@ -187,7 +187,7 @@ func (e *VolcApiImpl) freeENI(eniID string, sleepDelayAfterDetach time.Duration)
 }
 
 // createENI create an ENI and make sure it's status is available, ipv4Cnt.
-func (e *VolcApiImpl) createENI(subnet string, securityGroups []string, trunk bool, ipv4Cnt, ipv6Cnt int) (string, error) {
+func (e *VolcApiImpl) createENI(subnet string, securityGroups []string, projectName string, trunk bool, ipv4Cnt, ipv6Cnt int) (string, error) {
 	var eniResponse *vpc.CreateNetworkInterfaceOutput
 	var err error
 	instanceType := ENITypeSecondary
@@ -205,6 +205,10 @@ func (e *VolcApiImpl) createENI(subnet string, securityGroups []string, trunk bo
 	if ipv4Cnt > 1 {
 		req.SecondaryPrivateIpAddressCount = volcengine.Int64(int64(ipv4Cnt - 1))
 	}
+	if projectName != "" {
+		req.ProjectName = volcengine.String(projectName)
+	}
+
 	werr := wait.ExponentialBackoff(backoff.BackOff(backoff.APIWriteOps), func() (bool, error) {
 		eniResponse, err = e.ec2Client.CreateNetworkInterface(req)
 		errCodes := &apiErr.OpenApiErrCodeChain{}
@@ -289,7 +293,7 @@ func (e *VolcApiImpl) attachENI(eniID string) (*ec2.DescribeNetworkInterfaceAttr
 	return eniAttributes, nil
 }
 
-func (e *VolcApiImpl) AllocENI(subnetId string, securityGroups []string, trunk bool, ipCnt int) (*types.ENI, error) {
+func (e *VolcApiImpl) AllocENI(subnetId string, securityGroups []string, projectName string, trunk bool, ipCnt int) (*types.ENI, error) {
 	lg := log.WithFields(logger.Fields{
 		"SubnetId":       subnetId,
 		"InstanceId":     e.GetInstanceId(),
@@ -306,7 +310,7 @@ func (e *VolcApiImpl) AllocENI(subnetId string, securityGroups []string, trunk b
 		ipv6Cnt = ipCnt
 	}
 
-	eniId, err := e.createENI(subnetId, securityGroups, trunk, ipv4Cnt, ipv6Cnt)
+	eniId, err := e.createENI(subnetId, securityGroups, projectName, trunk, ipv4Cnt, ipv6Cnt)
 	if err != nil {
 		fmtErr := fmt.Sprintf("AllocENI failed, %v", err)
 		_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventAllocateResourceFailed, fmtErr)

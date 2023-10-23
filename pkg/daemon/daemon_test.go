@@ -222,15 +222,15 @@ func (v *APIMockDB) acquireIP(cidr string) (*goipam.IP, error) {
 	return ip, nil
 }
 
-func (v *APIMockDB) AllocENI(subnetId string, securityGroups []string, trunk bool, ipCnt int) (res *types.ENI, err error) {
+func (v *APIMockDB) AllocENI(subnetId string, securityGroups []string, projectName string, trunk bool, ipCnt int) (res *types.ENI, err error) {
 	subnet, exist := v.subnets[subnetId]
 	if !exist {
 		return nil, errors.New(apiErr.InvalidSubnetNotFound)
 	}
-	return v.createENI(subnet, securityGroups, trunk, false, true, ipCnt)
+	return v.createENI(subnet, securityGroups, projectName, trunk, false, true, ipCnt)
 }
 
-func (v *APIMockDB) createENI(subnet *types.Subnet, securityGroups []string, trunk, primary, celloCreated bool, ipCnt int) (res *types.ENI, err error) {
+func (v *APIMockDB) createENI(subnet *types.Subnet, securityGroups []string, _ string, trunk, primary, celloCreated bool, ipCnt int) (res *types.ENI, err error) {
 	if !v.writeRateLimiter.TryAccept() {
 		return nil, errors.New(apiErr.AccountFlowLimitExceeded)
 	}
@@ -547,7 +547,7 @@ func (v *APIMockDB) GetInstanceLimit() (*helper.InstanceLimits, error) {
 }
 
 func (v *APIMockDB) PutCustomEni(subnet *types.Subnet) (*types.ENI, error) {
-	return v.createENI(subnet, []string{GenerateSecurityGroupId()}, false, false, false, 1)
+	return v.createENI(subnet, []string{GenerateSecurityGroupId()}, "", false, false, false, 1)
 }
 
 func NewAPIMockDB(family types.IPFamily, limits helper.InstanceLimits, ecsSubnet *types.Subnet, subnets []*types.Subnet) (*APIMockDB, error) {
@@ -601,7 +601,7 @@ func NewAPIMockDB(family types.IPFamily, limits helper.InstanceLimits, ecsSubnet
 	}
 
 	// create primary eni
-	_, err = impl.createENI(ecsSubnet, []string{GenerateSecurityGroupId()}, false, true, false, 1)
+	_, err = impl.createENI(ecsSubnet, []string{GenerateSecurityGroupId()}, "", false, true, false, 1)
 	if err != nil {
 		return nil, err
 	}

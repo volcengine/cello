@@ -4,6 +4,7 @@
 *.swp
 *.swo
 *.db
+*.DS_Store
 
 /pkg/utils/logger/log_test.log
 

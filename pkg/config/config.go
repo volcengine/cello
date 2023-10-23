@@ -16,6 +16,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -131,6 +132,9 @@ type DaemonConfig struct {
 
 	// CustomBranchENIQuota specify the number of branch eni that cello report
 	CustomBranchENIQuota *uint32 `yaml:"customBranchENIQuota" json:"customBranchENIQuota,omitempty"`
+
+	// ProjectName project name for vpc resources created by cello
+	ProjectName *string `yaml:"projectName" json:"projectName,omitempty"`
 }
 
 // verifyConfig verify DaemonConfig.
@@ -294,6 +298,10 @@ func (c *DaemonConfig) verifyConfig() error {
 	}
 	log.Infof("--CustomBranchENIQuota=%d", datatype.Uint32Value(c.CustomBranchENIQuota))
 
+	if c.ProjectName == nil {
+		c.ProjectName = datatype.String("")
+	}
+	log.Infof("--ProjectName=%s", datatype.StringValue(c.ProjectName))
 	return nil
 }
 
@@ -303,6 +311,15 @@ func ParseConfig(k8s k8s.Service) error {
 	if err != nil {
 		return err
 	}
+
+	// parse config that not from configmap
+	localNode, err := k8s.GetLocalNode(context.TODO())
+	if err != nil {
+		return fmt.Errorf("get local node err, %v", err)
+	}
+	projectName := localNode.Labels[types.LabelProjectNameKey]
+	cfg.ProjectName = datatype.String(projectName)
+
 	err = cfg.verifyConfig()
 	if err != nil {
 		return err

@@ -16,9 +16,13 @@
 package types
 
 const (
-	AnnotationVolcEnginePrefix = "vke.volcengine.com/"
-	LabelNodeDynamicConfigKey  = AnnotationVolcEnginePrefix + "vpc-cni-config"
-	EvictionPolicyAnnotation   = AnnotationVolcEnginePrefix + "cello-pod-evict-policy"
-	AnnotationTrue             = "true"
-	AllowEviction              = "allow"
+	VolcEngineVkePrefix = "vke.volcengine.com/"
+	ValueTrue           = "true"
+
+	LabelNodeDynamicConfigKey = VolcEngineVkePrefix + "vpc-cni-config"
+
+	AnnotationEvictionPolicyKey = VolcEngineVkePrefix + "cello-pod-evict-policy"
+	AllowEviction               = "allow"
+
+	LabelProjectNameKey = VolcEngineVkePrefix + "project-name"
 )
