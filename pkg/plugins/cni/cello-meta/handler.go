@@ -373,7 +373,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		lg.InfoS("add Delegate", "name", d.Name, "ifName", ifName, "Index", d.Index)
 		tmpResult, err = DelegateAdd(rt, d, cniConfig)
 		if err != nil {
-			lg.ErrorS(err, "add Delegate error", err.Error(), "Name", d.Name, "ifName", ifName, "Index", d.Index)
+			lg.ErrorS(err, "add Delegate error", err.Error(), "NetName", d.Name, "ifName", ifName, "Index", d.Index)
 			_ = delPlugins(args, k8sConfig, cniConfig, delegates, idx)
 			return err
 		}

@@ -45,7 +45,6 @@ import (
 
 	"github.com/volcengine/cello/pkg/utils/logger"
 	utilruntime "github.com/volcengine/cello/pkg/utils/runtime"
-	"github.com/volcengine/cello/pkg/version"
 	"github.com/volcengine/cello/types"
 )
 
@@ -244,7 +243,7 @@ func (k *k8sManager) initPodInformer() {
 	})
 }
 
-func (k *k8sManager) initConfigMapInformer() {
+func (k *k8sManager) initConfigMapInformer(namespace string, configName string) {
 	setupSignalHandler := func() context.Context {
 		ctx, cancel := context.WithCancel(context.Background())
 		c := make(chan os.Signal, 2)
@@ -265,7 +264,7 @@ func (k *k8sManager) initConfigMapInformer() {
 		informers.WithTweakListOptions(func(options *metav1.ListOptions) {
 			options.Kind = "ConfigMap"
 			options.FieldSelector = fields.ParseSelectorOrDie(
-				"metadata.name=cello-config,metadata.namespace=kube-system").String()
+				fmt.Sprintf("metadata.name=%v,metadata.namespace=%v", configName, namespace)).String()
 		}))
 	// Add configmap informer.
 	k.configMapInformer = informersFactory.Core().V1().ConfigMaps().Informer()
@@ -398,7 +397,7 @@ func (k *k8sManager) PatchPodAnnotation(ctx context.Context, namespace, name str
 }
 
 // NewK8sClient creates a kubernetes client.
-func NewK8sClient(qps *float64, burst *int, contentType *string) (*kubernetes.Clientset, error) {
+func NewK8sClient(qps *float64, burst *int, contentType *string, userAgent string) (*kubernetes.Clientset, error) {
 	c, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("create incluster config failed: %v", err)
@@ -407,7 +406,7 @@ func NewK8sClient(qps *float64, burst *int, contentType *string) (*kubernetes.Cl
 	c.Burst = *burst
 	c.ContentType = *contentType
 
-	c.UserAgent = version.UserAgent()
+	c.UserAgent = userAgent
 
 	return kubernetes.NewForConfig(c)
 }
@@ -439,7 +438,7 @@ func NewK8sService(nodeName string, clientSet kubernetes.Interface) (Service, er
 	}
 	log.InfoS("Init pod informer...")
 	go k8sM.initPodInformer()
-	k8sM.initConfigMapInformer()
+	k8sM.initConfigMapInformer(Namespace, CelloConfigName)
 	return k8sM, nil
 }
 

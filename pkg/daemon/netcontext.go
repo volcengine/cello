@@ -33,7 +33,7 @@ type netContext struct {
 func (ctx *netContext) Log() logger.Logger {
 	return ctx.log.WithFields(logger.Fields{
 		"Namespace":          ctx.pod.Namespace,
-		"Name":               ctx.pod.Name,
+		"NetName":            ctx.pod.Name,
 		"SandboxContainerId": ctx.pod.SandboxContainerId,
 	})
 }

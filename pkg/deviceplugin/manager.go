@@ -36,6 +36,7 @@ var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "deviceplugin"})
 // PluginManager manages all device plugins.
 type PluginManager struct {
 	plugins map[string]Plugin
+	servers map[string]*grpc.Server
 	cancel  context.CancelFunc
 	ctx     context.Context
 }
@@ -50,14 +51,13 @@ func NewResourcePluginManager(ctx context.Context, plugins ...Plugin) *PluginMan
 	mgr.ctx, mgr.cancel = context.WithCancel(ctx)
 	mgr.plugins = make(map[string]Plugin)
 	for _, plugin := range plugins {
-		plugin.SetContext(mgr.ctx)
 		mgr.plugins[plugin.ResourceName()] = plugin
 	}
 	return &mgr
 }
 
 // register registers device plugins grpc endpoints to kubelet
-// should be called after start().
+// should be called after startPluginServers().
 func (manager *PluginManager) register() error {
 	conn, err := dailUnix(manager.ctx, KubeletSocket)
 	if err != nil {
@@ -81,9 +81,9 @@ func (manager *PluginManager) register() error {
 
 // Serve starts device plugins server and watch kubelet restarts.
 func (manager *PluginManager) Serve(stopCh chan struct{}) error {
-	err := manager.start()
+	err := manager.startPluginServers()
 	if err != nil {
-		log.ErrorS(err, "Device plugin start failed")
+		log.ErrorS(err, "Device plugin startPluginServers failed")
 		return err
 	}
 	err = manager.register()
@@ -114,7 +114,7 @@ func (manager *PluginManager) Serve(stopCh chan struct{}) error {
 					log.InfoS("KubeletSocket created, restarting.", "KubeletSocket", KubeletSocket)
 					manager.Stop()
 					manager.ctx, manager.cancel = context.WithCancel(context.Background())
-					_ = manager.start()
+					_ = manager.startPluginServers()
 					err = manager.register()
 					if err != nil {
 						log.ErrorS(err, "Register failed after kubelet restart")
@@ -155,12 +155,11 @@ func (manager *PluginManager) Update(resName string, count int) error {
 }
 
 func (manager *PluginManager) AddPlugin(plugin Plugin) {
-	plugin.SetContext(manager.ctx)
 	manager.plugins[plugin.ResourceName()] = plugin
 }
 
-// start will boot grpc service and listen on /var/lib/kubelet/device-plugin/<res>.sock.
-func (manager *PluginManager) start() error {
+// startPluginServers will boot grpc service and listen on /var/lib/kubelet/device-plugin/<res>.sock.
+func (manager *PluginManager) startPluginServers() error {
 	if err := manager.cleanUp(); err != nil {
 		return err
 	}
@@ -169,12 +168,10 @@ func (manager *PluginManager) start() error {
 		if err != nil {
 			return err
 		}
-		plugin.ResetServer()
-		plugin.SetContext(manager.ctx)
-		pluginapi.RegisterDevicePluginServer(plugin.Server(), plugin)
+		ctx := manager.ctx
 
 		go func() {
-			err := plugin.Server().Serve(sock)
+			err := plugin.Serve(ctx, sock)
 			if err != nil {
 				log.ErrorS(nil, "Failed to serve deviceplugin grpc server.")
 			}
@@ -197,10 +194,7 @@ func (manager *PluginManager) start() error {
 func (manager *PluginManager) stop() {
 	manager.cancel()
 	for _, eniPlugin := range manager.plugins {
-		if eniPlugin.Server() == nil {
-			return
-		}
-		eniPlugin.Server().Stop()
+		eniPlugin.Stop()
 	}
 }
 

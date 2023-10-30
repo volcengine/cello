@@ -18,6 +18,7 @@ package deviceplugin
 import (
 	"context"
 	"fmt"
+	"net"
 	"path"
 	"time"
 
@@ -25,7 +26,7 @@ import (
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
 
-// ENIDevicePlugin implements the Kubernetes devices device deviceplugin API.
+// ENIDevicePlugin implements the Kubernetes DevicePlugin API for ENI and IP.
 type ENIDevicePlugin struct {
 	resourceName string
 	apiEndPoint  string
@@ -43,24 +44,23 @@ func NewENIDevicePlugin(resName string, initCount int) *ENIDevicePlugin {
 		count:        initCount,
 		updateSignal: make(chan int, 1),
 		server:       grpc.NewServer(),
-		ctx:          context.TODO(),
 	}
 }
 
 // GetDevicePluginOptions returns options that ENI devices support.
-func (eniPlugin *ENIDevicePlugin) GetDevicePluginOptions(_ context.Context, _ *pluginapi.Empty) (*pluginapi.DevicePluginOptions, error) {
+func (plugin *ENIDevicePlugin) GetDevicePluginOptions(_ context.Context, _ *pluginapi.Empty) (*pluginapi.DevicePluginOptions, error) {
 	return &pluginapi.DevicePluginOptions{}, nil
 }
 
 // ListAndWatch returns ENI devices list.
-func (eniPlugin *ENIDevicePlugin) ListAndWatch(_ *pluginapi.Empty, stream pluginapi.DevicePlugin_ListAndWatchServer) error {
-	count := eniPlugin.count
+func (plugin *ENIDevicePlugin) ListAndWatch(_ *pluginapi.Empty, stream pluginapi.DevicePlugin_ListAndWatchServer) error {
+	count := plugin.count
 
 	sendResponse := func(count int, s pluginapi.DevicePlugin_ListAndWatchServer) error {
 		res := make([]*pluginapi.Device, count)
 		for i := 0; i < count; i++ {
 			res[i] = &pluginapi.Device{
-				ID:     fmt.Sprintf("%v-%d", eniPlugin.resourceName, i),
+				ID:     fmt.Sprintf("%v-%d", plugin.resourceName, i),
 				Health: pluginapi.Healthy,
 			}
 		}
@@ -69,7 +69,7 @@ func (eniPlugin *ENIDevicePlugin) ListAndWatch(_ *pluginapi.Empty, stream plugin
 			Devices: res,
 		}
 		err := stream.Send(resp)
-		log.InfoS("Report resources", "resourceName", eniPlugin.resourceName, "count", count)
+		log.InfoS("Report resources", "resourceName", plugin.resourceName, "count", count)
 		if err != nil {
 			log.ErrorS(err, "Send devices error")
 			return err
@@ -85,32 +85,33 @@ func (eniPlugin *ENIDevicePlugin) ListAndWatch(_ *pluginapi.Empty, stream plugin
 	for {
 		select {
 		case <-ticker.C:
-			count = eniPlugin.count
+			count = plugin.count
 			err := sendResponse(count, stream)
 			if err != nil {
 				return err
 			}
 		// Send	new list when resource count changed
-		case eniPlugin.count = <-eniPlugin.updateSignal:
-			count = eniPlugin.count
+		case plugin.count = <-plugin.updateSignal:
+			count = plugin.count
 			err := sendResponse(count, stream)
 			if err != nil {
 				return err
 			}
-		case <-eniPlugin.ctx.Done():
+		case <-plugin.ctx.Done():
 			return nil
 		}
 	}
 }
 
 // Allocate does nothing, here we only return a void response.
-func (eniPlugin *ENIDevicePlugin) Allocate(_ context.Context, request *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
+func (plugin *ENIDevicePlugin) Allocate(_ context.Context, request *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
 	resp := pluginapi.AllocateResponse{
 		ContainerResponses: []*pluginapi.ContainerAllocateResponse{},
 	}
 
 	for range request.GetContainerRequests() {
-		resp.ContainerResponses = append(resp.ContainerResponses,
+		resp.ContainerResponses = append(
+			resp.ContainerResponses,
 			&pluginapi.ContainerAllocateResponse{},
 		)
 	}
@@ -119,51 +120,64 @@ func (eniPlugin *ENIDevicePlugin) Allocate(_ context.Context, request *pluginapi
 }
 
 // PreStartContainer is not supported by this plugin.
-func (eniPlugin *ENIDevicePlugin) PreStartContainer(_ context.Context, _ *pluginapi.PreStartContainerRequest) (*pluginapi.PreStartContainerResponse, error) {
+func (plugin *ENIDevicePlugin) PreStartContainer(_ context.Context, _ *pluginapi.PreStartContainerRequest) (*pluginapi.PreStartContainerResponse, error) {
 	return &pluginapi.PreStartContainerResponse{}, nil
 }
 
 // GetPreferredAllocation is not supported by this plugin.
-func (eniPlugin *ENIDevicePlugin) GetPreferredAllocation(_ context.Context, _ *pluginapi.PreferredAllocationRequest) (*pluginapi.PreferredAllocationResponse, error) {
+func (plugin *ENIDevicePlugin) GetPreferredAllocation(_ context.Context, _ *pluginapi.PreferredAllocationRequest) (*pluginapi.PreferredAllocationResponse, error) {
 	return &pluginapi.PreferredAllocationResponse{}, nil
 }
 
 // Endpoint returns the path of grpc UDS endpoint
-func (eniPlugin *ENIDevicePlugin) Endpoint() string {
-	return eniPlugin.apiEndPoint
+func (plugin *ENIDevicePlugin) Endpoint() string {
+	return plugin.apiEndPoint
 }
 
-func (eniPlugin *ENIDevicePlugin) ResourceName() string {
-	return eniPlugin.resourceName
+func (plugin *ENIDevicePlugin) ResourceName() string {
+	return plugin.resourceName
 }
 
-func (eniPlugin *ENIDevicePlugin) Server() *grpc.Server {
-	return eniPlugin.server
-}
-
-func (eniPlugin *ENIDevicePlugin) ResetServer() {
-	eniPlugin.server = grpc.NewServer()
-}
-
-func (eniPlugin *ENIDevicePlugin) SetContext(ctx context.Context) {
-	eniPlugin.ctx = ctx
-}
-
-func (eniPlugin *ENIDevicePlugin) Update(count int) {
-	if count == eniPlugin.count {
+func (plugin *ENIDevicePlugin) Update(count int) {
+	if count == plugin.count {
 		return
 	}
 	t := time.NewTimer(5 * time.Second)
 	defer t.Stop()
 	select {
-	case eniPlugin.updateSignal <- count:
+	case plugin.updateSignal <- count:
 		return
 	case <-t.C:
-		eniPlugin.count = count
-	case <-eniPlugin.updateSignal:
-		eniPlugin.updateSignal <- count
-		eniPlugin.count = count
+		plugin.count = count
+	case <-plugin.updateSignal:
+		plugin.updateSignal <- count
+		plugin.count = count
 		log.ErrorS(nil, "Failed to update resource count", "count", count)
 		return
+	}
+}
+
+func (plugin *ENIDevicePlugin) Serve(ctx context.Context, lis net.Listener) error {
+	plugin.ctx = ctx
+	if plugin.server != nil {
+		plugin.server.Stop()
+		plugin.server = nil
+	}
+	plugin.server = grpc.NewServer()
+
+	pluginapi.RegisterDevicePluginServer(plugin.server, plugin)
+
+	err := plugin.server.Serve(lis)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (plugin *ENIDevicePlugin) Stop() {
+	if plugin.server != nil {
+		plugin.server.Stop()
+		plugin.server = nil
 	}
 }
