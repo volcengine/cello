@@ -23,22 +23,68 @@ import (
 	"strings"
 
 	"github.com/Mellanox/rdmamap"
+	"github.com/safchain/ethtool"
+	"github.com/vishvananda/netlink"
 )
 
+const (
+	netDevDir    = "/sys/class/net"
+	sysBusPciDir = "/sys/bus/pci/devices"
+)
 var (
-	sysBusPci   = "/sys/bus/pci/devices"
 	ErrNoNetDir = errors.New("no net directory")
 )
 
-type Rdma struct {
+type NetDevice interface {
+	IfName() string
+	HwAddr() string
+	PciId() string
+	IsPciDevice() bool
+}
+
+type RdmaHCA struct {
 	PciAddr string
 	NetName string // maybe not unique
 	Mac     string // maybe not unique
 }
 
+func (hca *RdmaHCA) IfName() string {
+	return hca.Mac
+}
+
+func (hca *RdmaHCA) HwAddr() string {
+	return hca.Mac
+}
+
+func (hca *RdmaHCA) PciId() string {
+	return hca.Mac
+}
+
+func (hca *RdmaHCA) IsPciDevice() bool {
+	return true
+}
+
+type NetDev RdmaHCA
+
+func (n *NetDev) IfName() string {
+	return n.NetName
+}
+
+func (n *NetDev) HwAddr() string {
+	return n.Mac
+}
+
+func (n *NetDev) PciId() string {
+	return n.PciAddr
+}
+
+func (n *NetDev) IsPciDevice() bool {
+	return n.PciAddr != ""
+}
+
 // GetNetNamesByDeviceId returns host net interface names as string for a PCI device from its pci address
 func GetNetNamesByDeviceId(pciAddr string) ([]string, error) {
-	netDir := filepath.Join(sysBusPci, pciAddr, "net")
+	netDir := filepath.Join(sysBusPciDir, pciAddr, "net")
 	if _, err := os.Lstat(netDir); err != nil {
 		return nil, ErrNoNetDir
 	}
@@ -61,7 +107,7 @@ func IsRdma(pciAddr string) bool {
 
 func ListRdmaPciAddr() ([]string, error) {
 	var list []string
-	fInfos, err := os.ReadDir(sysBusPci)
+	fInfos, err := os.ReadDir(sysBusPciDir)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +121,7 @@ func ListRdmaPciAddr() ([]string, error) {
 }
 
 func getNetMac(pciAddr, netName string) (string, error) {
-	macFile := filepath.Join(sysBusPci, pciAddr, "net", netName, "address")
+	macFile := filepath.Join(sysBusPciDir, pciAddr, "net", netName, "address")
 	mac, err := os.ReadFile(macFile)
 	if err != nil {
 		return "", fmt.Errorf("failde to read mac file %s: %v", macFile, err)
@@ -84,8 +130,8 @@ func getNetMac(pciAddr, netName string) (string, error) {
 }
 
 // ListRdmaNetDevice list net devices of rdma devices which name has prefix.
-func ListRdmaNetDevice(prefix string) ([]Rdma, error) {
-	var list []Rdma
+func ListRdmaNetDevice(prefix string) ([]RdmaHCA, error) {
+	var list []RdmaHCA
 	pciAddress, err := ListRdmaPciAddr()
 	if err != nil {
 		return nil, err
@@ -111,11 +157,61 @@ func ListRdmaNetDevice(prefix string) ([]Rdma, error) {
 		if inErr != nil {
 			return nil, fmt.Errorf("get net mac for %s/net/%s failed, %v", pci, expectedNames[0], inErr)
 		}
-		list = append(list, Rdma{
+		list = append(list, RdmaHCA{
 			PciAddr: pci,
 			NetName: expectedNames[0],
 			Mac:     mac,
 		})
 	}
 	return list, nil
+}
+
+func GetDeviceByName(name string) (NetDevice, error) {
+	dev := &NetDev{
+		PciAddr: "",
+		NetName: name,
+		Mac:     "",
+	}
+
+	// Get device lladdr.
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		return nil, fmt.Errorf("can't get device %v err: %v", name, err)
+	}
+	dev.Mac = link.Attrs().HardwareAddr.String()
+
+	// Check if netdev is a pci device.
+	busInfo, err := ethtool.BusInfo(name)
+	if err == nil {
+		dev.PciAddr = busInfo
+	}
+	return dev, nil
+}
+
+func GetRangeFromDevice(deviceName string) ([]netlink.Addr, error) {
+	link, err := netlink.LinkByName(deviceName)
+	if err != nil {
+		return nil, fmt.Errorf("link not found %v", err)
+	}
+	addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
+	if err != nil {
+		return nil, fmt.Errorf("address not found %v", err)
+	}
+
+	return addrs, nil
+}
+
+func ListLinksWithPrefix(prefix string) ([]netlink.Link, error) {
+	links, err := netlink.LinkList()
+	if err != nil {
+		return nil, fmt.Errorf("can't list devices")
+	}
+	devicesList := make([]netlink.Link, 0, 10)
+	for _, link := range links {
+		if strings.HasPrefix(link.Attrs().Name, prefix) {
+			devicesList = append(devicesList, link)
+		}
+	}
+	return devicesList, nil
+
 }

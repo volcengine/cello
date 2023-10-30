@@ -134,7 +134,8 @@ func NewDaemon() (*daemon, error) {
 		return nil, fmt.Errorf("parse static json config failed: %v", err)
 	}
 
-	k8sClientSet, err := k8s.NewK8sClient(staticCfg.KubeClientQPS, staticCfg.KubeClientBurst, staticCfg.KubeContentType)
+	k8sClientSet, err := k8s.NewK8sClient(staticCfg.KubeClientQPS, staticCfg.KubeClientBurst,
+		staticCfg.KubeContentType, version.UserAgent())
 	if err != nil {
 		return nil, fmt.Errorf("create kubernetes clientset failed: %v", err)
 	}
@@ -586,7 +587,7 @@ func (d *daemon) DeleteEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRe
 func (d *daemon) createVpcEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRequest) (resp *pbrpc.CreateEndpointResponse, err error) {
 	lg := log.WithFields(logger.Fields{
 		"Namespace":          req.Namespace,
-		"Name":               req.Name,
+		"NetName":            req.Name,
 		"SandboxContainerId": req.InfraContainerId,
 		"IfName":             req.IfName,
 	})
@@ -746,7 +747,7 @@ func (d *daemon) createVpcEndpoint(ctx context.Context, req *pbrpc.CreateEndpoin
 func (d *daemon) deleteVpcEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRequest) (resp *pbrpc.DeleteEndpointResponse, err error) {
 	lg := log.WithFields(logger.Fields{
 		"Namespace":          req.Namespace,
-		"Name":               req.Name,
+		"NetName":            req.Name,
 		"SandboxContainerId": req.InfraContainerId,
 	})
 	lg.InfoS("Handle DeleteEndpoint")

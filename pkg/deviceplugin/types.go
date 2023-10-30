@@ -16,10 +16,10 @@
 package deviceplugin
 
 import (
+	"context"
+	"net"
 	"time"
 
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
 
@@ -56,8 +56,7 @@ type Plugin interface {
 	pluginapi.DevicePluginServer
 	Endpoint() string
 	ResourceName() string
-	Server() *grpc.Server
-	ResetServer()
-	SetContext(ctx context.Context)
+	Serve(ctx context.Context, lis net.Listener) error
+	Stop()
 	Update(count int)
 }
