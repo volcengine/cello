@@ -93,7 +93,7 @@ type SetupConfig struct {
 	DP       DataPathType
 	ENIIndex int
 
-	IfName    string       //interface Name in pod
+	IfName    string       //interface NetName in pod
 	Link      netlink.Link //pod's interface
 	NetNSPath string       //ns path of pod
 	NetNs     *ns.NetNS

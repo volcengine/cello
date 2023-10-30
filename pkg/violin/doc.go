@@ -1,0 +1,3 @@
+// Package violin is lightweight cello-liteAgent, witch implements basic functions of cello-liteAgent
+// including kube-api-client proxy...
+package violin

@@ -84,7 +84,7 @@ func InternalAdd(args *skel.CmdArgs) (result cniTypes.Result, err error) {
 
 	lg = lg.WithFields(logger.Fields{
 		"Namespace":   k8sConfig.K8S_POD_NAMESPACE,
-		"Name":        k8sConfig.K8S_POD_NAME,
+		"NetName":     k8sConfig.K8S_POD_NAME,
 		"ContainerId": args.ContainerID,
 		"Netns":       args.Netns},
 	)
@@ -196,7 +196,7 @@ func InternalDel(args *skel.CmdArgs) error {
 
 	lg = lg.WithFields(logger.Fields{
 		"Namespace":   k8sConfig.K8S_POD_NAMESPACE,
-		"Name":        k8sConfig.K8S_POD_NAME,
+		"NetName":     k8sConfig.K8S_POD_NAME,
 		"ContainerId": args.ContainerID,
 		"Netns":       args.Netns},
 	)

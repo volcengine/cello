@@ -27,11 +27,6 @@ import (
 	"github.com/volcengine/cello/pkg/utils/datatype"
 )
 
-const (
-	Namespace       = "kube-system"
-	CelloConfigName = "cello-config"
-)
-
 // GetMergedConfigFromConfigMap get merged config from all configmaps(cluster scope and node scope).
 func GetMergedConfigFromConfigMap(k8s k8s.Service) (*DaemonConfig, error) {
 	celloConfigMap, err := k8s.GetConfigMap(context.Background(), Namespace, CelloConfigName)
