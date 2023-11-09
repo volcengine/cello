@@ -117,7 +117,7 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 				Namespace:        string(k8sConfig.K8S_POD_NAMESPACE),
 				InfraContainerId: string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID),
 				IfName:           args.IfName,
-				IpamType:         celloTypes.IPAMTypeRdmaShare,
+				IpamType:         ipamType,
 				IpamArgs:         &pbrpc.IpamArgs{DeviceId: cniConfig.RuntimeConfig.DeviceID},
 			}
 			_, err = celloClient.DeleteEndpoint(ctx, deleteEndpointRequest)
