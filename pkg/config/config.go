@@ -298,9 +298,7 @@ func (c *DaemonConfig) verifyConfig() error {
 	}
 	log.Infof("--CustomBranchENIQuota=%d", datatype.Uint32Value(c.CustomBranchENIQuota))
 
-	if c.ProjectName == nil {
-		c.ProjectName = datatype.String("")
-	}
+	// Nil is used to indicate that ProjectName need obtained by calling the API.
 	log.Infof("--ProjectName=%s", datatype.StringValue(c.ProjectName))
 	return nil
 }
@@ -317,8 +315,16 @@ func ParseConfig(k8s k8s.Service) error {
 	if err != nil {
 		return fmt.Errorf("get local node err, %v", err)
 	}
-	projectName := localNode.Labels[types.LabelProjectNameKey]
-	cfg.ProjectName = datatype.String(projectName)
+
+	// use node label
+	if cfg.ProjectName == nil {
+		if projectName, exist := localNode.Labels[types.LabelProjectNameKey]; !exist {
+			// If key not exist, use "" as value
+			cfg.ProjectName = datatype.String("")
+		} else if projectName != "" { // If key exists but value is "", set to nil
+			cfg.ProjectName = datatype.String(projectName)
+		}
+	}
 
 	err = cfg.verifyConfig()
 	if err != nil {

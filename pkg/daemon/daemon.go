@@ -31,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
 	"google.golang.org/grpc"
 	v1 "k8s.io/api/core/v1"
@@ -48,6 +49,7 @@ import (
 	"github.com/volcengine/cello/pkg/pbrpc"
 	"github.com/volcengine/cello/pkg/pool"
 	helper "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper"
+	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 	"github.com/volcengine/cello/pkg/provider/volcengine/credential"
 	"github.com/volcengine/cello/pkg/provider/volcengine/ec2"
 	"github.com/volcengine/cello/pkg/signal"
@@ -160,6 +162,15 @@ func NewDaemon() (*daemon, error) {
 	apiClient, err := createEc2(instanceMeta)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.Config.ProjectName == nil {
+		projectName, inErr := getInstanceProject(apiClient, instanceMeta)
+		if inErr != nil {
+			return nil, fmt.Errorf("get instance projectName failed, %v", inErr)
+		}
+		log.Infof("Use the instance project %s as the project of eni", projectName)
+		config.Config.ProjectName = datatype.String(projectName)
 	}
 
 	return newDaemon(k8sService, apiClient, podPersist, instanceMeta, nil)
@@ -1159,4 +1170,27 @@ func watchResourceNum(ctx context.Context, pluginManger deviceplugin.Manager, re
 			log.ErrorS(err, "update resource", "resName", resName)
 		}
 	}
+}
+
+// getInstanceProject get ProjectName of ecs instance
+func getInstanceProject(ec2Client ec2.APIGroupECS, instanceMeta helper.InstanceMetadataGetter) (string, error) {
+	var inErr error
+	var output *ecs.DescribeInstancesOutput
+	err := wait.ExponentialBackoff(backoff.BackOff(backoff.APIFastRetry), func() (bool, error) {
+		output, inErr = ec2Client.DescribeInstances(&ecs.DescribeInstancesInput{
+			VpcId:       volcengine.String(instanceMeta.GetVpcId()),
+			InstanceIds: []*string{volcengine.String(instanceMeta.GetInstanceId())},
+		})
+		if inErr != nil {
+			return false, nil
+		}
+		return true, nil
+	})
+	if err = apiErr.BackoffErrWrapper(err, inErr); err != nil {
+		return "", fmt.Errorf("desribe instance failed, %v", err)
+	}
+	if output == nil || len(output.Instances) != 1 {
+		return "", fmt.Errorf("desribe instance failed, no result")
+	}
+	return datatype.StringValue(output.Instances[0].ProjectName), nil
 }
