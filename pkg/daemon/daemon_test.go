@@ -1031,6 +1031,8 @@ func newMockDaemon() (*daemon, error) {
 		return nil, fmt.Errorf("create persistence db failed: %w", err)
 	}
 
+	config.Config.ProjectName = datatype.String("")
+
 	d, err := newDaemon(k8sService, ec2MockClient, podPersist, instanceMetaGetter, volcApi)
 	if err == nil {
 		d.devicePluginManager = mockDeiveplugin.PluginManager{}
