@@ -28,6 +28,7 @@ import (
 	"github.com/volcengine/cello/pkg/pool"
 	helper "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper"
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
+	"github.com/volcengine/cello/pkg/utils/datatype"
 	"github.com/volcengine/cello/pkg/utils/math"
 	"github.com/volcengine/cello/pkg/utils/runtime"
 	"github.com/volcengine/cello/types"
@@ -233,7 +234,7 @@ func (f *eniFactory) CreateWithIPCount(ipCnt int, trunk bool) (types.NetResource
 	}
 	f.limit.UnCordonCreate("eniFactory create eni")
 
-	eni, err := f.volcApi.AllocENI(subnet.SubnetId, f.secManager.GetSecurityGroups(), *config.Config.ProjectName, trunk, ipCnt)
+	eni, err := f.volcApi.AllocENI(subnet.SubnetId, f.secManager.GetSecurityGroups(), datatype.StringValue(config.Config.ProjectName), trunk, ipCnt)
 	if err != nil {
 		log.ErrorS(err, "Failed to create eni")
 		if strings.Contains(err.Error(), apiErr.LimitExceededEnisPerInstance) {
