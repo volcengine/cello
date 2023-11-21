@@ -4,19 +4,21 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//	http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 package violin
 
 import (
 	"fmt"
 	"net"
+	"strings"
 
 	cniTypes "github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/plugins/pkg/ip"
@@ -30,14 +32,12 @@ import (
 )
 
 type IPManager struct {
-	ipams      *cidr.AllocatorGroup
-	devices    map[string]device.NetDevice
-	pciDevices map[string]device.NetDevice
+	ipams   *cidr.AllocatorGroup
+	devices map[string]device.NetDevice
 }
 
 func NewIPManager(networks *NetworkConfig) (*IPManager, error) {
 	devices := make(map[string]device.NetDevice)
-	pciDevices := make(map[string]device.NetDevice)
 	ipamConfig := &cidr.Config{
 		DataDir: *networks.IpamStoreDir,
 		Ranges:  map[string]*allocator.RangeSet{},
@@ -47,18 +47,16 @@ func NewIPManager(networks *NetworkConfig) (*IPManager, error) {
 		if err != nil {
 			return nil, fmt.Errorf("device %v not found", devNet.DeviceName)
 		}
-		devices[devNet.DeviceName] = dev
+		devices[dev.IfName()] = dev
 		if dev.IsPciDevice() {
-			pciDevices[dev.PciId()] = dev
+			devices[dev.PciId()] = dev
 		}
 
 		ranges := make([]allocator.Range, 0)
 
 		switch devNet.IpamMode {
-		case IPAMStatic:
-			//TODO：support static IPAM.
-			panic("not implemented")
-		case IPAMRange:
+
+		case StaticRange:
 			for _, iprange := range devNet.Ranges {
 				ranges = append(ranges,
 					allocator.Range{
@@ -72,9 +70,11 @@ func NewIPManager(networks *NetworkConfig) (*IPManager, error) {
 					})
 			}
 			fallthrough
+		case DeviceRange:
+			fallthrough
 		default:
 			if len(devNet.Ranges) == 0 {
-				addrs, err := device.GetRangeFromDevice(devNet.DeviceName)
+				addrs, err := device.GetAddrsFromDevice(devNet.DeviceName)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get device CIDR %w", err)
 				}
@@ -107,9 +107,8 @@ func NewIPManager(networks *NetworkConfig) (*IPManager, error) {
 		return nil, fmt.Errorf("failed to init allocator group %w", err)
 	}
 	return &IPManager{
-		ipams:      ipam,
-		devices:    devices,
-		pciDevices: pciDevices,
+		ipams:   ipam,
+		devices: devices,
 	}, nil
 
 }
@@ -119,12 +118,7 @@ func (mgr *IPManager) ListDevices() []device.NetDevice {
 }
 
 func (mgr *IPManager) DeviceById(id string) (device.NetDevice, bool) {
-	dev, exist := mgr.pciDevices[id]
-	return dev, exist
-}
-
-func (mgr *IPManager) DeviceByName(name string) (device.NetDevice, bool) {
-	dev, exist := mgr.devices[name]
+	dev, exist := mgr.devices[strings.Trim(id, "\"")]
 	return dev, exist
 }
 

@@ -493,21 +493,26 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 				if utilsnet.IsIPv4(netIp.Address.IP) {
 					ipv4Gw = netIp.Gateway
 				}
-				err = netlink.RouteReplace(&netlink.Route{
-					LinkIndex: link.Attrs().Index,
-					Dst:       nil,
-					Family:    family,
-					Gw:        net.ParseIP(netIp.Gateway.String()),
-					Table:     netInfo.TableId,
-				})
-				if err != nil {
-					lg.ErrorS(err, "link add ipv4 default route failed")
-					return err
+				if netIp.Gateway != nil {
+					defaultRoute := netlink.Route{
+						LinkIndex: link.Attrs().Index,
+						Dst:       nil,
+						Family:    family,
+						Gw:        net.ParseIP(netIp.Gateway.String()),
+						Table:     netInfo.TableId,
+					}
+					err = netlink.RouteReplace(&defaultRoute)
+					if err != nil {
+						lg.ErrorS(err, "link add ipv4 default route failed", "route", defaultRoute)
+						return err
+					}
 				}
 
 				// add main src route to policy route
 				for i := range routes {
-					if netIp.Address.Contains(routes[i].Src) || (routes[i].Src == nil && routes[i].Gw == nil && routes[i].Family == family) {
+					if netIp.Address.Contains(routes[i].Src) ||
+						netIp.Address.Contains(routes[i].Gw) ||
+						(routes[i].Src == nil && routes[i].Gw == nil && routes[i].Family == family) {
 						routes[i].Table = netInfo.TableId
 						// Reset the route flags since if it is dynamically created,
 						// adding it to the new table will fail with "invalid argument"
@@ -516,7 +521,19 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 						// is possible for the default gateway we added above.
 						rErr := netlink.RouteReplace(&routes[i])
 						if rErr != nil {
-							return fmt.Errorf("Failed to readd route: %v", err)
+							return fmt.Errorf("failed to readd route: %v", err)
+						}
+					} else if routes[i].Gw != nil && routes[i].LinkIndex == link.Attrs().Index {
+						// Some CNI(calico) may not print Gw to result, so we have to find out linked routes.
+						routes[i].Table = netInfo.TableId
+						// Reset the existRoute flags since if it is dynamically created,
+						// adding it to the new table will fail with "invalid argument"
+						routes[i].Flags = 0
+						// We use existRoute replace in case the existRoute already exists, which
+						// is possible for the default gateway we added above.
+						rErr := netlink.RouteReplace(&routes[i])
+						if rErr != nil {
+							return fmt.Errorf("failed to readd existRoute: %v", err)
 						}
 					}
 				}
@@ -546,20 +563,22 @@ func setupRoutes(nsname string, netInfos []NetNsConfig) error {
 			// 2. config default route
 			if netInfo.DefaultRoute {
 				for _, netIp := range netInfo.Ips {
-					family := netlink.FAMILY_V4
-					if utilsnet.IsIPv6(netIp.Address.IP) {
-						family = netlink.FAMILY_V6
-					}
-					err = netlink.RouteReplace(&netlink.Route{
-						LinkIndex: link.Attrs().Index,
-						Scope:     netlink.SCOPE_UNIVERSE,
-						Dst:       nil,
-						Gw:        net.ParseIP(netIp.Gateway.String()),
-						Family:    family,
-					})
-					if err != nil && !os.IsExist(err) {
-						lg.ErrorS(err, "set default route failed")
-						return fmt.Errorf("set default route failed: %v", err)
+					if netIp.Gateway != nil {
+						family := netlink.FAMILY_V4
+						if utilsnet.IsIPv6(netIp.Address.IP) {
+							family = netlink.FAMILY_V6
+						}
+						err = netlink.RouteReplace(&netlink.Route{
+							LinkIndex: link.Attrs().Index,
+							Scope:     netlink.SCOPE_UNIVERSE,
+							Dst:       nil,
+							Gw:        net.ParseIP(netIp.Gateway.String()),
+							Family:    family,
+						})
+						if err != nil && !os.IsExist(err) {
+							lg.ErrorS(err, "set default route failed")
+							return fmt.Errorf("set default route failed: %v", err)
+						}
 					}
 				}
 			} else {

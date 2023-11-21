@@ -56,7 +56,7 @@ func (c *Conf) Setup(netNS ns.NetNS) error {
 
 	tempIfName, err := randomIPVlanIfName()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to generate random name, %v", err)
 	}
 
 	link := &netlink.IPVlan{
@@ -71,7 +71,7 @@ func (c *Conf) Setup(netNS ns.NetNS) error {
 
 	err = netlink.LinkAdd(link)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to add ipvlan link %v", err)
 	}
 
 	return netNS.Do(func(netNS ns.NetNS) error {
