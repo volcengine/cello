@@ -93,7 +93,7 @@ type SetupConfig struct {
 	DP       DataPathType
 	ENIIndex int
 
-	IfName    string       //interface NetName in pod
+	IfName    string       //link's name in pod
 	Link      netlink.Link //pod's interface
 	NetNSPath string       //ns path of pod
 	NetNs     *ns.NetNS
@@ -202,37 +202,45 @@ func AppendNetworkConfigToCNIResult(cniResult *current.Result, networkConfig *Se
 		Mac:     networkConfig.Link.Attrs().HardwareAddr.String(),
 		Sandbox: networkConfig.NetNSPath,
 	}
-	cniResult.Interfaces = append(cniResult.Interfaces, cniInterface)
-	cniIfIndex := len(cniResult.Interfaces) - 1
 
-	if networkConfig.IPv4 != nil && networkConfig.IPv4Gateway != nil {
+	ifIndex := len(cniResult.Interfaces)
+	cniResult.Interfaces = append(cniResult.Interfaces, cniInterface)
+
+	if networkConfig.IPv4 != nil {
 		cniResult.IPs = append(cniResult.IPs, &current.IPConfig{
 			Version:   "4",
-			Interface: &cniIfIndex,
+			Interface: &ifIndex,
 			Address:   *networkConfig.IPv4,
 			Gateway:   networkConfig.IPv4Gateway,
 		})
-		cniResult.Routes = append(cniResult.Routes, &cniTypes.Route{
-			Dst: net.IPNet{
-				IP:   net.ParseIP("0.0.0.0"),
-				Mask: net.CIDRMask(0, 32),
-			},
-			GW: networkConfig.IPv4Gateway,
-		})
+		if networkConfig.DefaultRoute && networkConfig.IPv4Gateway != nil {
+			cniResult.Routes = append(cniResult.Routes, &cniTypes.Route{
+				Dst: net.IPNet{
+					IP:   net.ParseIP("0.0.0.0"),
+					Mask: net.CIDRMask(0, 32),
+				},
+				GW: networkConfig.IPv4Gateway,
+			})
+		}
 	}
-	if networkConfig.IPv6 != nil && networkConfig.IPv6Gateway != nil {
+	if networkConfig.IPv6 != nil {
 		cniResult.IPs = append(cniResult.IPs, &current.IPConfig{
 			Version:   "6",
-			Interface: &cniIfIndex,
+			Interface: &ifIndex,
 			Address:   *networkConfig.IPv6,
 			Gateway:   networkConfig.IPv6Gateway,
 		})
-		cniResult.Routes = append(cniResult.Routes, &cniTypes.Route{
-			Dst: net.IPNet{
-				IP:   net.ParseIP("::"),
-				Mask: net.CIDRMask(0, 128),
-			},
-			GW: networkConfig.IPv6Gateway,
-		})
+		if networkConfig.DefaultRoute && networkConfig.IPv6Gateway != nil {
+			cniResult.Routes = append(cniResult.Routes, &cniTypes.Route{
+				Dst: net.IPNet{
+					IP:   net.ParseIP("::"),
+					Mask: net.CIDRMask(0, 128),
+				},
+				GW: networkConfig.IPv6Gateway,
+			})
+		}
+	}
+	for i := range networkConfig.ExtraRoutes {
+		cniResult.Routes = append(cniResult.Routes, &networkConfig.ExtraRoutes[i])
 	}
 }

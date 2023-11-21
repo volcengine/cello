@@ -21,6 +21,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"k8s.io/client-go/kubernetes"
@@ -41,8 +42,8 @@ type Daemon interface {
 type liteAgent struct {
 	opt *option
 
-	k8s            k8s.Service
-	networkManager *IPManager
+	k8s k8s.Service
+	mgr *IPManager
 
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -131,9 +132,10 @@ func NewDaemonWithOptions(ctx context.Context, nodeName string, options ...LiteA
 	}
 
 	var err error
+	log := logger.GetLogger().WithFields(logger.Fields{"subsys": "cello-lite-agent"})
 
 	if opt.k8sClient == nil {
-		opt.k8sClient, err = k8s.NewK8sClient(&opt.k8sClientQPS, &opt.k8sClientBurst, &opt.k8sContentType, opt.useragent)
+		opt.k8sClient, err = k8s.NewInClusterK8sClient(&opt.k8sClientQPS, &opt.k8sClientBurst, &opt.k8sContentType, opt.useragent)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create k8sService clientset: %w", err)
 		}
@@ -144,16 +146,20 @@ func NewDaemonWithOptions(ctx context.Context, nodeName string, options ...LiteA
 		return nil, fmt.Errorf("faild to create k8sService service manager: %w", err)
 	}
 
-	logger := logger.GetLogger().WithFields(logger.Fields{"subsys": "cello-lite-agent"})
 	var ipam *IPManager
 	if opt.networks != nil {
 		ipam, err = NewIPManager(opt.networks)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create IPManager %v", err)
+		} else {
+			log.Info("Found devices:")
+			for _, dev := range ipam.ListDevices() {
+				log.InfoS("device", "name", dev.IfName(), "id", dev.PciId())
+			}
 		}
 	}
 
-	return NewDaemon(ctx, k8sService, ipam, &opt, logger), nil
+	return NewDaemon(ctx, k8sService, ipam, &opt, log), nil
 }
 
 func NewDaemon(ctx context.Context, service k8s.Service, ipam *IPManager, opt *option, parentLogger logger.Logger) Daemon {
@@ -164,7 +170,7 @@ func NewDaemon(ctx context.Context, service k8s.Service, ipam *IPManager, opt *o
 		ctx:                      agentContext,
 		cancel:                   cancel,
 		k8s:                      service,
-		networkManager:           ipam,
+		mgr:                      ipam,
 		UnimplementedCelloServer: pbrpc.UnimplementedCelloServer{},
 	}
 }
@@ -274,6 +280,7 @@ func (agent *liteAgent) CreateEndpoint(_ context.Context, req *pbrpc.CreateEndpo
 			"IfName":             req.IfName,
 			"IpamType":           req.IpamType,
 			"IpamArgs":           req.IpamArgs.String(),
+			"TraceID":            uuid.New(),
 		},
 	)
 	ctxLogger.Info("Handle CreateEndpoint")
@@ -282,32 +289,52 @@ func (agent *liteAgent) CreateEndpoint(_ context.Context, req *pbrpc.CreateEndpo
 		if err != nil {
 			ctxLogger.ErrorS(err, "Fail to handle CreateEndpoint")
 		} else {
-			ctxLogger.InfoS("CreateEndpoint success", "result", resp.String())
+			ctxLogger.InfoS("CreateEndpoint success: ", "result", resp.String())
 		}
 	}()
 
-	if agent.networkManager == nil {
+	if agent.mgr == nil {
 		return nil, fmt.Errorf("network manager not initialized")
 	}
 
 	var netWorkInterface *pbrpc.NetworkInterface
 	deviceId := req.GetIpamArgs().GetDeviceId()
-	dev, exist := agent.networkManager.DeviceById(deviceId)
+	dev, exist := agent.mgr.DeviceById(deviceId)
 	if !exist {
-		return nil, fmt.Errorf("can't find device by identity %s", deviceId)
+		err = fmt.Errorf("can't find device by identity %s", deviceId)
+		return nil, err
 	}
-	ipCfg, err := agent.networkManager.ipams.Get(dev.IfName(), req.InfraContainerId, req.IfName, nil)
+	ipCfg, err := agent.mgr.ipams.Get(dev.IfName(), req.InfraContainerId, req.IfName, nil)
 	if err != nil {
 		return nil, err
 	}
-
-	netWorkInterface = &pbrpc.NetworkInterface{
-		ENI:          &pbrpc.ENI{},
-		IPv4Addr:     ipCfg.Address.String(),
-		IfName:       req.IfName,
-		DefaultRoute: false,
+	var v4Addr, v4Gw, v6Addr, v6Gw string
+	if ipCfg.Address.IP.To4() != nil {
+		v4Addr = ipCfg.Address.String()
+		//v4Gw = ipCfg.Gateway.String()
+	} else {
+		v6Addr = ipCfg.Address.String()
+		//v6Gw = ipCfg.Gateway.String()
 	}
 
+	netWorkInterface = &pbrpc.NetworkInterface{
+		ENI: &pbrpc.ENI{
+			Mac:         dev.HwAddr(),
+			IPv4Gateway: v4Gw,
+			IPv6Gateway: v6Gw,
+			Trunk:       false,
+		},
+		IPv4Addr:     v4Addr,
+		IPv6Addr:     v6Addr,
+		IfName:       req.IfName,
+		DefaultRoute: false,
+		IfType:       0,
+	}
+	_, network, err := net.ParseCIDR(ipCfg.Address.String())
+	if err != nil {
+		return nil, err
+	}
+	netWorkInterface.ExtraRoutes = []*pbrpc.Route{{Dst: network.String()}}
 	return &pbrpc.CreateEndpointResponse{Interfaces: []*pbrpc.NetworkInterface{netWorkInterface}}, nil
 }
 
@@ -320,6 +347,7 @@ func (agent *liteAgent) DeleteEndpoint(_ context.Context, req *pbrpc.DeleteEndpo
 			"IfName":             req.IfName,
 			"IpamType":           req.IpamType,
 			"IpamArgs":           req.IpamArgs.String(),
+			"TraceID":            uuid.New().String(),
 		},
 	)
 	ctxLogger.Info("Handle DeleteEndpoint")
@@ -328,22 +356,25 @@ func (agent *liteAgent) DeleteEndpoint(_ context.Context, req *pbrpc.DeleteEndpo
 		if err != nil {
 			ctxLogger.ErrorS(err, "Fail to handle CreateEndpoint")
 		} else {
-			ctxLogger.Info("CreateEndpoint success", "result", resp.String())
+			ctxLogger.Info("DeleteEndpoint success: ", "result", resp.String())
 		}
 	}()
 
-	if agent.networkManager == nil {
-		return nil, fmt.Errorf("networkManager not initialized")
+	if agent.mgr == nil {
+		return nil, fmt.Errorf("network manager not initialized")
 	}
 
-	deviceId := req.GetIpamArgs().GetDeviceId()
-	dev, exist := agent.networkManager.DeviceByName(deviceId)
+	dev, exist := agent.mgr.DeviceById(req.GetIpamArgs().GetDeviceId())
 	if !exist {
-		return nil, fmt.Errorf("can't find device by identity %s", deviceId)
-	}
-	err = agent.networkManager.ipams.Release(dev.IfName(), req.InfraContainerId, req.IfName)
-	if err != nil {
-		return nil, err
+		err = agent.mgr.ipams.Release("", req.InfraContainerId, req.IfName)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = agent.mgr.ipams.Release(dev.IfName(), req.InfraContainerId, req.IfName)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &pbrpc.DeleteEndpointResponse{}, nil
 }

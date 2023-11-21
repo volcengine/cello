@@ -27,6 +27,7 @@ import (
 
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	_ "go.uber.org/automaxprocs"
 
 	"github.com/volcengine/cello/pkg/utils/device"
 	"github.com/volcengine/cello/pkg/violin"
@@ -39,7 +40,6 @@ var (
 )
 
 func main() {
-	defer fmt.Println("agent has exited")
 	parseFlags()
 	if *helpFlag {
 		fmt.Println(usage(flag.CommandLine.FlagUsages()))
@@ -50,6 +50,8 @@ func main() {
 		fmt.Println(version())
 		return
 	}
+
+	defer fmt.Println("agent has exited")
 	conf, err := initConfig()
 	if err != nil {
 		fmt.Printf("Failed to init cello-lite config: %v\n", err)
@@ -64,15 +66,16 @@ func main() {
 	if conf.EnableIPAM {
 		if conf.Networks.DevicePrefix != nil {
 			devList := make([]violin.NetDevConfig, 0)
-			fmt.Println(viper.GetString(ARGDeviceNamePrefix))
 			links, err := device.ListLinksWithPrefix(*conf.Networks.DevicePrefix)
 			if err != nil {
 				fmt.Printf("Failed to get devices with prefix: %v due to %v\n", *conf.Networks.DevicePrefix, err)
 			}
+			fmt.Println("found devices:")
 			for _, dev := range links {
+				fmt.Println(dev.Attrs().Name)
 				devList = append(devList, violin.NetDevConfig{
 					DeviceName: dev.Attrs().Name,
-					IpamMode:   "auto-detect",
+					IpamMode:   violin.DeviceRange,
 				})
 			}
 			conf.Networks.Devices = devList
@@ -104,10 +107,10 @@ func main() {
 }
 
 func parseFlags() {
-	flag.String(ARGNodeName, "n", "k8s node name")
+	flag.String(ARGNodeName, "", "k8s node name")
 	flag.Float64(ARGKubeClientQPS, violin.DefaultKubeClientQPS, "QPS for K8S APIServer")
 	flag.Int(ARGKubeClientBurst, violin.DefaultKubeClientBurst, "Burst for K8S APIServer")
-	flag.StringP(ARGUserAgent, "u", violin.DefaultUserAgent, "UserAgent of requests for K8S APIServer")
+	flag.StringP(ARGUserAgent, "u", violin.DefaultUserAgent+violin.Version, "UserAgent of requests for K8S APIServer")
 	flag.StringP(ARGApiAddress, "a", violin.DefaultRPCAddress, "agent RPC endpoint address")
 	flag.String(ARGDeviceNamePrefix, "", "input the prefix of netdev that managed by IPAM")
 	flag.String(ARGIpamStore, violin.DefaultIpamStoreDir, "Directory for IPAM records")
@@ -124,7 +127,7 @@ func initConfig() (*violin.Config, error) {
 	viper.SetDefault(ARGConfig, violin.DefaultConfigDir)
 	viper.SetDefault(ARGKubeClientQPS, violin.DefaultKubeClientQPS)
 	viper.SetDefault(ARGKubeClientBurst, violin.DefaultKubeClientBurst)
-	viper.SetDefault(ARGUserAgent, violin.DefaultUserAgent)
+	viper.SetDefault(ARGUserAgent, violin.DefaultUserAgent+violin.Version)
 	viper.SetDefault(ARGApiAddress, violin.DefaultRPCAddress)
 	viper.SetDefault(ARGNodeName, os.Getenv(ENVNodeName))
 	viper.SetDefault(ARGIpamStore, violin.DefaultIpamStoreDir)

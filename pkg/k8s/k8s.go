@@ -396,8 +396,8 @@ func (k *k8sManager) PatchPodAnnotation(ctx context.Context, namespace, name str
 	})
 }
 
-// NewK8sClient creates a kubernetes client.
-func NewK8sClient(qps *float64, burst *int, contentType *string, userAgent string) (*kubernetes.Clientset, error) {
+// NewInClusterK8sClient creates a kubernetes client.
+func NewInClusterK8sClient(qps *float64, burst *int, contentType *string, userAgent string) (*kubernetes.Clientset, error) {
 	c, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("create incluster config failed: %v", err)
@@ -438,7 +438,7 @@ func NewK8sService(nodeName string, clientSet kubernetes.Interface) (Service, er
 	}
 	log.InfoS("Init pod informer...")
 	go k8sM.initPodInformer()
-	k8sM.initConfigMapInformer(Namespace, CelloConfigName)
+	k8sM.initConfigMapInformer("kube-system", "cello-config")
 	return k8sM, nil
 }
 
