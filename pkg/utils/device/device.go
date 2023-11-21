@@ -49,7 +49,7 @@ type RdmaHCA struct {
 }
 
 func (hca *RdmaHCA) IfName() string {
-	return hca.Mac
+	return hca.NetName
 }
 
 func (hca *RdmaHCA) HwAddr() string {
@@ -57,7 +57,7 @@ func (hca *RdmaHCA) HwAddr() string {
 }
 
 func (hca *RdmaHCA) PciId() string {
-	return hca.Mac
+	return hca.PciAddr
 }
 
 func (hca *RdmaHCA) IsPciDevice() bool {
@@ -183,12 +183,12 @@ func GetDeviceByName(name string) (NetDevice, error) {
 	// Check if netdev is a pci device.
 	busInfo, err := ethtool.BusInfo(name)
 	if err == nil {
-		dev.PciAddr = busInfo
+		dev.PciAddr = strings.Trim(busInfo, "\"")
 	}
 	return dev, nil
 }
 
-func GetRangeFromDevice(deviceName string) ([]netlink.Addr, error) {
+func GetAddrsFromDevice(deviceName string) ([]netlink.Addr, error) {
 	link, err := netlink.LinkByName(deviceName)
 	if err != nil {
 		return nil, fmt.Errorf("link not found %v", err)

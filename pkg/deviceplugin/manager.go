@@ -36,7 +36,6 @@ var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "deviceplugin"})
 // PluginManager manages all device plugins.
 type PluginManager struct {
 	plugins map[string]Plugin
-	servers map[string]*grpc.Server
 	cancel  context.CancelFunc
 	ctx     context.Context
 }
@@ -169,11 +168,12 @@ func (manager *PluginManager) startPluginServers() error {
 			return err
 		}
 		ctx := manager.ctx
+		p := plugin
 
 		go func() {
-			err := plugin.Serve(ctx, sock)
+			err := p.Serve(ctx, sock)
 			if err != nil {
-				log.ErrorS(nil, "Failed to serve deviceplugin grpc server.")
+				log.ErrorS(err, "Failed to serve deviceplugin grpc server.")
 			}
 		}()
 

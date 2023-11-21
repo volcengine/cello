@@ -134,7 +134,7 @@ func NewDaemon() (*daemon, error) {
 		return nil, fmt.Errorf("parse static json config failed: %v", err)
 	}
 
-	k8sClientSet, err := k8s.NewK8sClient(staticCfg.KubeClientQPS, staticCfg.KubeClientBurst,
+	k8sClientSet, err := k8s.NewInClusterK8sClient(staticCfg.KubeClientQPS, staticCfg.KubeClientBurst,
 		staticCfg.KubeContentType, version.UserAgent())
 	if err != nil {
 		return nil, fmt.Errorf("create kubernetes clientset failed: %v", err)

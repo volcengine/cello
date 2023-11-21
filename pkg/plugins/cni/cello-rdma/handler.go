@@ -56,7 +56,7 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 
 	lg = lg.WithFields(logger.Fields{
 		"Namespace":   k8sConfig.K8S_POD_NAMESPACE,
-		"NetName":     k8sConfig.K8S_POD_NAME,
+		"Name":        k8sConfig.K8S_POD_NAME,
 		"ContainerId": args.ContainerID,
 		"Netns":       args.Netns},
 	)
@@ -165,7 +165,7 @@ func CmdDel(args *skel.CmdArgs) (err error) {
 
 	lg = lg.WithFields(logger.Fields{
 		"Namespace":   k8sConfig.K8S_POD_NAMESPACE,
-		"NetName":     k8sConfig.K8S_POD_NAME,
+		"Name":        k8sConfig.K8S_POD_NAME,
 		"ContainerId": args.ContainerID,
 		"Netns":       args.Netns},
 	)

@@ -1,3 +1,18 @@
+// Copyright 2023 The Cello Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
 package cello_ipvlan
 
 import (
@@ -8,11 +23,9 @@ import (
 	"strings"
 	"time"
 
-	current "github.com/containernetworking/cni/pkg/types/040"
-
 	"github.com/containernetworking/cni/pkg/skel"
 	cniTypes "github.com/containernetworking/cni/pkg/types"
-	cniVersion "github.com/containernetworking/cni/pkg/version"
+	current "github.com/containernetworking/cni/pkg/types/040"
 
 	"github.com/volcengine/cello/pkg/metrics"
 	"github.com/volcengine/cello/pkg/pbrpc"
@@ -41,7 +54,7 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 
 	lg = lg.WithFields(logger.Fields{
 		"Namespace":   k8sConfig.K8S_POD_NAMESPACE,
-		"NetName":     k8sConfig.K8S_POD_NAME,
+		"Name":        k8sConfig.K8S_POD_NAME,
 		"ContainerId": args.ContainerID,
 		"Netns":       args.Netns},
 	)
@@ -111,15 +124,18 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 	}
 
 	cniResult := &current.Result{
-		CNIVersion: cniVersion.Current(),
+		CNIVersion: cniConfig.CNIVersion,
 		Interfaces: nil,
 		IPs:        nil,
 		Routes:     nil,
 		DNS:        cniTypes.DNS{},
 	}
 	types.AppendNetworkConfigToCNIResult(cniResult, networkConfig)
-	cniResultJson, _ := json.Marshal(cniResult)
-	lg.Debugf("CNI Result: %s", cniResultJson)
+	cniResultJson, err := json.Marshal(cniResult)
+	if err != nil {
+		return fmt.Errorf("unmarshal cni result failed")
+	}
+	lg.Infof("CNI Result: %s", cniResultJson)
 
 	err = cniTypes.PrintResult(cniResult, cniResult.Version())
 	if err != nil {
@@ -138,7 +154,7 @@ func CmdDel(args *skel.CmdArgs) (err error) {
 
 	lg = lg.WithFields(logger.Fields{
 		"Namespace":   k8sConfig.K8S_POD_NAMESPACE,
-		"NetName":     k8sConfig.K8S_POD_NAME,
+		"Name":        k8sConfig.K8S_POD_NAME,
 		"ContainerId": args.ContainerID,
 		"Netns":       args.Netns},
 	)
