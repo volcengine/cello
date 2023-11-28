@@ -19,6 +19,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -176,7 +179,23 @@ func NewDaemon(ctx context.Context, service k8s.Service, ipam *IPManager, opt *o
 }
 
 func (agent *liteAgent) startRPCService(ctx context.Context) error {
-	listener, err := net.Listen("unix", agent.opt.apiAddress)
+	listenOnUnixSock := func(socketFilePath string) (net.Listener, error) {
+		if err := os.MkdirAll(filepath.Dir(socketFilePath), 0700); err != nil {
+			return nil, err
+		}
+
+		if err := syscall.Unlink(socketFilePath); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+
+		l, err := net.Listen("unix", socketFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("error listen at %s: %v", socketFilePath, err)
+		}
+		return l, nil
+	}
+
+	listener, err := listenOnUnixSock(agent.opt.apiAddress)
 	if err != nil {
 		return fmt.Errorf("rpc service: failed to listent on %v due to： %w", agent.opt.apiAddress, err)
 	}
@@ -223,6 +242,7 @@ func (agent *liteAgent) startRPCService(ctx context.Context) error {
 func (agent *liteAgent) Start(hasStarted chan<- struct{}) error {
 	err := agent.startRPCService(agent.ctx)
 	if err != nil {
+		agent.logger.ErrorS(err, "Failed to start grpc service")
 		return fmt.Errorf("daemon: failed to start rpc servive %w", err)
 	}
 	agent.logger.Info("Daemon is running")

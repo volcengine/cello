@@ -15,4 +15,4 @@
 
 package violin
 
-var Version = "0.7.0-beta"
+var Version = "0.8.0-beta"
