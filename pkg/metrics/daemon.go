@@ -35,8 +35,21 @@ var (
 		},
 		[]string{"fn", "error"},
 	)
+
+	// SubSysErr error counter of sub system.
+	SubSysErr = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sub_sys_error_count",
+			Help: "The number of errors encountered in sub sys",
+		},
+		[]string{"subsys", "code", "error"},
+	)
 )
 
 func ResourceManagerErrInc(fn string, err error) {
 	ResourceManagerErr.WithLabelValues(fn, err.Error()).Inc()
+}
+
+func SubSysErrInc(subsys string, code string, err error) {
+	SubSysErr.WithLabelValues(subsys, code, err.Error()).Inc()
 }
