@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"path"
+	"sync"
 
 	cniTypes "github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/plugins/pkg/ip"
@@ -28,13 +29,16 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/volcengine/cello/pkg/backoff"
 	"github.com/volcengine/cello/pkg/config"
+	"github.com/volcengine/cello/pkg/metrics"
 	"github.com/volcengine/cello/pkg/pbrpc"
 	"github.com/volcengine/cello/pkg/plugins/ipam/cidr"
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
+	"github.com/volcengine/cello/pkg/tracing"
 	"github.com/volcengine/cello/pkg/utils/datatype"
 	"github.com/volcengine/cello/pkg/utils/device"
 	"github.com/volcengine/cello/pkg/utils/iproute"
@@ -42,6 +46,13 @@ import (
 	"github.com/volcengine/cello/pkg/utils/runtime"
 	"github.com/volcengine/cello/types"
 )
+
+const (
+	RdmaSubSysName     = "rdma_ipam"
+	RdmaIpamInitFailed = "RdmaIpamInitFailed"
+)
+
+var rdmaIpamInitMutex = sync.Mutex{}
 
 type RdmaIpamManager struct {
 	ipams          *cidr.AllocatorGroup
@@ -82,11 +93,11 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 	}
 
 	// find rdma
-	rdmaInterfaces, err := device.ListRdma()
+	rdmaInterfaces, err := device.ListRdmaNetDevice("eth")
 	if err != nil {
 		return nil, fmt.Errorf("list rdma failed, %v", err)
 	}
-	log.Info("Found rdma interfaces: %v", rdmaInterfaces)
+	log.Infof("Found rdma interfaces: %v", rdmaInterfaces)
 
 	var output *ecs.DescribeInstancesOutput
 	var inErr error
@@ -147,13 +158,28 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 	return &info, nil
 }
 
-func (d *daemon) initRdmaIpamManager() error {
+func (d *daemon) initRdmaIpamManager() (err error) {
+	rdmaIpamInitMutex.Lock()
+	defer rdmaIpamInitMutex.Unlock()
+
 	var rdmaInfo *types.RdmaInfo
+	if d.rdmaIpamManager != nil {
+		return nil
+	}
+
+	defer func() {
+		if err != nil {
+			metrics.SubSysErrInc(RdmaSubSysName, RdmaIpamInitFailed, err)
+			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, RdmaIpamInitFailed, err.Error())
+		} else {
+			log.Infof("Init rdma ipam manager success")
+		}
+	}()
 
 	if datatype.BoolValue(config.Config.ProbeRdma) {
-		info, err := d.getRdmaInfo()
-		if err != nil {
-			log.Warnf("Get rdma info failed, %v, try get from node annotation", err)
+		info, inErr := d.getRdmaInfo()
+		if inErr != nil {
+			log.Warnf("Get rdma info failed, %v, try get from node annotation", inErr)
 		} else {
 			rdmaInfo = info
 		}
@@ -167,7 +193,7 @@ func (d *daemon) initRdmaIpamManager() error {
 		}
 		oldInfo := types.RdmaInfo{}
 		if infoStr, exist := anno[types.AnnotationRdmaInfo]; exist {
-			err := json.Unmarshal([]byte(infoStr), &oldInfo)
+			err = json.Unmarshal([]byte(infoStr), &oldInfo)
 			if err != nil {
 				return err
 			}
@@ -188,9 +214,8 @@ func (d *daemon) initRdmaIpamManager() error {
 		}
 	}
 
-	if len(rdmaInfo.RdmaInterfaces) == 0 {
-		log.Infof("Skip rdma ipam init due to no rdma info")
-		return nil
+	if rdmaInfo == nil || len(rdmaInfo.RdmaInterfaces) == 0 {
+		return fmt.Errorf("no rdma info")
 	}
 
 	// init
@@ -218,20 +243,19 @@ func (d *daemon) initRdmaIpamManager() error {
 		}}
 	}
 
-	err := cidr.PrepareConfig(ipamCfg)
+	err = cidr.PrepareConfig(ipamCfg)
 	if err != nil {
 		return fmt.Errorf("rdma ipam config err, %v", err)
 	}
 	ipam, err := cidr.NewAllocatorGroup(ipamCfg)
 	if err != nil {
-		return fmt.Errorf("init rdma ipam failed, %v", err)
+		return fmt.Errorf("create allocator group failed, %v", err)
 	}
 	d.rdmaIpamManager = &RdmaIpamManager{
 		ipams:          ipam,
 		hpcRoute:       rdmaInfo.HpcRoute,
 		rdmaInterfaces: rdmaInterfaces,
 	}
-	log.Infof("Init rdma ipam manager success")
 	return nil
 }
 
@@ -255,8 +279,12 @@ func (d *daemon) createRdmaEndpoint(_ context.Context, req *pbrpc.CreateEndpoint
 		}
 	}()
 
+	// try init rdma ipam again
 	if d.rdmaIpamManager == nil {
-		return nil, fmt.Errorf("rdma ipam not init")
+		log.InfoS("Try init rdma ipam")
+		if err = d.initRdmaIpamManager(); err != nil {
+			return nil, fmt.Errorf("init rdma ipam failed, %v", err)
+		}
 	}
 
 	var netWorkInterface *pbrpc.NetworkInterface
@@ -325,8 +353,12 @@ func (d *daemon) deleteRdmaEndpoint(_ context.Context, req *pbrpc.DeleteEndpoint
 	}
 
 	// NOTICE: not support stateful pod
+	// try init rdma ipam again
 	if d.rdmaIpamManager == nil {
-		return nil, fmt.Errorf("rdma ipam not init")
+		log.InfoS("Try init rdma ipam")
+		if err = d.initRdmaIpamManager(); err != nil {
+			return nil, fmt.Errorf("init rdma ipam failed, %v", err)
+		}
 	}
 	err = d.rdmaIpamManager.ipams.Release(req.GetIpamArgs().GetDeviceId(), ownerId(req.Namespace, req.Name), req.IfName)
 	if err != nil {
@@ -340,7 +372,7 @@ func ownerId(ele ...string) string {
 }
 
 func getHpcRoute(rdmaInterfaces []types.RdmaInterface) (*types.HpcRoute, error) {
-	// NOTICE: not support ipv6, and expected one
+	// NOTICE: not support ipv6, and use the largest one
 	var expectedRoutes []struct {
 		dev   string
 		route netlink.Route
@@ -365,13 +397,30 @@ func getHpcRoute(rdmaInterfaces []types.RdmaInterface) (*types.HpcRoute, error) 
 			}
 		}
 	}
-	if l := len(expectedRoutes); l != 1 {
-		return nil, fmt.Errorf("num of hpc route is %d, not expected", l)
+	if len(expectedRoutes) == 0 {
+		return nil, fmt.Errorf("not founc hpc route")
 	}
 
+	index := 0
+	minOnes := 32
+	for i := range expectedRoutes {
+		log.InfoS("Found hpc route:",
+			"Dst", expectedRoutes[i].route.Dst.String(),
+			"Gw", expectedRoutes[i].route.Gw.String(),
+			"Dev", expectedRoutes[i].dev)
+		if ones, _ := expectedRoutes[i].route.Dst.Mask.Size(); ones < minOnes {
+			minOnes = ones
+			index = i
+		}
+	}
+
+	log.InfoS("Get hpc route:",
+		"Dst", expectedRoutes[index].route.Dst.String(),
+		"Gw", expectedRoutes[index].route.Gw.String(),
+		"Dev", expectedRoutes[index].dev)
 	return &types.HpcRoute{
-		Dst: expectedRoutes[0].route.Dst.String(),
-		Gw:  expectedRoutes[0].route.Gw.String(),
-		Dev: expectedRoutes[0].dev,
+		Dst: expectedRoutes[index].route.Dst.String(),
+		Gw:  expectedRoutes[index].route.Gw.String(),
+		Dev: expectedRoutes[index].dev,
 	}, nil
 }

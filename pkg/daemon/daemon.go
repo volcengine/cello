@@ -329,7 +329,7 @@ func newDaemon(k8sService k8s.Service, apiClient ec2.EC2, podPersist PodPersiste
 	if datatype.BoolValue(config.Config.EnableRdmaIpam) && d.instanceLimit.GetLimit().RdmaSupport {
 		err = d.initRdmaIpamManager()
 		if err != nil {
-			return nil, fmt.Errorf("init rdma ipam failed, %v", err)
+			log.ErrorS(err, "Init rdma ipam failed")
 		}
 		go wait.PollUntilContextCancel(context.TODO(), 3*time.Hour, true, func(ctx context.Context) (bool, error) {
 			return updateHpcTopologyInfo(d.k8s, apiClient, instanceMeta)
