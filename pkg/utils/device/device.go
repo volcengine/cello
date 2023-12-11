@@ -16,6 +16,7 @@
 package device
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,7 +26,8 @@ import (
 )
 
 var (
-	sysBusPci = "/sys/bus/pci/devices"
+	sysBusPci   = "/sys/bus/pci/devices"
+	ErrNoNetDir = errors.New("no net directory")
 )
 
 type Rdma struct {
@@ -38,7 +40,7 @@ type Rdma struct {
 func GetNetNamesByDeviceId(pciAddr string) ([]string, error) {
 	netDir := filepath.Join(sysBusPci, pciAddr, "net")
 	if _, err := os.Lstat(netDir); err != nil {
-		return nil, fmt.Errorf("no net directory under pci device %s: %v", pciAddr, err)
+		return nil, ErrNoNetDir
 	}
 
 	fInfos, err := os.ReadDir(netDir)
@@ -81,7 +83,8 @@ func getNetMac(pciAddr, netName string) (string, error) {
 	return string(mac), nil
 }
 
-func ListRdma() ([]Rdma, error) {
+// ListRdmaNetDevice list net devices of rdma devices which name has prefix.
+func ListRdmaNetDevice(prefix string) ([]Rdma, error) {
 	var list []Rdma
 	pciAddress, err := ListRdmaPciAddr()
 	if err != nil {
@@ -90,11 +93,14 @@ func ListRdma() ([]Rdma, error) {
 	for _, pci := range pciAddress {
 		var expectedNames []string
 		names, inErr := GetNetNamesByDeviceId(pci)
-		if inErr != nil {
+		if errors.Is(inErr, ErrNoNetDir) {
+			continue
+		} else if inErr != nil {
 			return nil, inErr
 		}
+
 		for _, n := range names {
-			if strings.HasPrefix(n, "eth") {
+			if strings.HasPrefix(n, prefix) {
 				expectedNames = append(expectedNames, n)
 			}
 		}
