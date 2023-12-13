@@ -52,6 +52,7 @@ import (
 	"github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/mock"
 	"github.com/volcengine/cello/pkg/provider/volcengine/ec2"
 	ec2Mock "github.com/volcengine/cello/pkg/provider/volcengine/ec2/mock"
+	"github.com/volcengine/cello/pkg/tracing"
 	"github.com/volcengine/cello/pkg/utils/datatype"
 	"github.com/volcengine/cello/types"
 )
@@ -1129,6 +1130,60 @@ func TestDaemon(t *testing.T) {
 	t.Run("TestGC", func(t *testing.T) {
 		err = d.gc()
 		assert.NoError(t, err)
+	})
+
+	t.Run("TestEventRecord", func(t *testing.T) {
+		// test node event
+		assert.NoError(t, tracing.RecordNodeEvent(corev1.EventTypeWarning, "ForTest", "nodeEvent"))
+		time.Sleep(2 * time.Second) // wait event send success
+		// fake event of client-go only support label selector
+		nodeEventList, inErr := k8sClient.CoreV1().Events("").List(context.TODO(), metav1.ListOptions{})
+		assert.NoError(t, inErr)
+
+		match := 0
+		for _, event := range nodeEventList.Items {
+			if event.Reason == "ForTest" && event.Message == "nodeEvent" {
+				match++
+			}
+		}
+		assert.Equal(t, 1, match)
+
+		// test pod event
+		_, err = k8sClient.CoreV1().Pods("default").Create(context.Background(), &corev1.Pod{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Pod",
+				APIVersion: "v1",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pod-for-test-record-event",
+				Namespace: "default",
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name:  "my-container",
+						Image: "nginx",
+					},
+				},
+			},
+			Status: corev1.PodStatus{},
+		}, metav1.CreateOptions{})
+		assert.NoError(t, err)
+
+		assert.NoError(t, tracing.RecordPodEvent("pod-for-test-record-event", "default",
+			corev1.EventTypeWarning, "ForTest", "podEvent"))
+		time.Sleep(2 * time.Second) // wait event send success
+		// fake event of client-go only support label selector
+		podEventList, inErr := k8sClient.CoreV1().Events("default").List(context.TODO(), metav1.ListOptions{})
+		assert.NoError(t, inErr)
+
+		match = 0
+		for _, event := range podEventList.Items {
+			if event.Reason == "ForTest" && event.Message == "podEvent" {
+				match++
+			}
+		}
+		assert.Equal(t, 1, match)
 	})
 
 	_ = prg.Signal(signal)

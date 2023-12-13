@@ -48,8 +48,9 @@ import (
 )
 
 const (
-	RdmaSubSysName     = "rdma_ipam"
-	RdmaIpamInitFailed = "RdmaIpamInitFailed"
+	RdmaSubSysName      = "rdma_ipam"
+	RdmaIpamInitFailed  = "RdmaIpamInitFailed"
+	RdmaIpamInitSucceed = "RdmaIpamInitSucceed"
 )
 
 var rdmaIpamInitMutex = sync.Mutex{}
@@ -172,6 +173,7 @@ func (d *daemon) initRdmaIpamManager() (err error) {
 			metrics.SubSysErrInc(RdmaSubSysName, RdmaIpamInitFailed, err)
 			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, RdmaIpamInitFailed, err.Error())
 		} else {
+			_ = tracing.RecordNodeEvent(v1.EventTypeNormal, RdmaIpamInitSucceed, "rdma ipam init succeed")
 			log.Infof("Init rdma ipam manager success")
 		}
 	}()
