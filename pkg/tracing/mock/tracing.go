@@ -28,8 +28,9 @@ func NewFakeTracker() *tracing.Tracer {
 		log.InfoS("show trace in podEventRecord", "eventType", eventType, "reason", reason, "ns", podNamespace, "name", podName, "message", message)
 		return nil
 	}
-	nodeEventRecord := func(eventType, reason, message string) {
+	nodeEventRecord := func(eventType, reason, message string) error {
 		log.InfoS("show trace in nodeEventRecord", "eventType", eventType, "reason", reason, "message", message)
+		return nil
 	}
 	t.RegisterEventRecorder(nodeEventRecord, podEventRecord)
 	return t

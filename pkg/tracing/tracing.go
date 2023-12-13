@@ -28,7 +28,7 @@ var (
 type PodEventRecorder func(podName, podNamespace, eventType, reason, message string) error
 
 // NodeEventRecorder records event on node.
-type NodeEventRecorder func(eventType, reason, message string)
+type NodeEventRecorder func(eventType, reason, message string) error
 
 // Tracer manages tracing handlers registered from the system.
 type Tracer struct {
@@ -59,8 +59,7 @@ func (t *Tracer) RecordNodeEvent(eventType, reason, message string) error {
 		return errors.New("no node event recorder registered")
 	}
 
-	t.nodeEvent(eventType, reason, message)
-	return nil
+	return t.nodeEvent(eventType, reason, message)
 }
 
 // RegisterEventRecorder registers pod & node event recorder to a tracer.

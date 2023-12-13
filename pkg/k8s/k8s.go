@@ -77,7 +77,7 @@ type Service interface {
 	GetNodeDynamicConfigName() string
 
 	// RecordNodeEvent record events of node
-	RecordNodeEvent(eventType, reason, message string)
+	RecordNodeEvent(eventType, reason, message string) error
 
 	// RecordPodEvent record events of pod
 	RecordPodEvent(podName, podNamespace, eventType, reason, message string) error
@@ -164,7 +164,7 @@ func (k *k8sManager) GetNodeDynamicConfigName() string {
 	return cfName
 }
 
-func (k *k8sManager) RecordNodeEvent(eventType, reason, message string) {
+func (k *k8sManager) RecordNodeEvent(eventType, reason, message string) error {
 	ref := &corev1.ObjectReference{
 		Kind:      "Node",
 		Name:      k.node.Name,
@@ -173,6 +173,7 @@ func (k *k8sManager) RecordNodeEvent(eventType, reason, message string) {
 	}
 
 	k.recorder.Event(ref, eventType, reason, message)
+	return nil
 }
 
 func (k *k8sManager) RecordPodEvent(podName, podNamespace, eventType, reason, message string) error {
@@ -424,7 +425,7 @@ func NewK8sService(nodeName string, clientSet kubernetes.Interface) (Service, er
 	recorder := broadcaster.NewRecorder(scheme.Scheme, source)
 
 	sink := &typedv1.EventSinkImpl{
-		Interface: typedv1.New(clientSet.CoreV1().RESTClient()).Events(""),
+		Interface: clientSet.CoreV1().Events(""),
 	}
 	broadcaster.StartRecordingToSink(sink)
 

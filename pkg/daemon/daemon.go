@@ -181,6 +181,9 @@ func newDaemon(k8sService k8s.Service, apiClient ec2.EC2, podPersist PodPersiste
 	// register metrics
 	metrics.PrometheusRegister()
 
+	// register global event recorder
+	tracing.RegisterEventRecorder(k8sService.RecordNodeEvent, k8sService.RecordPodEvent)
+
 	subnetManager, err := helper.NewPodSubnetManager(instanceMeta.GetAvailabilityZone(), instanceMeta.GetVpcId(), apiClient,
 		helper.WithEventRecord(tracing.DefaultGlobalTracer()), helper.WithDefaultEventLimiter())
 	if err != nil {
