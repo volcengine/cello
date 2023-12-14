@@ -111,5 +111,21 @@ var _ = Describe("Cidr IPAM Allocator", func() {
 			err := allocators.Release("def", "containerdId2", "eth1")
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		It("should success to add a new rangset", func() {
+			newset := &allocator.RangeSet{
+				allocator.Range{
+					RangeStart: net.IP{198, 19, 58, 3},
+					RangeEnd:   net.IP{198, 19, 58, 29},
+					Subnet: cniTypes.IPNet{
+						IP:   net.IP{198, 19, 58, 0},
+						Mask: net.CIDRMask(27, 32),
+					},
+					Gateway: net.IP{198, 19, 58, 1},
+				},
+			}
+			err := allocators.AddRangeSet("new range", path.Join(tempDir, "allocator"), newset)
+			Expect(err).NotTo(HaveOccurred())
+		})
 	})
 })

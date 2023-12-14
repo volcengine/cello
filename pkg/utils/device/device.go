@@ -86,7 +86,10 @@ func (n *NetDev) IsPciDevice() bool {
 func GetNetNamesByDeviceId(pciAddr string) ([]string, error) {
 	netDir := filepath.Join(sysBusPciDir, pciAddr, "net")
 	if _, err := os.Lstat(netDir); err != nil {
-		return nil, ErrNoNetDir
+		netDir = filepath.Join(sysBusPciDir, pciAddr, "virtio2", "net") //could be virtual device
+		if _, err := os.Lstat(netDir); err != nil {
+			return nil, ErrNoNetDir
+		}
 	}
 
 	fInfos, err := os.ReadDir(netDir)
