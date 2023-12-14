@@ -21,10 +21,15 @@ import (
 	"net"
 	"os"
 	"path"
+	"strconv"
 	"time"
 
+	"github.com/containernetworking/plugins/pkg/ns"
+	"github.com/containernetworking/plugins/pkg/testutils"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/vishvananda/netlink"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	corev1 "k8s.io/api/core/v1"
@@ -56,6 +61,46 @@ func createCelloClient(ctx context.Context, apiAddress string) (pbrpc.CelloClien
 
 	celloClient := pbrpc.NewCelloClient(grpcConn)
 	return celloClient, grpcConn, nil
+}
+
+func setupNetDevices(prefix string, quantity int) ([]netlink.Link, error) {
+	links := make([]netlink.Link, 0, quantity)
+	for i := 0; i < quantity; i++ {
+		devName := prefix + strconv.Itoa(i)
+
+		// create dummy device.
+		dummy := &netlink.Dummy{
+			LinkAttrs: netlink.LinkAttrs{
+				Name: devName,
+			},
+		}
+		err := netlink.LinkAdd(dummy)
+		if err != nil {
+			return nil, fmt.Errorf("error while adding dummy: %v device:%w", devName, err)
+		}
+		devAddr := net.ParseIP(fmt.Sprintf("169.254.%v.1", i))
+		if i < quantity-1 {
+			err = netlink.AddrAdd(dummy, &netlink.Addr{
+				IPNet: &net.IPNet{
+					IP:   devAddr,
+					Mask: net.CIDRMask(16, 32),
+				},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("error while adding addr to dummy device:%w", err)
+			}
+
+		}
+		links = append(links, dummy)
+	}
+	return links, nil
+}
+
+func cleanupNetDevices(links []netlink.Link) {
+	for i := range links {
+		_ = netlink.LinkDel(links[i])
+	}
+	return
 }
 
 var _ = Describe("Test for cello-lite daemon ", func() {
@@ -188,5 +233,104 @@ var _ = Describe("Test for cello-lite daemon ", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
+		It("should failed to call createEndpoint", func() {
+			_, err := celloClient.CreateEndpoint(context.TODO(), &pbrpc.CreateEndpointRequest{
+				Name:             "pod123456",
+				Namespace:        "",
+				InfraContainerId: uuid.NewString(),
+				IfName:           "eth1",
+				NetNs:            "",
+				IpamType:         "",
+				IpamArgs:         nil,
+			})
+			Expect(err).To(HaveOccurred())
+		})
+
+	})
+
+	Describe("Test for ipam", func() {
+		var testns ns.NetNS
+		var links []netlink.Link
+		linkNamePrefix := "vnet"
+		defer GinkgoRecover()
+		BeforeEach(func() {
+			var err error
+			defer GinkgoRecover()
+			testns, err = testutils.NewNS()
+			Expect(err).NotTo(HaveOccurred())
+			testns.Do(func(netNS ns.NetNS) error {
+				defer GinkgoRecover()
+				links, err = setupNetDevices(linkNamePrefix, 3)
+				Expect(err).NotTo(HaveOccurred())
+
+				ipamStore := violin.DefaultIpamStoreDir
+				daemon, err = violin.NewDaemonWithOptions(context.Background(), nodeName,
+					violin.WithAgentAPIAddress(apiEndpoint),
+					violin.WithKubeClient(k8sClient),
+					violin.WithIPManager(&violin.NetworkConfig{
+						IpamStoreDir: &ipamStore,
+						DevicePrefix: &linkNamePrefix,
+					}))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(daemon).NotTo(BeNil())
+				daemonHasStarted := make(chan struct{})
+				go func() {
+					err = daemon.Start(daemonHasStarted)
+				}()
+				<-daemonHasStarted
+				Expect(err).NotTo(HaveOccurred())
+
+				ctx, cancel := context.WithTimeout(context.Background(), timeout)
+				defer cancel()
+				celloClient, _, err = createCelloClient(ctx, apiEndpoint)
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+		})
+		AfterEach(func() {
+			testns.Do(func(netNS ns.NetNS) error {
+				defer GinkgoRecover()
+				Expect(daemon).NotTo(BeNil())
+				daemon.Stop()
+				_, err := os.ReadFile(apiEndpoint)
+				Expect(os.IsNotExist(err)).To(BeTrue())
+				cleanupNetDevices(links)
+				return nil
+			})
+			err := testns.Close()
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should success call createEndpoint", func() {
+			resp, err := celloClient.CreateEndpoint(context.TODO(), &pbrpc.CreateEndpointRequest{
+				Name:             "pod123456",
+				Namespace:        "",
+				InfraContainerId: uuid.NewString(),
+				IfName:           "eth1",
+				NetNs:            "/var/log/ns1",
+				IpamArgs:         &pbrpc.IpamArgs{DeviceId: links[0].Attrs().Name},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
+			resp2, err := celloClient.DeleteEndpoint(context.TODO(), &pbrpc.DeleteEndpointRequest{
+				Name:             "pod123456",
+				Namespace:        "",
+				InfraContainerId: uuid.NewString(),
+				IfName:           "eth1",
+				IpamArgs:         &pbrpc.IpamArgs{DeviceId: links[0].Attrs().Name},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp2).NotTo(BeNil())
+			resp3, err := celloClient.CreateEndpoint(context.TODO(), &pbrpc.CreateEndpointRequest{
+				Name:             "pod123456",
+				Namespace:        "",
+				InfraContainerId: uuid.NewString(),
+				IfName:           "eth1",
+				NetNs:            "/var/log/ns1",
+				IpamArgs:         &pbrpc.IpamArgs{DeviceId: "inet1"},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(resp3).To(BeNil())
+		})
 	})
 })

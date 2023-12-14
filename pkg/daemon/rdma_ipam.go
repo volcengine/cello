@@ -232,10 +232,6 @@ func (d *daemon) initRdmaIpamManager() (err error) {
 		}}
 	}
 
-	err = cidr.PrepareConfig(ipamCfg)
-	if err != nil {
-		return fmt.Errorf("rdma ipam config err, %v", err)
-	}
 	ipam, err := cidr.NewAllocatorGroup(ipamCfg)
 	if err != nil {
 		return fmt.Errorf("create allocator group failed, %v", err)
