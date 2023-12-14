@@ -319,9 +319,8 @@ func (agent *liteAgent) CreateEndpoint(_ context.Context, req *pbrpc.CreateEndpo
 
 	var netWorkInterface *pbrpc.NetworkInterface
 	deviceId := req.GetIpamArgs().GetDeviceId()
-	dev, exist := agent.mgr.DeviceById(deviceId)
-	if !exist {
-		err = fmt.Errorf("can't find device by identity %s", deviceId)
+	dev, err := agent.mgr.DeviceById(deviceId)
+	if err != nil {
 		return nil, err
 	}
 	ipCfg, err := agent.mgr.ipams.Get(dev.IfName(), req.InfraContainerId, req.IfName, nil)
@@ -384,8 +383,8 @@ func (agent *liteAgent) DeleteEndpoint(_ context.Context, req *pbrpc.DeleteEndpo
 		return nil, fmt.Errorf("network manager not initialized")
 	}
 
-	dev, exist := agent.mgr.DeviceById(req.GetIpamArgs().GetDeviceId())
-	if !exist {
+	dev, err := agent.mgr.DeviceById(req.GetIpamArgs().GetDeviceId())
+	if err != nil {
 		err = agent.mgr.ipams.Release("", req.InfraContainerId, req.IfName)
 		if err != nil {
 			return nil, err

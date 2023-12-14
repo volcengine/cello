@@ -72,8 +72,7 @@ var _ = Describe("Cidr IPAM Config", func() {
 		Expect(err).NotTo(HaveOccurred())
 		config, err := cidr.LoadConfigFromFile(configFile)
 		Expect(err).NotTo(HaveOccurred())
-		err = cidr.PrepareConfig(config)
-		Expect(err).NotTo(HaveOccurred())
+
 		Expect(config).To(Equal(&configData))
 	})
 
