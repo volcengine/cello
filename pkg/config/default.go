@@ -23,6 +23,7 @@ const (
 	NetworkModeENIShare     = "eni_shared"
 	NetworkModeENIExclusive = "eni_exclusive"
 	PlatformVKE             = "vke"
+	SitePrefixVolcanoEngine = "volc:"
 
 	// DefaultDebugPort is the port for debug and prometheus metrics.
 	DefaultDebugPort                   = 11414

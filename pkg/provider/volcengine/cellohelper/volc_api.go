@@ -972,12 +972,12 @@ func (e *VolcApiImpl) GetENI(mac string) (*types.ENI, error) {
 }
 
 func New(apiClient ec2.EC2, ipStack types.IPFamily, subnetMgr SubnetManager, instanceMetadata InstanceMetadataGetter,
-	platform string) (*VolcApiImpl, error) {
+	platform, accountSitePrefix string) (*VolcApiImpl, error) {
 	tags := make(map[string]string)
 	if platform == "" || strings.EqualFold(platform, config.PlatformVKE) {
-		tags[VkePlatformTagKey] = VkePlatformTagValue
-		tags[VkeComponentTagKey] = Component
-		tags[VkeInstanceIdTagKey] = instanceMetadata.GetInstanceId()
+		tags[accountSitePrefix+VkePlatformTagKey] = VkePlatformTagValue
+		tags[accountSitePrefix+VkeComponentTagKey] = Component
+		tags[accountSitePrefix+VkeInstanceIdTagKey] = instanceMetadata.GetInstanceId()
 	} else {
 		tags[K8sComponentTagKey] = Component
 		tags[K8sInstanceIdTagKey] = instanceMetadata.GetInstanceId()

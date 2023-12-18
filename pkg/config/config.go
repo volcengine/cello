@@ -110,6 +110,9 @@ type DaemonConfig struct {
 	// - "kubernetes": The cluster is hosted by user(self-managed).
 	Platform *string `yaml:"platform" json:"platform,omitempty"`
 
+	// AccountSitePrefix is the resource tag prefix when using VKE.
+	AccountSitePrefix *string `yaml:"accountSitePrefix" json:"accountSitePrefix,omitempty"`
+
 	// Regular apiserver request QPS limit for kube client
 	KubeClientQPS *float64 `yaml:"kubeClientQPS" json:"kubeClientQPS,omitempty"`
 
@@ -272,6 +275,11 @@ func (c *DaemonConfig) verifyConfig() error {
 		c.Platform = datatype.String(PlatformVKE)
 	}
 	log.Infof("--Platform=%s", datatype.StringValue(c.Platform))
+
+	if c.AccountSitePrefix == nil {
+		c.AccountSitePrefix = datatype.String(SitePrefixVolcanoEngine)
+	}
+	log.Infof("--SiteNamePrefix=%s", datatype.StringValue(c.AccountSitePrefix))
 
 	if c.EnableRdmaIpam == nil {
 		c.EnableRdmaIpam = datatype.Bool(true)
