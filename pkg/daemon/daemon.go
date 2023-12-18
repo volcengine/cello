@@ -203,7 +203,9 @@ func newDaemon(k8sService k8s.Service, apiClient ec2.EC2, podPersist PodPersiste
 	}
 
 	if volcApi == nil {
-		volcApi, err = helper.New(apiClient, types.IPFamily(*config.Config.IPFamily), subnetManager, instanceMeta, datatype.StringValue(config.Config.Platform))
+		volcApi, err = helper.New(apiClient, types.IPFamily(*config.Config.IPFamily), subnetManager, instanceMeta,
+			datatype.StringValue(config.Config.Platform),
+			datatype.StringValue(config.Config.AccountSitePrefix))
 		if err != nil {
 			return nil, err
 		}

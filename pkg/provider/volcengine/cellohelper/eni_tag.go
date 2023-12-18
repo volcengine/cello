@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	VkeTagPrefix        = "volc:vke:"
+	VkeTagPrefix        = "vke:"
 	VkePlatformTagKey   = VkeTagPrefix + "createdby-vke-flag"
 	VkePlatformTagValue = "true"
 	VkeComponentTagKey  = VkeTagPrefix + "created-by"
