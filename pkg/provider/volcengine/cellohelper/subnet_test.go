@@ -36,188 +36,183 @@ import (
 	"github.com/volcengine/cello/types"
 )
 
-const (
-	AccountId       = "accountId-123"
-	CreationTime    = "2022-02-15T17:36:13+08:00"
-	UpdateTime      = "2022-02-15T17:36:13+08:00"
-	ProjectName     = "default"
-	StatusAvailable = "Available"
-	VpcId           = "vpc-test123"
-	ZoneId          = "cn-beijing-a"
-	ZoneId2         = "cn-beijing-b"
-)
-
-var (
-	subnets                                               map[string]*ec2.SubnetForDescribeSubnetsOutput
-	ctrl                                                  *gomock.Controller
-	apiClient                                             ec2.APIGroupSubnet
-	subnetId1, subnetId2, subnetId3, subnetId4, subnetId5 string
-)
-
-func setup(t *testing.T) {
-	ctrl = gomock.NewController(t)
-	mockClient := ec2Mock.NewMockEC2(ctrl)
-	apiClient = mockClient
-
-	subnets = map[string]*ec2.SubnetForDescribeSubnetsOutput{}
-	subnetId1 = "subnet-1"
-	subnets[subnetId1] = &ec2.SubnetForDescribeSubnetsOutput{
-		AccountId:               volcengine.String(AccountId),
-		AvailableIpAddressCount: volcengine.Int64(240),
-		CidrBlock:               volcengine.String("192.168.1.0/24"),
-		CreationTime:            volcengine.String(CreationTime),
-		ProjectName:             volcengine.String(ProjectName),
-		Status:                  volcengine.String(StatusAvailable),
-		SubnetId:                volcengine.String(subnetId1),
-		SubnetName:              volcengine.String(subnetId1),
-		TotalIpv4Count:          volcengine.Int64(255),
-		UpdateTime:              volcengine.String(UpdateTime),
-		VpcId:                   volcengine.String(VpcId),
-		ZoneId:                  volcengine.String(ZoneId),
-	}
-	subnetId2 = "subnet-2"
-	subnets[subnetId2] = &ec2.SubnetForDescribeSubnetsOutput{
-		AccountId:               volcengine.String(AccountId),
-		AvailableIpAddressCount: volcengine.Int64(32),
-		CidrBlock:               volcengine.String("192.168.2.0/24"),
-		CreationTime:            volcengine.String(CreationTime),
-		ProjectName:             volcengine.String(ProjectName),
-		Status:                  volcengine.String(StatusAvailable),
-		SubnetId:                volcengine.String(subnetId2),
-		SubnetName:              volcengine.String(subnetId2),
-		TotalIpv4Count:          volcengine.Int64(255),
-		UpdateTime:              volcengine.String(UpdateTime),
-		VpcId:                   volcengine.String(VpcId),
-		ZoneId:                  volcengine.String(ZoneId),
-	}
-
-	subnetId3 = "subnet-3"
-	subnets[subnetId3] = &ec2.SubnetForDescribeSubnetsOutput{
-		AccountId:               volcengine.String(AccountId),
-		AvailableIpAddressCount: volcengine.Int64(0),
-		CidrBlock:               volcengine.String("192.168.3.0/24"),
-		CreationTime:            volcengine.String(CreationTime),
-		ProjectName:             volcengine.String(ProjectName),
-		Status:                  volcengine.String(StatusAvailable),
-		SubnetId:                volcengine.String(subnetId3),
-		SubnetName:              volcengine.String(subnetId3),
-		TotalIpv4Count:          volcengine.Int64(255),
-		UpdateTime:              volcengine.String(UpdateTime),
-		VpcId:                   volcengine.String(VpcId),
-		ZoneId:                  volcengine.String(ZoneId),
-	}
-
-	subnetId4 = "subnet-4"
-	subnets[subnetId4] = &ec2.SubnetForDescribeSubnetsOutput{
-		AccountId:               volcengine.String(AccountId),
-		AvailableIpAddressCount: volcengine.Int64(251),
-		CidrBlock:               volcengine.String("192.168.4.0/24"),
-		CreationTime:            volcengine.String(CreationTime),
-		ProjectName:             volcengine.String(ProjectName),
-		Status:                  volcengine.String(StatusAvailable),
-		SubnetId:                volcengine.String(subnetId4),
-		SubnetName:              volcengine.String(subnetId4),
-		TotalIpv4Count:          volcengine.Int64(255),
-		UpdateTime:              volcengine.String(UpdateTime),
-		VpcId:                   volcengine.String(VpcId),
-		ZoneId:                  volcengine.String(ZoneId2),
-	}
-
-	subnetId5 = "subnet-5"
-	subnets[subnetId5] = &ec2.SubnetForDescribeSubnetsOutput{
-		AccountId:               volcengine.String(AccountId),
-		AvailableIpAddressCount: volcengine.Int64(27),
-		CidrBlock:               volcengine.String("192.168.5.0/24"),
-		CreationTime:            volcengine.String(CreationTime),
-		ProjectName:             volcengine.String(ProjectName),
-		Status:                  volcengine.String(StatusAvailable),
-		SubnetId:                volcengine.String(subnetId5),
-		SubnetName:              volcengine.String(subnetId5),
-		TotalIpv4Count:          volcengine.Int64(255),
-		UpdateTime:              volcengine.String(UpdateTime),
-		VpcId:                   volcengine.String(VpcId),
-		ZoneId:                  volcengine.String(ZoneId),
-	}
-
-	mockClient.EXPECT().DescribeSubnets(gomock.Any()).DoAndReturn(func(input *vpc.DescribeSubnetsInput) (*ec2.DescribeSubnetsOutput, error) {
-		var result []*ec2.SubnetForDescribeSubnetsOutput
-		for _, id := range input.SubnetIds {
-			if item, exist := subnets[*id]; exist {
-				result = append(result, item)
-			}
-		}
-		metadata := &response.ResponseMetadata{
-			RequestId: "Mock_DescribeSubnets_EEFF",
-			Action:    "DescribeSubnets",
-			Version:   "2022-04-01",
-			Service:   "vpc",
-			Region:    "cn-a",
-			HTTPCode:  http.StatusOK,
-			Error:     nil,
-		}
-		return &ec2.DescribeSubnetsOutput{
-			Metadata:   metadata,
-			PageNumber: volcengine.Int64(1),
-			PageSize:   volcengine.Int64(100),
-			RequestId:  volcengine.String("Mock_EEFF"),
-			Subnets:    result,
-			TotalCount: volcengine.Int64(int64(len(result))),
-		}, nil
-	}).AnyTimes()
-
-	mockClient.EXPECT().DescribeSubnetAttributes(gomock.Any()).DoAndReturn(func(input *vpc.DescribeSubnetAttributesInput) (*ec2.DescribeSubnetAttributesOutput, error) {
-		metadata := &response.ResponseMetadata{
-			RequestId: "Mock_DescribeSubnetAttributes_EEFF",
-			Action:    "DescribeSubnetAttributes",
-			Version:   "2022-04-01",
-			Service:   "vpc",
-			Region:    "cn-a",
-			HTTPCode:  http.StatusOK,
-			Error:     nil,
-		}
-
-		subnet, exist := subnets[volcengine.StringValue(input.SubnetId)]
-		if !exist {
-			metadata.HTTPCode = http.StatusNotFound
-			metadata.Error = &response.Error{
-				CodeN:   0,
-				Code:    apiErr.InvalidSubnetNotFound,
-				Message: fmt.Sprintf("subnet %s not found", volcengine.StringValue(input.SubnetId)),
-			}
-			return &ec2.DescribeSubnetAttributesOutput{
-				Metadata: metadata,
-			}, apiErr.NewAPIRequestErr(metadata, nil)
-		}
-
-		return &ec2.DescribeSubnetAttributesOutput{
-			Metadata:                metadata,
-			AccountId:               subnet.AccountId,
-			AvailableIpAddressCount: subnet.AvailableIpAddressCount,
-			CidrBlock:               subnet.CidrBlock,
-			CreationTime:            subnet.CreationTime,
-			Description:             subnet.Description,
-			Ipv6CidrBlock:           subnet.Ipv6CidrBlock,
-			NetworkAclId:            subnet.NetworkAclId,
-			ProjectName:             subnet.ProjectName,
-			RequestId:               volcengine.String(metadata.RequestId),
-			Status:                  subnet.Status,
-			SubnetId:                subnet.SubnetId,
-			SubnetName:              subnet.SubnetName,
-			TotalIpv4Count:          subnet.TotalIpv4Count,
-			UpdateTime:              subnet.UpdateTime,
-			VpcId:                   subnet.VpcId,
-			ZoneId:                  subnet.ZoneId,
-		}, nil
-	}).AnyTimes()
-}
-
-func clean() {
-	ctrl.Finish()
-}
-
 func TestPodSubnetManager(t *testing.T) {
-	setup(t)
-	defer clean()
+	const (
+		AccountId       = "accountId-123"
+		CreationTime    = "2022-02-15T17:36:13+08:00"
+		UpdateTime      = "2022-02-15T17:36:13+08:00"
+		ProjectName     = "default"
+		StatusAvailable = "Available"
+		VpcId           = "vpc-test123"
+		ZoneId          = "cn-beijing-a"
+		ZoneId2         = "cn-beijing-b"
+	)
+
+	var (
+		subnets                                               map[string]*ec2.SubnetForDescribeSubnetsOutput
+		ctrl                                                  *gomock.Controller
+		apiClient                                             ec2.APIGroupSubnet
+		subnetId1, subnetId2, subnetId3, subnetId4, subnetId5 string
+	)
+
+	func() {
+		ctrl = gomock.NewController(t)
+		mockClient := ec2Mock.NewMockEC2(ctrl)
+		apiClient = mockClient
+
+		subnets = map[string]*ec2.SubnetForDescribeSubnetsOutput{}
+		subnetId1 = "subnet-1"
+		subnets[subnetId1] = &ec2.SubnetForDescribeSubnetsOutput{
+			AccountId:               volcengine.String(AccountId),
+			AvailableIpAddressCount: volcengine.Int64(240),
+			CidrBlock:               volcengine.String("192.168.1.0/24"),
+			CreationTime:            volcengine.String(CreationTime),
+			ProjectName:             volcengine.String(ProjectName),
+			Status:                  volcengine.String(StatusAvailable),
+			SubnetId:                volcengine.String(subnetId1),
+			SubnetName:              volcengine.String(subnetId1),
+			TotalIpv4Count:          volcengine.Int64(255),
+			UpdateTime:              volcengine.String(UpdateTime),
+			VpcId:                   volcengine.String(VpcId),
+			ZoneId:                  volcengine.String(ZoneId),
+		}
+		subnetId2 = "subnet-2"
+		subnets[subnetId2] = &ec2.SubnetForDescribeSubnetsOutput{
+			AccountId:               volcengine.String(AccountId),
+			AvailableIpAddressCount: volcengine.Int64(32),
+			CidrBlock:               volcengine.String("192.168.2.0/24"),
+			CreationTime:            volcengine.String(CreationTime),
+			ProjectName:             volcengine.String(ProjectName),
+			Status:                  volcengine.String(StatusAvailable),
+			SubnetId:                volcengine.String(subnetId2),
+			SubnetName:              volcengine.String(subnetId2),
+			TotalIpv4Count:          volcengine.Int64(255),
+			UpdateTime:              volcengine.String(UpdateTime),
+			VpcId:                   volcengine.String(VpcId),
+			ZoneId:                  volcengine.String(ZoneId),
+		}
+
+		subnetId3 = "subnet-3"
+		subnets[subnetId3] = &ec2.SubnetForDescribeSubnetsOutput{
+			AccountId:               volcengine.String(AccountId),
+			AvailableIpAddressCount: volcengine.Int64(0),
+			CidrBlock:               volcengine.String("192.168.3.0/24"),
+			CreationTime:            volcengine.String(CreationTime),
+			ProjectName:             volcengine.String(ProjectName),
+			Status:                  volcengine.String(StatusAvailable),
+			SubnetId:                volcengine.String(subnetId3),
+			SubnetName:              volcengine.String(subnetId3),
+			TotalIpv4Count:          volcengine.Int64(255),
+			UpdateTime:              volcengine.String(UpdateTime),
+			VpcId:                   volcengine.String(VpcId),
+			ZoneId:                  volcengine.String(ZoneId),
+		}
+
+		subnetId4 = "subnet-4"
+		subnets[subnetId4] = &ec2.SubnetForDescribeSubnetsOutput{
+			AccountId:               volcengine.String(AccountId),
+			AvailableIpAddressCount: volcengine.Int64(251),
+			CidrBlock:               volcengine.String("192.168.4.0/24"),
+			CreationTime:            volcengine.String(CreationTime),
+			ProjectName:             volcengine.String(ProjectName),
+			Status:                  volcengine.String(StatusAvailable),
+			SubnetId:                volcengine.String(subnetId4),
+			SubnetName:              volcengine.String(subnetId4),
+			TotalIpv4Count:          volcengine.Int64(255),
+			UpdateTime:              volcengine.String(UpdateTime),
+			VpcId:                   volcengine.String(VpcId),
+			ZoneId:                  volcengine.String(ZoneId2),
+		}
+
+		subnetId5 = "subnet-5"
+		subnets[subnetId5] = &ec2.SubnetForDescribeSubnetsOutput{
+			AccountId:               volcengine.String(AccountId),
+			AvailableIpAddressCount: volcengine.Int64(27),
+			CidrBlock:               volcengine.String("192.168.5.0/24"),
+			CreationTime:            volcengine.String(CreationTime),
+			ProjectName:             volcengine.String(ProjectName),
+			Status:                  volcengine.String(StatusAvailable),
+			SubnetId:                volcengine.String(subnetId5),
+			SubnetName:              volcengine.String(subnetId5),
+			TotalIpv4Count:          volcengine.Int64(255),
+			UpdateTime:              volcengine.String(UpdateTime),
+			VpcId:                   volcengine.String(VpcId),
+			ZoneId:                  volcengine.String(ZoneId),
+		}
+
+		mockClient.EXPECT().DescribeSubnets(gomock.Any()).DoAndReturn(func(input *vpc.DescribeSubnetsInput) (*ec2.DescribeSubnetsOutput, error) {
+			var result []*ec2.SubnetForDescribeSubnetsOutput
+			for _, id := range input.SubnetIds {
+				if item, exist := subnets[*id]; exist {
+					result = append(result, item)
+				}
+			}
+			metadata := &response.ResponseMetadata{
+				RequestId: "Mock_DescribeSubnets_EEFF",
+				Action:    "DescribeSubnets",
+				Version:   "2022-04-01",
+				Service:   "vpc",
+				Region:    "cn-a",
+				HTTPCode:  http.StatusOK,
+				Error:     nil,
+			}
+			return &ec2.DescribeSubnetsOutput{
+				Metadata:   metadata,
+				PageNumber: volcengine.Int64(1),
+				PageSize:   volcengine.Int64(100),
+				RequestId:  volcengine.String("Mock_EEFF"),
+				Subnets:    result,
+				TotalCount: volcengine.Int64(int64(len(result))),
+			}, nil
+		}).AnyTimes()
+
+		mockClient.EXPECT().DescribeSubnetAttributes(gomock.Any()).DoAndReturn(func(input *vpc.DescribeSubnetAttributesInput) (*ec2.DescribeSubnetAttributesOutput, error) {
+			metadata := &response.ResponseMetadata{
+				RequestId: "Mock_DescribeSubnetAttributes_EEFF",
+				Action:    "DescribeSubnetAttributes",
+				Version:   "2022-04-01",
+				Service:   "vpc",
+				Region:    "cn-a",
+				HTTPCode:  http.StatusOK,
+				Error:     nil,
+			}
+
+			subnet, exist := subnets[volcengine.StringValue(input.SubnetId)]
+			if !exist {
+				metadata.HTTPCode = http.StatusNotFound
+				metadata.Error = &response.Error{
+					CodeN:   0,
+					Code:    apiErr.InvalidSubnetNotFound,
+					Message: fmt.Sprintf("subnet %s not found", volcengine.StringValue(input.SubnetId)),
+				}
+				return &ec2.DescribeSubnetAttributesOutput{
+					Metadata: metadata,
+				}, apiErr.NewAPIRequestErr(metadata, nil)
+			}
+
+			return &ec2.DescribeSubnetAttributesOutput{
+				Metadata:                metadata,
+				AccountId:               subnet.AccountId,
+				AvailableIpAddressCount: subnet.AvailableIpAddressCount,
+				CidrBlock:               subnet.CidrBlock,
+				CreationTime:            subnet.CreationTime,
+				Description:             subnet.Description,
+				Ipv6CidrBlock:           subnet.Ipv6CidrBlock,
+				NetworkAclId:            subnet.NetworkAclId,
+				ProjectName:             subnet.ProjectName,
+				RequestId:               volcengine.String(metadata.RequestId),
+				Status:                  subnet.Status,
+				SubnetId:                subnet.SubnetId,
+				SubnetName:              subnet.SubnetName,
+				TotalIpv4Count:          subnet.TotalIpv4Count,
+				UpdateTime:              subnet.UpdateTime,
+				VpcId:                   subnet.VpcId,
+				ZoneId:                  subnet.ZoneId,
+			}, nil
+		}).AnyTimes()
+	}()
+
+	defer ctrl.Finish()
 
 	// test new
 	podSubnetManager, err := NewPodSubnetManager(ZoneId, VpcId, apiClient,
