@@ -20,8 +20,10 @@ import (
 	"net"
 	"os"
 	"path"
+	"strings"
 
 	cniTypes "github.com/containernetworking/cni/pkg/types"
+	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/plugins/ipam/host-local/backend/allocator"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -73,5 +75,29 @@ var _ = Describe("Cidr IPAM Config", func() {
 		err = cidr.PrepareConfig(config)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(config).To(Equal(&configData))
+	})
+
+	It("should return error if range start bigger than end", func() {
+		ipAddr, subnet, _ := net.ParseCIDR("33.191.7.106/30")
+		config := &cidr.Config{
+			DataDir: path.Join(tempDir, "dir2"),
+			Ranges: map[string]*allocator.RangeSet{
+				"abc": {
+					allocator.Range{
+						RangeStart: ip.NextIP(ipAddr),
+						Subnet:     cniTypes.IPNet(*subnet),
+					},
+				},
+				"def": {
+					allocator.Range{
+						RangeStart: ipAddr,
+						Subnet:     cniTypes.IPNet(*subnet),
+					},
+				},
+			},
+		}
+		err := cidr.PrepareConfig(config)
+		Expect(strings.Contains(err.Error(), "start not smaller than end")).To(Equal(true))
+		Expect(strings.Contains(err.Error(), "abc")).To(Equal(true))
 	})
 })
