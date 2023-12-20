@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/plugins/ipam/host-local/backend/allocator"
 )
 
@@ -51,9 +52,15 @@ func PrepareConfig(c *Config) error {
 		c.Ranges = map[string]*allocator.RangeSet{}
 	}
 
-	for _, v := range c.Ranges {
+	for id, v := range c.Ranges {
 		if err = v.Canonicalize(); err != nil {
 			return err
+		}
+		// check range start and end
+		for _, r := range []allocator.Range(*v) {
+			if ip.Cmp(r.RangeEnd, r.RangeStart) < 0 {
+				return fmt.Errorf("start not smaller than end of range %s in %s", v.String(), id)
+			}
 		}
 	}
 

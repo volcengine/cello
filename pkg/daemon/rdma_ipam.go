@@ -233,8 +233,8 @@ func (d *daemon) initRdmaIpamManager() (err error) {
 		if inErr != nil {
 			return fmt.Errorf("parse subnet %s failed, %v", i.Cidr, inErr)
 		}
-		if o, b := subnet.Mask.Size(); b == 32 && o > 30 {
-			log.Warnf("Network %s of [%s/%s] too small to allocate from, skip", subnet.String(), i.IfName, i.DeviceId)
+		if o, b := subnet.Mask.Size(); b == 32 && o >= 30 {
+			log.Warnf("Network %s of [%s/%s] too small to allocate from, skip as allocator", subnet.String(), i.IfName, i.DeviceId)
 			continue
 		}
 		ipamCfg.Ranges[i.DeviceId] = &allocator.RangeSet{allocator.Range{
