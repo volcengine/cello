@@ -1,0 +1,470 @@
+From 1e5f5e4b53ae1106a502eca9e65b6246adda4452 Mon Sep 17 00:00:00 2001
+From: xinwenqiang <xinwenqiang@bytedance.com>
+Date: Wed, 27 Dec 2023 12:20:24 +0800
+Subject: [PATCH 1/4] fix(ciliumidentity): fix cilium identity gc
+
+---
+ daemon/cmd/daemon_main.go |  38 ++++++---
+ daemon/cmd/gc.go          | 158 --------------------------------------
+ operator/k8s_cep_gc.go    |   4 +-
+ operator/main.go          | 153 +-----------------------------------
+ 4 files changed, 29 insertions(+), 324 deletions(-)
+ delete mode 100644 daemon/cmd/gc.go
+
+diff --git a/daemon/cmd/daemon_main.go b/daemon/cmd/daemon_main.go
+index 13db88fd2e..5982818842 100644
+--- a/daemon/cmd/daemon_main.go
++++ b/daemon/cmd/daemon_main.go
+@@ -19,6 +19,7 @@ import (
+ 	"fmt"
+ 	"net"
+ 	"os"
++	"os/exec"
+ 	"path"
+ 	"path/filepath"
+ 	"regexp"
+@@ -53,8 +54,6 @@ import (
+ 	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
+ 	"github.com/cilium/cilium/pkg/ipmasq"
+ 	"github.com/cilium/cilium/pkg/k8s"
+-	"github.com/cilium/cilium/pkg/k8s/apis/cilium.io/client"
+-	ciliumcs "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned"
+ 	"github.com/cilium/cilium/pkg/k8s/watchers"
+ 	"github.com/cilium/cilium/pkg/kvstore"
+ 	"github.com/cilium/cilium/pkg/labels"
+@@ -88,8 +87,6 @@ import (
+ 	"github.com/spf13/viper"
+ 	"github.com/vishvananda/netlink"
+ 	"google.golang.org/grpc"
+-	"k8s.io/client-go/kubernetes"
+-	"k8s.io/client-go/tools/clientcmd"
+ )
+ 
+ const (
+@@ -1527,6 +1524,31 @@ func (d *Daemon) initKVStore() {
+ }
+ 
+ func runDaemon() {
++	go func() {
++		if os.Getenv("DISABLE_CILIUM_OPERATOR") == "true" {
++			return
++		}
++		args := []string{"--k8s-namespace", os.Getenv("CILIUM_K8S_NAMESPACE")}
++		if os.Getenv("SKIP_CRD_CREATION") == "true" {
++			args = append(args, "--skip-crd-creation")
++		}
++		if interval := os.Getenv("IDENTITY_GC_INTERVAL"); interval != "" {
++			args = append(args, "--identity-gc-interval", interval)
++		} else {
++			args = append(args, "--identity-gc-interval", "10m")
++		}
++		if timeout := os.Getenv("IDENTITY_HEARTBEAT_TIMEOUT"); timeout != "" {
++			args = append(args, "--identity-heartbeat-timeout", timeout)
++		} else {
++			args = append(args, "--identity-heartbeat-timeout", "20m")
++		}
++		cmd := exec.CommandContext(server.ServerCtx, "cilium-operator-generic", args...)
++		cmd.Stdout = os.Stdout
++		cmd.Stderr = os.Stderr
++		err := cmd.Run()
++		log.Fatal(fmt.Errorf("cilium-operator exited, %w", err))
++	}()
++
+ 	datapathConfig := linuxdatapath.DatapathConfiguration{
+ 		HostDevice: option.Config.HostDevice,
+ 	}
+@@ -1576,14 +1598,6 @@ func runDaemon() {
+ 		bootstrapStats.k8sInit.End(true)
+ 	}
+ 
+-	cfg, _ := clientcmd.BuildConfigFromFlags("", "")
+-	cilium := NewCiliumService(kubernetes.NewForConfigOrDie(cfg), ciliumcs.NewForConfigOrDie(cfg))
+-	go cilium.Run()
+-
+-	if err := client.RegisterCRDs(); err != nil {
+-		log.WithError(err).Fatal("Unable to register CRDs")
+-	}
+-
+ 	ctx, cancel := context.WithCancel(server.ServerCtx)
+ 	d, restoredEndpoints, err := NewDaemon(ctx, cancel,
+ 		WithDefaultEndpointManager(ctx, endpoint.CheckHealth),
+diff --git a/daemon/cmd/gc.go b/daemon/cmd/gc.go
+deleted file mode 100644
+index 2ddcb2d7d7..0000000000
+--- a/daemon/cmd/gc.go
++++ /dev/null
+@@ -1,158 +0,0 @@
+-package cmd
+-
+-import (
+-	"context"
+-	"fmt"
+-	"os"
+-	"time"
+-
+-	"github.com/cilium/cilium/operator/identity"
+-	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+-	ciliumcs "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned"
+-	"github.com/sirupsen/logrus"
+-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+-	"k8s.io/apimachinery/pkg/util/uuid"
+-	"k8s.io/apimachinery/pkg/util/wait"
+-	k8scs "k8s.io/client-go/kubernetes"
+-	"k8s.io/client-go/tools/leaderelection"
+-	"k8s.io/client-go/tools/leaderelection/resourcelock"
+-)
+-
+-const logFieldCilium = "cilium"
+-const logFieldIdentity = "identity"
+-
+-type Cilium struct {
+-	Client       k8scs.Interface
+-	CiliumClient ciliumcs.Interface
+-	GCInterval   time.Duration
+-}
+-
+-// NewCiliumService create a new CiliumService
+-func NewCiliumService(client k8scs.Interface, ciliumClient ciliumcs.Interface) *Cilium {
+-	return &Cilium{
+-		Client:       client,
+-		CiliumClient: ciliumClient,
+-		GCInterval:   30 * time.Minute,
+-	}
+-}
+-
+-// Run 通过Kubernetes中的leaderelection实现组件高可用
+-func (c *Cilium) Run() {
+-	daemonNamespace := os.Getenv("POD_NAMESPACE")
+-	if len(daemonNamespace) == 0 {
+-		daemonNamespace = "kube-system"
+-	}
+-	id := fmt.Sprintf("%s_%s_%s", daemonNamespace, os.Getenv("NODENAME"), uuid.NewUUID())
+-
+-	lock := &resourcelock.LeaseLock{
+-		LeaseMeta: metav1.ObjectMeta{
+-			Name:      "cello-cilium-lock",
+-			Namespace: daemonNamespace,
+-		},
+-		Client: c.Client.CoordinationV1(),
+-		LockConfig: resourcelock.ResourceLockConfig{
+-			Identity: id,
+-		},
+-	}
+-	// start the leader election code loop
+-	go func() {
+-		for {
+-			leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
+-				Lock:            lock,
+-				ReleaseOnCancel: true,
+-				LeaseDuration:   170 * time.Second,
+-				RenewDeadline:   80 * time.Second,
+-				RetryPeriod:     60 * time.Second,
+-				Callbacks: leaderelection.LeaderCallbacks{
+-					OnStartedLeading: func(ctx context.Context) {
+-						c.GC(ctx)
+-					},
+-					OnStoppedLeading: func() {
+-						logrus.Infof("leader lost")
+-					},
+-					OnNewLeader: func(identity string) {
+-						if identity == id {
+-							// I just got the lock
+-							return
+-						}
+-						logrus.Infof("new leader elected: %s", identity)
+-					},
+-				},
+-			})
+-			time.Sleep(10. * time.Second)
+-		}
+-	}()
+-}
+-
+-// https://docs.cilium.io/en/v1.8/concepts/terminology/
+-
+-func (c *Cilium) GC(ctx context.Context) {
+-	identityHeartbeat := identity.NewIdentityHeartbeatStore(2 * c.GCInterval)
+-
+-	wait.JitterUntil(func() {
+-		identities, err := c.CiliumClient.CiliumV2().CiliumIdentities().List(context.TODO(), v1.ListOptions{ResourceVersion: "0", TimeoutSeconds: func(t int64) *int64 { return &t }(60)})
+-		if err != nil {
+-			logrus.WithError(err).Error("Unable to list cilium identities")
+-			return
+-		}
+-		eps, err := c.CiliumClient.CiliumV2().CiliumEndpoints("").List(context.TODO(), v1.ListOptions{ResourceVersion: "0", TimeoutSeconds: func(t int64) *int64 { return &t }(60)})
+-		if err != nil {
+-			logrus.WithError(err).Error("Unable to list cilium endpoints")
+-			return
+-		}
+-
+-		timeNow := time.Now()
+-		for _, ciliumIdentity := range identities.Items {
+-			for _, ep := range eps.Items {
+-				if ep.Status.Identity != nil && fmt.Sprintf("%d", ep.Status.Identity.ID) == ciliumIdentity.Name {
+-					// If the ciliumIdentity is alive then mark it as alive
+-					identityHeartbeat.MarkAlive(ciliumIdentity.Name, timeNow)
+-					logrus.WithFields(logrus.Fields{
+-						logFieldIdentity: ciliumIdentity.Name,
+-					}).Debugf("Mark identity in use %s", ciliumIdentity.Name)
+-					continue
+-				}
+-			}
+-
+-			if !identityHeartbeat.IsAlive(ciliumIdentity.Name) {
+-				logrus.WithFields(logrus.Fields{
+-					logFieldIdentity: ciliumIdentity.Name,
+-				}).Debug("Deleting unused identity")
+-				if err := c.deleteIdentity(ctx, &ciliumIdentity); err != nil {
+-					logrus.WithError(err).WithFields(logrus.Fields{
+-						logFieldIdentity: ciliumIdentity.Name,
+-					}).Error("Deleting unused identity")
+-					// If Context was canceled we should break
+-					if ctx.Err() != nil {
+-						break
+-					}
+-				}
+-			}
+-		}
+-
+-		identityHeartbeat.GC()
+-	}, c.GCInterval, 1.1, false, ctx.Done())
+-	logrus.WithField(logFieldCilium, "cilium").Debugf("GC loop end")
+-}
+-
+-// deleteIdentity deletes an identity. It includes the resource version and
+-// will error if the object has since been changed.
+-func (c *Cilium) deleteIdentity(ctx context.Context, identity *v2.CiliumIdentity) error {
+-	err := c.CiliumClient.CiliumV2().CiliumIdentities().Delete(
+-		ctx,
+-		identity.Name,
+-		metav1.DeleteOptions{
+-			Preconditions: &metav1.Preconditions{
+-				UID:             &identity.UID,
+-				ResourceVersion: &identity.ResourceVersion,
+-			},
+-		})
+-	if err != nil {
+-		logrus.WithError(err).Error("Unable to delete identity")
+-	} else {
+-		logrus.WithField(logFieldIdentity, identity.GetName()).Info("Garbage collected identity")
+-	}
+-
+-	return err
+-}
+diff --git a/operator/k8s_cep_gc.go b/operator/k8s_cep_gc.go
+index e43224ed75..1307fc39df 100644
+--- a/operator/k8s_cep_gc.go
++++ b/operator/k8s_cep_gc.go
+@@ -39,7 +39,8 @@ import (
+ // The general steps are:
+ //   - list all CEPs in the cluster
+ //   - for each CEP
+-//       delete CEP if the corresponding pod does not exist
++//     delete CEP if the corresponding pod does not exist
++//
+ // CiliumEndpoint objects have the same name as the pod they represent
+ func enableCiliumEndpointSyncGC(once bool) {
+ 	var (
+@@ -67,7 +68,6 @@ func enableCiliumEndpointSyncGC(once bool) {
+ 		// state.
+ 		watchers.PodsInit(k8s.WatcherClient(), stopCh)
+ 	}
+-	<-k8sCiliumNodesCacheSynced
+ 
+ 	// this dummy manager is needed only to add this controller to the global list
+ 	controller.NewManager().UpdateController(controllerName,
+diff --git a/operator/main.go b/operator/main.go
+index 91f4520eb1..d37d1e8a22 100644
+--- a/operator/main.go
++++ b/operator/main.go
+@@ -22,16 +22,12 @@ import (
+ 	"path/filepath"
+ 	"sync"
+ 	"sync/atomic"
+-	"time"
+ 
+ 	"github.com/cilium/cilium/operator/api"
+ 	"github.com/cilium/cilium/operator/cmd"
+ 	operatorMetrics "github.com/cilium/cilium/operator/metrics"
+ 	operatorOption "github.com/cilium/cilium/operator/option"
+-	operatorWatchers "github.com/cilium/cilium/operator/watchers"
+ 	"github.com/cilium/cilium/pkg/components"
+-	"github.com/cilium/cilium/pkg/ipam/allocator"
+-	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
+ 	"github.com/cilium/cilium/pkg/k8s"
+ 	"github.com/cilium/cilium/pkg/k8s/apis/cilium.io/client"
+ 	clientset "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned"
+@@ -51,8 +47,6 @@ import (
+ 	"github.com/spf13/cobra"
+ 	"github.com/spf13/viper"
+ 	"golang.org/x/sys/unix"
+-	"google.golang.org/grpc"
+-	"k8s.io/apimachinery/pkg/api/errors"
+ 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+ 	"k8s.io/client-go/tools/leaderelection"
+ 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+@@ -355,151 +349,6 @@ func onOperatorStartLeading(ctx context.Context) {
+ 
+ 	ciliumK8sClient = k8s.CiliumClient()
+ 
+-	// Restart kube-dns as soon as possible since it helps etcd-operator to be
+-	// properly setup. If kube-dns is not managed by Cilium it can prevent
+-	// etcd from reaching out kube-dns in EKS.
+-	if option.Config.DisableCiliumEndpointCRD {
+-		log.Infof("KubeDNS unmanaged pods controller disabled as %q option is set to 'disabled' in Cilium ConfigMap", option.DisableCiliumEndpointCRDName)
+-	} else if operatorOption.Config.UnmanagedPodWatcherInterval != 0 {
+-		go enableUnmanagedKubeDNSController()
+-	}
+-
+-	var (
+-		nodeManager *allocator.NodeEventHandler
+-		err         error
+-	)
+-
+-	log.WithField(logfields.Mode, option.Config.IPAM).Info("Initializing IPAM")
+-
+-	switch ipamMode := option.Config.IPAM; ipamMode {
+-	case ipamOption.IPAMAzure, ipamOption.IPAMENI, ipamOption.IPAMClusterPool, ipamOption.IPAMAlibabaCloud:
+-		alloc, providerBuiltin := allocatorProviders[ipamMode]
+-		if !providerBuiltin {
+-			log.Fatalf("%s allocator is not supported by this version of %s", ipamMode, binaryName)
+-		}
+-
+-		if err := alloc.Init(ctx); err != nil {
+-			log.WithError(err).Fatalf("Unable to init %s allocator", ipamMode)
+-		}
+-
+-		nm, err := alloc.Start(&ciliumNodeUpdateImplementation{})
+-		if err != nil {
+-			log.WithError(err).Fatalf("Unable to start %s allocator", ipamMode)
+-		}
+-
+-		startSynchronizingCiliumNodes(nm)
+-		nodeManager = &nm
+-
+-		switch ipamMode {
+-		case ipamOption.IPAMClusterPool:
+-			// We will use CiliumNodes as the source of truth for the podCIDRs.
+-			// Once the CiliumNodes are synchronized with the operator we will
+-			// be able to watch for K8s Node events which they will be used
+-			// to create the remaining CiliumNodes.
+-			<-k8sCiliumNodesCacheSynced
+-
+-			// We don't want CiliumNodes that don't have podCIDRs to be
+-			// allocated with a podCIDR already being used by another node.
+-			// For this reason we will call Resync after all CiliumNodes are
+-			// synced with the operator to signal the node manager, since it
+-			// knows all podCIDRs that are currently set in the cluster, that
+-			// it can allocate podCIDRs for the nodes that don't have a podCIDR
+-			// set.
+-			nm.Resync(context.Background(), time.Time{})
+-		}
+-	default:
+-		startSynchronizingCiliumNodes(NOPNodeManager)
+-		nodeManager = &NOPNodeManager
+-	}
+-
+-	if operatorOption.Config.BGPAnnounceLBIP {
+-		log.Info("Starting LB IP allocator")
+-		operatorWatchers.StartLBIPAllocator(option.Config)
+-	}
+-
+-	if kvstoreEnabled() {
+-		if operatorOption.Config.SyncK8sServices {
+-			operatorWatchers.StartSynchronizingServices(true, option.Config)
+-		}
+-
+-		var goopts *kvstore.ExtraOptions
+-		scopedLog := log.WithFields(logrus.Fields{
+-			"kvstore": option.Config.KVStore,
+-			"address": option.Config.KVStoreOpt[fmt.Sprintf("%s.address", option.Config.KVStore)],
+-		})
+-		if operatorOption.Config.SyncK8sServices {
+-			// If K8s is enabled we can do the service translation automagically by
+-			// looking at services from k8s and retrieve the service IP from that.
+-			// This makes cilium to not depend on kube dns to interact with etcd
+-			if k8s.IsEnabled() {
+-				svcURL, isETCDOperator := kvstore.IsEtcdOperator(option.Config.KVStore, option.Config.KVStoreOpt, option.Config.K8sNamespace)
+-				if isETCDOperator {
+-					scopedLog.Infof("%s running with service synchronization: automatic etcd service translation enabled", binaryName)
+-
+-					svcGetter := k8s.ServiceIPGetter(&operatorWatchers.K8sSvcCache)
+-
+-					name, namespace, err := kvstore.SplitK8sServiceURL(svcURL)
+-					if err != nil {
+-						// If we couldn't derive the name/namespace for the given
+-						// svcURL log the error so the user can see it.
+-						// k8s.CreateCustomDialer won't be able to derive
+-						// the name/namespace as well so it does not matter that
+-						// we wait for all services to be synchronized with k8s.
+-						scopedLog.WithError(err).WithFields(logrus.Fields{
+-							"url": svcURL,
+-						}).Error("Unable to derive service name from given url")
+-					} else {
+-						scopedLog.WithFields(logrus.Fields{
+-							logfields.ServiceName:      name,
+-							logfields.ServiceNamespace: namespace,
+-						}).Info("Retrieving service spec from k8s to perform automatic etcd service translation")
+-						k8sSvc, err := k8s.Client().CoreV1().Services(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+-						switch {
+-						case err == nil:
+-							// Create another service cache that contains the
+-							// k8s service for etcd. As soon the k8s caches are
+-							// synced, this hijack will stop happening.
+-							sc := k8s.NewServiceCache(nil)
+-							slimSvcObj := k8s.ConvertToK8sService(k8sSvc)
+-							slimSvc := k8s.ObjToV1Services(slimSvcObj)
+-							if slimSvc == nil {
+-								// This will never happen but still log it
+-								scopedLog.Warnf("BUG: invalid k8s service: %s", slimSvcObj)
+-							}
+-							sc.UpdateService(slimSvc, nil)
+-							svcGetter = operatorWatchers.NewServiceGetter(&sc)
+-						case errors.IsNotFound(err):
+-							scopedLog.Error("Service not found in k8s")
+-						default:
+-							scopedLog.Warning("Unable to get service spec from k8s, this might cause network disruptions with etcd")
+-						}
+-					}
+-
+-					log := log.WithField(logfields.LogSubsys, "etcd")
+-					goopts = &kvstore.ExtraOptions{
+-						DialOption: []grpc.DialOption{
+-							grpc.WithDialer(k8s.CreateCustomDialer(svcGetter, log)),
+-						},
+-					}
+-				}
+-			}
+-		} else {
+-			scopedLog.Infof("%s running without service synchronization: automatic etcd service translation disabled", binaryName)
+-		}
+-		scopedLog.Info("Connecting to kvstore")
+-		if err := kvstore.Setup(context.TODO(), option.Config.KVStore, option.Config.KVStoreOpt, goopts); err != nil {
+-			scopedLog.WithError(err).Fatal("Unable to setup kvstore")
+-		}
+-
+-		if operatorOption.Config.SyncK8sNodes {
+-			if err := runNodeWatcher(nodeManager); err != nil {
+-				log.WithError(err).Error("Unable to setup node watcher")
+-			}
+-		}
+-
+-		startKvstoreWatchdog()
+-	}
+-
+ 	if operatorOption.Config.IdentityGCInterval != 0 {
+ 		identityRateLimiter = rate.NewLimiter(
+ 			operatorOption.Config.IdentityGCRateInterval,
+@@ -533,7 +382,7 @@ func onOperatorStartLeading(ctx context.Context) {
+ 		enableCiliumEndpointSyncGC(true)
+ 	}
+ 
+-	err = enableCNPWatcher()
++	err := enableCNPWatcher()
+ 	if err != nil {
+ 		log.WithError(err).WithField(logfields.LogSubsys, "CNPWatcher").Fatal(
+ 			"Cannot connect to Kubernetes apiserver ")
+-- 
+2.39.2 (Apple Git-143)
+
