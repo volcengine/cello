@@ -1,0 +1,145 @@
+From 217a59546125aa4013597e7a79a6b3284f2aac93 Mon Sep 17 00:00:00 2001
+From: xinwenqiang <xinwenqiang@bytedance.com>
+Date: Tue, 28 Nov 2023 00:15:25 +0800
+Subject: [PATCH 4/4] fix(ipcache): delete ciliumEndpoint cr on local node
+ while reboot
+
+---
+ daemon/cmd/daemon_main.go | 96 +++++++++++++++++++++++++++++++++++----
+ 1 file changed, 88 insertions(+), 8 deletions(-)
+
+diff --git a/daemon/cmd/daemon_main.go b/daemon/cmd/daemon_main.go
+index 5982818842..bf80482145 100644
+--- a/daemon/cmd/daemon_main.go
++++ b/daemon/cmd/daemon_main.go
+@@ -26,6 +26,17 @@ import (
+ 	"strings"
+ 	"time"
+ 
++	"github.com/go-openapi/loads"
++	gops "github.com/google/gops/agent"
++	"github.com/sirupsen/logrus"
++	"github.com/spf13/cobra"
++	"github.com/spf13/viper"
++	"github.com/vishvananda/netlink"
++	"google.golang.org/grpc"
++	k8serrors "k8s.io/apimachinery/pkg/api/errors"
++	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	"k8s.io/apimachinery/pkg/util/wait"
++
+ 	"github.com/cilium/cilium/api/v1/server"
+ 	"github.com/cilium/cilium/api/v1/server/restapi"
+ 	"github.com/cilium/cilium/pkg/aws/eni"
+@@ -54,6 +65,7 @@ import (
+ 	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
+ 	"github.com/cilium/cilium/pkg/ipmasq"
+ 	"github.com/cilium/cilium/pkg/k8s"
++	slim_corev1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/api/core/v1"
+ 	"github.com/cilium/cilium/pkg/k8s/watchers"
+ 	"github.com/cilium/cilium/pkg/kvstore"
+ 	"github.com/cilium/cilium/pkg/labels"
+@@ -79,14 +91,6 @@ import (
+ 	"github.com/cilium/cilium/pkg/version"
+ 	wireguard "github.com/cilium/cilium/pkg/wireguard/agent"
+ 	wireguardTypes "github.com/cilium/cilium/pkg/wireguard/types"
+-
+-	"github.com/go-openapi/loads"
+-	gops "github.com/google/gops/agent"
+-	"github.com/sirupsen/logrus"
+-	"github.com/spf13/cobra"
+-	"github.com/spf13/viper"
+-	"github.com/vishvananda/netlink"
+-	"google.golang.org/grpc"
+ )
+ 
+ const (
+@@ -1632,6 +1636,17 @@ func runDaemon() {
+ 		<-d.k8sCachesSynced
+ 	}
+ 	bootstrapStats.k8sInit.End(true)
++
++	if !option.Config.DisableCiliumEndpointCRD && len(restoredEndpoints.restored) == 0 { // means reboot
++		// delete invalid ciliumEndpoint CR
++		log.Info("Clean unuse ciliumEndpoint")
++		cleanErr := d.cleanUnusedCiliumEndpointCR()
++		if cleanErr != nil {
++			log.WithError(cleanErr).Fatal("Clean unuse ciliumEndpoint CR failed")
++		}
++		log.Info("Clean unuse ciliumEndpoint succeed")
++	}
++
+ 	restoreComplete := d.initRestore(restoredEndpoints)
+ 	if wgAgent != nil {
+ 		if err := wgAgent.RestoreFinished(); err != nil {
+@@ -1956,3 +1971,68 @@ func initClockSourceOption() {
+ 		}
+ 	}
+ }
++
++var defaultBackoff = wait.Backoff{
++	Duration: time.Second * 1,
++	Factor:   1.5,
++	Jitter:   0.3,
++	Steps:    10,
++}
++
++type podName struct {
++	namespace string
++	name      string
++}
++
++func (d *Daemon) getLocalPodsName() ([]podName, error) {
++	var localPodNameList []podName
++	podStore := d.GetK8sStore("pod")
++	if podStore == nil {
++		return nil, fmt.Errorf("get pod store failed")
++	}
++	for _, podObject := range podStore.List() {
++		pod, ok := podObject.(*slim_corev1.Pod)
++		if !ok {
++			log.WithField(logfields.Object, podObject).
++				Errorf("Saw %T object while expecting k8s/types.Pod", podObject)
++			continue
++		}
++		if pod.Spec.HostNetwork {
++			continue
++		}
++		localPodNameList = append(localPodNameList, podName{namespace: pod.Namespace, name: pod.Name})
++	}
++	return localPodNameList, nil
++}
++
++func deleteCiliumEndpointCR(name, namespace string) error {
++	propagationPolicy := v1.DeletePropagationBackground
++	return wait.ExponentialBackoff(defaultBackoff, func() (bool, error) {
++		inErr := k8s.CiliumClient().CiliumV2().CiliumEndpoints(namespace).Delete(
++			context.TODO(),
++			name,
++			v1.DeleteOptions{PropagationPolicy: &propagationPolicy})
++		if inErr != nil && !k8serrors.IsNotFound(inErr) {
++			log.WithError(inErr).Warningf("Unable to delete CEP %s/%s", namespace, name)
++			return false, nil
++		}
++		return true, nil
++	})
++}
++
++func (d *Daemon) cleanUnusedCiliumEndpointCR() error {
++	localPods, err := d.getLocalPodsName()
++	if err != nil {
++		return fmt.Errorf("get local pod failed, %v", err)
++	}
++	log.Infof("Get %d local pod", len(localPods))
++
++	for _, pod := range localPods {
++		err = deleteCiliumEndpointCR(pod.name, pod.namespace)
++		if err != nil {
++			return err
++		}
++		log.Infof("Delete CEP %s/%s succeed", pod.namespace, pod.name)
++	}
++	return nil
++}
+-- 
+2.39.2 (Apple Git-143)
+
