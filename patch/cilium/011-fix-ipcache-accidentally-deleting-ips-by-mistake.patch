@@ -1,0 +1,570 @@
+From 59ec26dab4190b5c3e4db2186b6d9a3193636af2 Mon Sep 17 00:00:00 2001
+From: xinwenqiang <xinwenqiang@bytedance.com>
+Date: Mon, 13 Nov 2023 17:32:13 +0800
+Subject: [PATCH 3/4] fix(ipcache): fix ipcache accidentally deleting ips that
+ have been reused by new pods
+
+---
+ daemon/cmd/datapath.go              |  2 +-
+ pkg/ipcache/cidr.go                 |  2 +-
+ pkg/ipcache/fake/ipcache.go         |  3 ++-
+ pkg/ipcache/ipcache.go              | 35 ++++++++++++++++++++-------
+ pkg/ipcache/ipcache_test.go         | 36 +++++++++++++++-------------
+ pkg/ipcache/kvstore.go              |  4 ++--
+ pkg/k8s/watchers/cilium_endpoint.go | 37 +++++++++++++++++++++++++----
+ pkg/k8s/watchers/pod.go             | 32 +++++++++++++++++++++----
+ pkg/node/manager/manager.go         |  8 +++----
+ pkg/node/manager/manager_test.go    |  3 ++-
+ pkg/wireguard/agent/agent_test.go   |  5 ++--
+ 11 files changed, 122 insertions(+), 45 deletions(-)
+
+diff --git a/daemon/cmd/datapath.go b/daemon/cmd/datapath.go
+index 199061cfac..a3d7bcc308 100644
+--- a/daemon/cmd/datapath.go
++++ b/daemon/cmd/datapath.go
+@@ -271,7 +271,7 @@ func (d *Daemon) syncEndpointsAndHostIPs() error {
+ 				log.Debugf("Removed outdated host ip %s from endpoint map", hostIP)
+ 			}
+ 
+-			ipcache.IPIdentityCache.Delete(hostIP, source.Local)
++			ipcache.IPIdentityCache.Delete(hostIP, source.Local, nil)
+ 		}
+ 	}
+ 
+diff --git a/pkg/ipcache/cidr.go b/pkg/ipcache/cidr.go
+index 4618323947..40601cc994 100644
+--- a/pkg/ipcache/cidr.go
++++ b/pkg/ipcache/cidr.go
+@@ -141,7 +141,7 @@ func ReleaseCIDRs(prefixes []*net.IPNet) {
+ 			}
+ 
+ 			if released {
+-				IPIdentityCache.Delete(prefix.String(), source.Generated)
++				IPIdentityCache.Delete(prefix.String(), source.Generated, nil)
+ 			}
+ 		} else {
+ 			log.Errorf("Unable to find identity of previously used CIDR %s", prefix.String())
+diff --git a/pkg/ipcache/fake/ipcache.go b/pkg/ipcache/fake/ipcache.go
+index 9cb345c103..45659fac6f 100644
+--- a/pkg/ipcache/fake/ipcache.go
++++ b/pkg/ipcache/fake/ipcache.go
+@@ -12,6 +12,7 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
++//go:build !privileged_tests
+ // +build !privileged_tests
+ 
+ package fake
+@@ -50,7 +51,7 @@ func (i *IPCache) Upsert(ip string, hostIP net.IP, hostKey uint8, k8sMeta *ipcac
+ 	return false, nil
+ }
+ 
+-func (i *IPCache) Delete(IP string, source source.Source) bool {
++func (i *IPCache) Delete(IP string, source source.Source, k8sMeta *ipcache.K8sMetadata) bool {
+ 	i.Events <- NodeEvent{EventDelete, net.ParseIP(IP)}
+ 	return false
+ }
+diff --git a/pkg/ipcache/ipcache.go b/pkg/ipcache/ipcache.go
+index 65b6fc4390..f4e12d417e 100644
+--- a/pkg/ipcache/ipcache.go
++++ b/pkg/ipcache/ipcache.go
+@@ -15,6 +15,7 @@
+ package ipcache
+ 
+ import (
++	"fmt"
+ 	"net"
+ 
+ 	"github.com/cilium/cilium/pkg/controller"
+@@ -24,6 +25,7 @@ import (
+ 	"github.com/cilium/cilium/pkg/option"
+ 	"github.com/cilium/cilium/pkg/policy"
+ 	"github.com/cilium/cilium/pkg/source"
++
+ 	"github.com/sirupsen/logrus"
+ )
+ 
+@@ -66,9 +68,9 @@ type K8sMetadata struct {
+ }
+ 
+ // IPCache is a collection of mappings:
+-// - mapping of endpoint IP or CIDR to security identities of all endpoints
+-//   which are part of the same cluster, and vice-versa
+-// - mapping of endpoint IP or CIDR to host IP (maybe nil)
++//   - mapping of endpoint IP or CIDR to security identities of all endpoints
++//     which are part of the same cluster, and vice-versa
++//   - mapping of endpoint IP or CIDR to host IP (maybe nil)
+ type IPCache struct {
+ 	mutex             lock.SemaphoredMutex
+ 	ipToIdentityCache map[string]Identity
+@@ -408,11 +410,18 @@ func (ipc *IPCache) DumpToListenerLocked(listener IPIdentityMappingListener) {
+ 
+ // deleteLocked removes the provided IP-to-security-identity mapping
+ // from ipc with the assumption that the IPCache's mutex is held.
+-func (ipc *IPCache) deleteLocked(ip string, source source.Source) (namedPortsChanged bool) {
++func (ipc *IPCache) deleteLocked(ip string, source source.Source, k8sMeta *K8sMetadata) (namedPortsChanged bool) {
+ 	scopedLog := log.WithFields(logrus.Fields{
+ 		logfields.IPAddr: ip,
++		"source":         source,
+ 	})
+ 
++	if k8sMeta != nil {
++		scopedLog = scopedLog.WithFields(logrus.Fields{
++			"k8sMeta": fmt.Sprintf("%s/%s", k8sMeta.Namespace, k8sMeta.PodName),
++		})
++	}
++
+ 	cachedIdentity, found := ipc.ipToIdentityCache[ip]
+ 	if !found {
+ 		scopedLog.Debug("Attempt to remove non-existing IP from ipcache layer")
+@@ -420,8 +429,7 @@ func (ipc *IPCache) deleteLocked(ip string, source source.Source) (namedPortsCha
+ 	}
+ 
+ 	if cachedIdentity.Source != source {
+-		scopedLog.WithField("source", cachedIdentity.Source).
+-			Debugf("Skipping delete of identity from source %s", source)
++		scopedLog.Debugf("Skipping delete of identity from source %s due to source of cached Identity is %s ", source, cachedIdentity.Source)
+ 		return false
+ 	}
+ 
+@@ -434,6 +442,17 @@ func (ipc *IPCache) deleteLocked(ip string, source source.Source) (namedPortsCha
+ 	newIdentity := cachedIdentity
+ 	callbackListeners := true
+ 
++	if oldK8sMeta != nil {
++		scopedLog = scopedLog.WithField("oldMeta", fmt.Sprintf("%s/%s", oldK8sMeta.Namespace, oldK8sMeta.PodName))
++	}
++
++	if oldK8sMeta != nil && k8sMeta != nil {
++		if oldK8sMeta.Namespace != k8sMeta.Namespace || oldK8sMeta.PodName != k8sMeta.PodName {
++			scopedLog.Warning("Attempt to remove non-matching IP from ipcache layer")
++			return false
++		}
++	}
++
+ 	var err error
+ 	if _, cidr, err = net.ParseCIDR(ip); err == nil {
+ 		// Check whether the deleted CIDR was shadowed by an endpoint IP. In
+@@ -511,10 +530,10 @@ func (ipc *IPCache) GetNamedPorts() (npm policy.NamedPortMultiMap) {
+ }
+ 
+ // Delete removes the provided IP-to-security-identity mapping from the IPCache.
+-func (ipc *IPCache) Delete(IP string, source source.Source) (namedPortsChanged bool) {
++func (ipc *IPCache) Delete(IP string, source source.Source, k8sMeta *K8sMetadata) (namedPortsChanged bool) {
+ 	ipc.mutex.Lock()
+ 	defer ipc.mutex.Unlock()
+-	return ipc.deleteLocked(IP, source)
++	return ipc.deleteLocked(IP, source, k8sMeta)
+ }
+ 
+ // LookupByIP returns the corresponding security identity that endpoint IP maps
+diff --git a/pkg/ipcache/ipcache_test.go b/pkg/ipcache/ipcache_test.go
+index 77bb08cc84..01d00fb3aa 100644
+--- a/pkg/ipcache/ipcache_test.go
++++ b/pkg/ipcache/ipcache_test.go
+@@ -12,6 +12,7 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
++//go:build !privileged_tests
+ // +build !privileged_tests
+ 
+ package ipcache
+@@ -50,7 +51,7 @@ func (s *IPCacheTestSuite) TestIPCache(c *C) {
+ 	c.Assert(len(IPIdentityCache.identityToIPCache), Equals, 0)
+ 
+ 	// Deletion of key that doesn't exist doesn't cause panic.
+-	IPIdentityCache.Delete(endpointIP, source.KVStore)
++	IPIdentityCache.Delete(endpointIP, source.KVStore, nil)
+ 
+ 	IPIdentityCache.Upsert(endpointIP, nil, 0, nil, Identity{
+ 		ID:     identity,
+@@ -82,7 +83,7 @@ func (s *IPCacheTestSuite) TestIPCache(c *C) {
+ 	c.Assert(len(IPIdentityCache.ipToIdentityCache), Equals, 1)
+ 	c.Assert(len(IPIdentityCache.identityToIPCache), Equals, 1)
+ 
+-	IPIdentityCache.Delete(endpointIP, source.KVStore)
++	IPIdentityCache.Delete(endpointIP, source.KVStore, nil)
+ 
+ 	// Assure deletion occurs across all mappings.
+ 	c.Assert(len(IPIdentityCache.ipToIdentityCache), Equals, 0)
+@@ -126,7 +127,7 @@ func (s *IPCacheTestSuite) TestIPCache(c *C) {
+ 		c.Assert(cachedIP, Equals, endpointIP)
+ 	}
+ 
+-	IPIdentityCache.Delete(endpointIP, source.KVStore)
++	IPIdentityCache.Delete(endpointIP, source.KVStore, k8sMeta)
+ 
+ 	// Assure deletion occurs across both mappings.
+ 	c.Assert(len(IPIdentityCache.ipToIdentityCache), Equals, 0)
+@@ -153,7 +154,7 @@ func (s *IPCacheTestSuite) TestIPCache(c *C) {
+ 	sort.Strings(cachedEndpointIPs)
+ 	c.Assert(cachedEndpointIPs, checker.DeepEquals, expectedIPList)
+ 
+-	IPIdentityCache.Delete("27.2.2.2", source.KVStore)
++	IPIdentityCache.Delete("27.2.2.2", source.KVStore, nil)
+ 
+ 	expectedIPList = []string{"127.0.0.1"}
+ 
+@@ -168,7 +169,7 @@ func (s *IPCacheTestSuite) TestIPCache(c *C) {
+ 	c.Assert(exists, Equals, true)
+ 	c.Assert(cachedIdentity.ID, Equals, identityPkg.NumericIdentity(29))
+ 
+-	IPIdentityCache.Delete("127.0.0.1", source.KVStore)
++	IPIdentityCache.Delete("127.0.0.1", source.KVStore, nil)
+ 
+ 	ips = IPIdentityCache.LookupByIdentity(29)
+ 	c.Assert(ips, IsNil)
+@@ -178,7 +179,7 @@ func (s *IPCacheTestSuite) TestIPCache(c *C) {
+ 
+ 	// Clean up.
+ 	for index := range endpointIPs {
+-		IPIdentityCache.Delete(endpointIPs[index], source.KVStore)
++		IPIdentityCache.Delete(endpointIPs[index], source.KVStore, nil)
+ 		_, exists = IPIdentityCache.LookupByIP(endpointIPs[index])
+ 		c.Assert(exists, Equals, false)
+ 
+@@ -267,7 +268,7 @@ func (s *IPCacheTestSuite) TestIPCacheNamedPorts(c *C) {
+ 	c.Assert(len(IPIdentityCache.identityToIPCache), Equals, 0)
+ 
+ 	// Deletion of key that doesn't exist doesn't cause panic.
+-	namedPortsChanged := IPIdentityCache.Delete(endpointIP, source.KVStore)
++	namedPortsChanged := IPIdentityCache.Delete(endpointIP, source.KVStore, nil)
+ 	c.Assert(namedPortsChanged, Equals, false)
+ 
+ 	meta := K8sMetadata{
+@@ -354,7 +355,7 @@ func (s *IPCacheTestSuite) TestIPCacheNamedPorts(c *C) {
+ 	c.Assert(npm["dns"], checker.HasKey, policy.PortProto{Port: uint16(53), Proto: uint8(0)})
+ 	c.Assert(npm["https"], checker.HasKey, policy.PortProto{Port: uint16(443), Proto: uint8(6)})
+ 
+-	namedPortsChanged = IPIdentityCache.Delete(endpointIP, source.Kubernetes)
++	namedPortsChanged = IPIdentityCache.Delete(endpointIP, source.Kubernetes, nil)
+ 	c.Assert(namedPortsChanged, Equals, true)
+ 	npm = IPIdentityCache.GetNamedPorts()
+ 	c.Assert(npm, NotNil)
+@@ -420,7 +421,7 @@ func (s *IPCacheTestSuite) TestIPCacheNamedPorts(c *C) {
+ 		c.Assert(cachedIP, Equals, endpointIP)
+ 	}
+ 
+-	namedPortsChanged = IPIdentityCache.Delete(endpointIP, source.KVStore)
++	namedPortsChanged = IPIdentityCache.Delete(endpointIP, source.KVStore, k8sMeta)
+ 	// Deleted identity did not have any named ports, so no change
+ 	c.Assert(namedPortsChanged, Equals, false)
+ 
+@@ -459,7 +460,8 @@ func (s *IPCacheTestSuite) TestIPCacheNamedPorts(c *C) {
+ 	sort.Strings(cachedEndpointIPs)
+ 	c.Assert(cachedEndpointIPs, checker.DeepEquals, expectedIPList)
+ 
+-	namedPortsChanged = IPIdentityCache.Delete("27.2.2.2", source.KVStore)
++	k8sMeta.PodName = fmt.Sprintf("pod-%d", 29)
++	namedPortsChanged = IPIdentityCache.Delete("27.2.2.2", source.KVStore, k8sMeta)
+ 	c.Assert(namedPortsChanged, Equals, false)
+ 
+ 	expectedIPList = []string{"127.0.0.1"}
+@@ -475,7 +477,8 @@ func (s *IPCacheTestSuite) TestIPCacheNamedPorts(c *C) {
+ 	c.Assert(exists, Equals, true)
+ 	c.Assert(cachedIdentity.ID, Equals, identityPkg.NumericIdentity(29))
+ 
+-	IPIdentityCache.Delete("127.0.0.1", source.KVStore)
++	k8sMeta.PodName = fmt.Sprintf("pod-%d", 29)
++	IPIdentityCache.Delete("127.0.0.1", source.KVStore, k8sMeta)
+ 
+ 	ips = IPIdentityCache.LookupByIdentity(29)
+ 	c.Assert(ips, IsNil)
+@@ -485,7 +488,8 @@ func (s *IPCacheTestSuite) TestIPCacheNamedPorts(c *C) {
+ 
+ 	// Clean up.
+ 	for index := range endpointIPs {
+-		namedPortsChanged = IPIdentityCache.Delete(endpointIPs[index], source.KVStore)
++		k8sMeta.PodName = fmt.Sprintf("pod-%d", int(identities[index]))
++		namedPortsChanged = IPIdentityCache.Delete(endpointIPs[index], source.KVStore, k8sMeta)
+ 		npm = IPIdentityCache.GetNamedPorts()
+ 		c.Assert(npm, NotNil)
+ 		log.Infof("Named ports after Delete %d: %v", index, npm)
+@@ -502,7 +506,7 @@ func (s *IPCacheTestSuite) TestIPCacheNamedPorts(c *C) {
+ 	c.Assert(len(IPIdentityCache.ipToIdentityCache), Equals, 1)
+ 	c.Assert(len(IPIdentityCache.identityToIPCache), Equals, 1)
+ 
+-	namedPortsChanged = IPIdentityCache.Delete(endpointIP2, source.Kubernetes)
++	namedPortsChanged = IPIdentityCache.Delete(endpointIP2, source.Kubernetes, &meta2)
+ 	c.Assert(namedPortsChanged, Equals, true)
+ 	npm = IPIdentityCache.GetNamedPorts()
+ 	c.Assert(npm, IsNil)
+@@ -572,7 +576,7 @@ func (s *IPCacheTestSuite) TestIPCacheShadowing(c *C) {
+ 	ipcache.ExpectMapping(c, cidrOverlap, epIdentity)
+ 
+ 	// Deleting pod identity shows that cidr identity is now used.
+-	ipc.Delete(endpointIP, source.KVStore)
++	ipc.Delete(endpointIP, source.KVStore, nil)
+ 	ipcache.ExpectMapping(c, cidrOverlap, cidrIdentity)
+ 
+ 	// Reinsert of pod IP should shadow the CIDR identity again.
+@@ -583,11 +587,11 @@ func (s *IPCacheTestSuite) TestIPCacheShadowing(c *C) {
+ 	ipcache.ExpectMapping(c, cidrOverlap, epIdentity)
+ 
+ 	// Deletion of the shadowed identity should not change the output.
+-	ipc.Delete(cidrOverlap, source.Generated)
++	ipc.Delete(cidrOverlap, source.Generated, nil)
+ 	ipcache.ExpectMapping(c, cidrOverlap, epIdentity)
+ 
+ 	// Clean up
+-	ipc.Delete(endpointIP, source.KVStore)
++	ipc.Delete(endpointIP, source.KVStore, nil)
+ 	_, exists := ipc.LookupByPrefix(cidrOverlap)
+ 	c.Assert(exists, Equals, false)
+ }
+diff --git a/pkg/ipcache/kvstore.go b/pkg/ipcache/kvstore.go
+index 05c3898abc..61f85ea606 100644
+--- a/pkg/ipcache/kvstore.go
++++ b/pkg/ipcache/kvstore.go
+@@ -344,7 +344,7 @@ restart:
+ 					// The key no longer exists in the
+ 					// local cache, it is safe to remove
+ 					// from the datapath ipcache.
+-					IPIdentityCache.Delete(ip, source.KVStore)
++					IPIdentityCache.Delete(ip, source.KVStore, nil)
+ 				}
+ 			}
+ 		case <-ctx.Done():
+@@ -366,7 +366,7 @@ func (iw *IPIdentityWatcher) Close() {
+ 	})
+ }
+ 
+-//closeSynced the IPIdentityWathcer and case panic
++// closeSynced the IPIdentityWathcer and case panic
+ func (iw *IPIdentityWatcher) closeSynced() {
+ 	iw.syncedOnce.Do(func() {
+ 		close(iw.synced)
+diff --git a/pkg/k8s/watchers/cilium_endpoint.go b/pkg/k8s/watchers/cilium_endpoint.go
+index 622e2b4782..9a4318181c 100644
+--- a/pkg/k8s/watchers/cilium_endpoint.go
++++ b/pkg/k8s/watchers/cilium_endpoint.go
+@@ -31,6 +31,7 @@ import (
+ 	"github.com/cilium/cilium/pkg/source"
+ 	"github.com/cilium/cilium/pkg/u8proto"
+ 
++	"github.com/sirupsen/logrus"
+ 	v1 "k8s.io/api/core/v1"
+ 	"k8s.io/apimachinery/pkg/fields"
+ 	"k8s.io/client-go/tools/cache"
+@@ -124,6 +125,10 @@ func (k *K8sWatcher) endpointUpdated(oldEndpoint, endpoint *types.CiliumEndpoint
+ 	if oldEndpoint != nil && oldEndpoint.Networking != nil {
+ 		// Delete the old IP addresses from the IP cache
+ 		defer func() {
++			oldK8sMeta := &ipcache.K8sMetadata{
++				Namespace: oldEndpoint.Namespace,
++				PodName:   oldEndpoint.Name,
++			}
+ 			for _, oldPair := range oldEndpoint.Networking.Addressing {
+ 				v4Added, v6Added := false, false
+ 				for _, ipAdded := range ipsAdded {
+@@ -135,13 +140,23 @@ func (k *K8sWatcher) endpointUpdated(oldEndpoint, endpoint *types.CiliumEndpoint
+ 					}
+ 				}
+ 				if !v4Added {
+-					portsChanged := ipcache.IPIdentityCache.Delete(oldPair.IPV4, source.CustomResource)
++					log.WithFields(logrus.Fields{
++						"ip":        oldPair.IPV4,
++						"namespace": oldEndpoint.Namespace,
++						"name":      oldEndpoint.Name,
++					}).Debugf("Delete ip from ip cache due to endpointUpdated")
++					portsChanged := ipcache.IPIdentityCache.Delete(oldPair.IPV4, source.CustomResource, oldK8sMeta)
+ 					if portsChanged {
+ 						namedPortsChanged = true
+ 					}
+ 				}
+ 				if !v6Added {
+-					portsChanged := ipcache.IPIdentityCache.Delete(oldPair.IPV6, source.CustomResource)
++					log.WithFields(logrus.Fields{
++						"ip":        oldPair.IPV6,
++						"namespace": oldEndpoint.Namespace,
++						"name":      oldEndpoint.Name,
++					}).Debugf("Delete ip from ip cache due to endpointUpdated")
++					portsChanged := ipcache.IPIdentityCache.Delete(oldPair.IPV6, source.CustomResource, oldK8sMeta)
+ 					if portsChanged {
+ 						namedPortsChanged = true
+ 					}
+@@ -217,18 +232,32 @@ func (k *K8sWatcher) endpointUpdated(oldEndpoint, endpoint *types.CiliumEndpoint
+ }
+ 
+ func (k *K8sWatcher) endpointDeleted(endpoint *types.CiliumEndpoint) {
++	k8sMeta := &ipcache.K8sMetadata{
++		Namespace: endpoint.Namespace,
++		PodName:   endpoint.Name,
++	}
+ 	if endpoint.Networking != nil {
+ 		namedPortsChanged := false
+ 		for _, pair := range endpoint.Networking.Addressing {
+ 			if pair.IPV4 != "" {
+-				portsChanged := ipcache.IPIdentityCache.Delete(pair.IPV4, source.CustomResource)
++				log.WithFields(logrus.Fields{
++					"ip":        pair.IPV4,
++					"namespace": endpoint.Namespace,
++					"name":      endpoint.Name,
++				}).Debugf("Delete ip from ip cache due to endpointDeleted")
++				portsChanged := ipcache.IPIdentityCache.Delete(pair.IPV4, source.CustomResource, k8sMeta)
+ 				if portsChanged {
+ 					namedPortsChanged = true
+ 				}
+ 			}
+ 
+ 			if pair.IPV6 != "" {
+-				portsChanged := ipcache.IPIdentityCache.Delete(pair.IPV6, source.CustomResource)
++				log.WithFields(logrus.Fields{
++					"ip":        pair.IPV6,
++					"namespace": endpoint.Namespace,
++					"name":      endpoint.Name,
++				}).Debugf("Delete ip from ip cache due to endpointDeleted")
++				portsChanged := ipcache.IPIdentityCache.Delete(pair.IPV6, source.CustomResource, k8sMeta)
+ 				if portsChanged {
+ 					namedPortsChanged = true
+ 				}
+diff --git a/pkg/k8s/watchers/pod.go b/pkg/k8s/watchers/pod.go
+index a81a4edfb6..d48c69c0b4 100644
+--- a/pkg/k8s/watchers/pod.go
++++ b/pkg/k8s/watchers/pod.go
+@@ -698,6 +698,16 @@ func (k *K8sWatcher) updatePodHostData(oldPod, newPod *slim_corev1.Pod, oldPodIP
+ 	ipSliceEqual := oldPodIPs != nil && oldPodIPs.DeepEqual(&newPodIPs)
+ 
+ 	defer func() {
++		var oldPodNamespace, oldPodName string
++		var oldPodMeta *ipcache.K8sMetadata
++		if oldPod != nil {
++			oldPodNamespace = oldPod.Namespace
++			oldPodName = oldPod.Name
++			oldPodMeta = &ipcache.K8sMetadata{
++				Namespace: oldPodNamespace,
++				PodName:   oldPodName,
++			}
++		}
+ 		if !ipSliceEqual {
+ 			// delete all IPs that were not added regardless if the insertion of the
+ 			// entry in the ipcache map was successful or not because we will not
+@@ -711,7 +721,12 @@ func (k *K8sWatcher) updatePodHostData(oldPod, newPod *slim_corev1.Pod, oldPodIP
+ 					}
+ 				}
+ 				if !found {
+-					npc := ipcache.IPIdentityCache.Delete(oldPodIP, source.Kubernetes)
++					log.WithFields(logrus.Fields{
++						"ip":        oldPodIP,
++						"namespace": oldPodNamespace,
++						"name":      oldPodName,
++					}).Debugf("Delete ip from ip cache due to updatePodHostData")
++					npc := ipcache.IPIdentityCache.Delete(oldPodIP, source.Kubernetes, oldPodMeta)
+ 					if npc {
+ 						namedPortsChanged = true
+ 					}
+@@ -851,8 +866,15 @@ func (k *K8sWatcher) deletePodHostData(pod *slim_corev1.Pod) (bool, error) {
+ 			errs = append(errs, fmt.Sprintf("ipcache entry for IP %s not owned by kubernetes source", podIP))
+ 			continue
+ 		}
+-
+-		ipcache.IPIdentityCache.Delete(podIP, source.Kubernetes)
++		log.WithFields(logrus.Fields{
++			"ip":        podIP,
++			"namespace": pod.Namespace,
++			"name":      pod.Name,
++		}).Debugf("Delete ip from ip cache due to deletePodHostData")
++		ipcache.IPIdentityCache.Delete(podIP, source.Kubernetes, &ipcache.K8sMetadata{
++			Namespace: pod.Namespace,
++			PodName:   pod.Name,
++		})
+ 	}
+ 
+ 	if len(errs) != 0 {
+@@ -866,8 +888,8 @@ func (k *K8sWatcher) deletePodHostData(pod *slim_corev1.Pod) (bool, error) {
+ // agent flag `option.Config.K8sEventHandover` this function might only return
+ // local pods.
+ // If `option.Config.K8sEventHandover` is:
+-//  - true: returns only local pods received by the pod watcher.
+-//  - false: returns any pod in the cluster received by the pod watcher.
++//   - true: returns only local pods received by the pod watcher.
++//   - false: returns any pod in the cluster received by the pod watcher.
+ func (k *K8sWatcher) GetCachedPod(namespace, name string) (*slim_corev1.Pod, error) {
+ 	<-k.controllersStarted
+ 	k.WaitForCacheSync(K8sAPIGroupPodV1Core)
+diff --git a/pkg/node/manager/manager.go b/pkg/node/manager/manager.go
+index ef31e809c7..ebc2a6028b 100644
+--- a/pkg/node/manager/manager.go
++++ b/pkg/node/manager/manager.go
+@@ -57,7 +57,7 @@ type nodeEntry struct {
+ // IPCache is the set of interactions the node manager performs with the ipcache
+ type IPCache interface {
+ 	Upsert(ip string, hostIP net.IP, hostKey uint8, k8sMeta *ipcache.K8sMetadata, newIdentity ipcache.Identity) (bool, error)
+-	Delete(IP string, source source.Source) bool
++	Delete(IP string, source source.Source, k8sMeta *ipcache.K8sMetadata) bool
+ }
+ 
+ // Configuration is the set of configuration options the node manager depends
+@@ -486,7 +486,7 @@ func (m *Manager) deleteIPCache(oldSource source.Source, oldIPs []net.IP, newIPs
+ 		// Delete from the IPCache if the node's IP addresses was not
+ 		// added in this update.
+ 		if !found {
+-			m.ipcache.Delete(addrStr, oldSource)
++			m.ipcache.Delete(addrStr, oldSource, nil)
+ 		}
+ 	}
+ }
+@@ -529,12 +529,12 @@ func (m *Manager) NodeDeleted(n nodeTypes.Node) {
+ 			continue
+ 		}
+ 
+-		m.ipcache.Delete(address.IP.String(), n.Source)
++		m.ipcache.Delete(address.IP.String(), n.Source, nil)
+ 	}
+ 
+ 	for _, address := range []net.IP{entry.node.IPv4HealthIP, entry.node.IPv6HealthIP} {
+ 		if address != nil {
+-			m.ipcache.Delete(address.String(), n.Source)
++			m.ipcache.Delete(address.String(), n.Source, nil)
+ 		}
+ 	}
+ 
+diff --git a/pkg/node/manager/manager_test.go b/pkg/node/manager/manager_test.go
+index 62eb51802c..dc55385450 100644
+--- a/pkg/node/manager/manager_test.go
++++ b/pkg/node/manager/manager_test.go
+@@ -12,6 +12,7 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
++//go:build !privileged_tests
+ // +build !privileged_tests
+ 
+ package manager
+@@ -82,7 +83,7 @@ func (i *ipcacheMock) Upsert(ip string, hostIP net.IP, hostKey uint8, k8sMeta *i
+ 	return false, nil
+ }
+ 
+-func (i *ipcacheMock) Delete(IP string, source source.Source) bool {
++func (i *ipcacheMock) Delete(IP string, source source.Source, k8sMeta *ipcache.K8sMetadata) bool {
+ 	i.events <- nodeEvent{"delete", net.ParseIP(IP)}
+ 	return false
+ }
+diff --git a/pkg/wireguard/agent/agent_test.go b/pkg/wireguard/agent/agent_test.go
+index 3e3dff9da7..0112ee3ba8 100644
+--- a/pkg/wireguard/agent/agent_test.go
++++ b/pkg/wireguard/agent/agent_test.go
+@@ -12,6 +12,7 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
++//go:build !privileged_tests
+ // +build !privileged_tests
+ 
+ package agent
+@@ -154,8 +155,8 @@ func (a *AgentSuite) TestAgent_PeerConfig(c *C) {
+ 		ipCache.Upsert(pod2IPv4Str, k8s1NodeIPv4, 0, nil, ipcache.Identity{ID: 22, Source: source.Kubernetes})
+ 		ipCache.Upsert(pod2IPv6Str, k8s1NodeIPv6, 0, nil, ipcache.Identity{ID: 22, Source: source.Kubernetes})
+ 		// Delete pod1
+-		ipCache.Delete(pod1IPv4Str, source.Kubernetes)
+-		ipCache.Delete(pod1IPv6Str, source.Kubernetes)
++		ipCache.Delete(pod1IPv4Str, source.Kubernetes, nil)
++		ipCache.Delete(pod1IPv6Str, source.Kubernetes, nil)
+ 		close(ipCacheUpdated)
+ 	}()
+ 
+-- 
+2.39.2 (Apple Git-143)
+
