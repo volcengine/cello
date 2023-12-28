@@ -70,9 +70,9 @@ func PrometheusRegister() {
 
 	prometheus.MustRegister(RpcLatency)
 	prometheus.MustRegister(OpenAPILatency)
-	prometheus.MustRegister(OpenAPIErr)
+	prometheus.MustRegister(OpenAPIStatistic)
 	prometheus.MustRegister(MetadataLatency)
-	prometheus.MustRegister(MetadataErr)
+	prometheus.MustRegister(MetadataStatistic)
 
 	prometheus.MustRegister(ResourcePoolMaxCap)
 	prometheus.MustRegister(ResourcePoolTarget)

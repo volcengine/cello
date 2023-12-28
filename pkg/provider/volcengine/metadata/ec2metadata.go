@@ -26,6 +26,8 @@ import (
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/volcengine/cello/pkg/metrics"
+	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 	"github.com/volcengine/cello/pkg/tracing"
 	"github.com/volcengine/cello/pkg/utils/logger"
 	"github.com/volcengine/cello/pkg/version"
@@ -58,7 +60,7 @@ func New() *EC2Metadata {
 }
 
 // GetMetadata get information from metadata by path.
-func (c *EC2Metadata) GetMetadata(ctx context.Context, path string) (info string, err error) {
+func (c *EC2Metadata) GetMetadata(ctx context.Context, sign, path string) (info string, err error) {
 	var req *http.Request
 	var resp *http.Response
 	info = ""
@@ -78,13 +80,18 @@ func (c *EC2Metadata) GetMetadata(ctx context.Context, path string) (info string
 	// Set User-Agent
 	req.Header.Set("User-Agent", version.UserAgent())
 
+	startTime := time.Now()
 	if resp, err = c.client.Do(req); err != nil {
+		metrics.MetadataStatisticRecord(sign, apiErr.ClientErrHttpCode, apiErr.ClientErr)
 		return
 	}
+	metrics.MetadataLatencyRecord(sign, startTime)
+
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(resp.Body)
 
+	metrics.MetadataStatisticRecord(sign, resp.StatusCode, apiErr.RequestSuccess)
 	if resp.StatusCode != http.StatusOK {
 		err = errors.New(fmt.Sprintf("HttpRequestStatus: %d", resp.StatusCode))
 		return

@@ -49,7 +49,7 @@ func setup(t *testing.T) {
 func TestEC2MetadataWrapper_GetAvailabilityZone(t *testing.T) {
 	setup(t)
 
-	mockMetadataIface.EXPECT().GetMetadata(gomock.Any(), gomock.Eq(azPath)).Return(az, nil)
+	mockMetadataIface.EXPECT().GetMetadata(gomock.Any(), gomock.Eq("GetAvailabilityZone"), gomock.Eq(azPath)).Return(az, nil)
 	azG, err := testClient.GetAvailabilityZone(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, az, azG)
@@ -58,7 +58,7 @@ func TestEC2MetadataWrapper_GetAvailabilityZone(t *testing.T) {
 func TestEC2MetadataWrapper_GetENIID(t *testing.T) {
 	setup(t)
 
-	mockMetadataIface.EXPECT().GetMetadata(gomock.Any(), gomock.Eq(fmt.Sprintf(eniIDPath, eniMac))).Return(eniId, nil)
+	mockMetadataIface.EXPECT().GetMetadata(gomock.Any(), gomock.Eq("GetENIID"), gomock.Eq(fmt.Sprintf(eniIDPath, eniMac))).Return(eniId, nil)
 	eniIdG, err := testClient.GetENIID(ctx, eniMac)
 	assert.NoError(t, err)
 	assert.Equal(t, eniId, eniIdG)
