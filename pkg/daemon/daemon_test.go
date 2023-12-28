@@ -951,7 +951,7 @@ func setup(t *testing.T) error {
 			}
 			return &ec2.DescribeSubnetAttributesOutput{
 				Metadata: metadata,
-			}, apiErr.NewAPIRequestErr(metadata, nil)
+			}, apiErr.NewAPIRequestStatus(metadata, nil).GetError()
 		}
 
 		avCnt := int64(apiMockDB.prefixes[subnet.CIDR.IPv4.String()].Usage().AvailableIPs)

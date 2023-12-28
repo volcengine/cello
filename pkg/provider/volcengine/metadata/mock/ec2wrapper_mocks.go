@@ -48,16 +48,16 @@ func (m *MockEC2MetadataIface) EXPECT() *MockEC2MetadataIfaceMockRecorder {
 }
 
 // GetMetadata mocks base method
-func (m *MockEC2MetadataIface) GetMetadata(arg0 context.Context, arg1 string) (string, error) {
+func (m *MockEC2MetadataIface) GetMetadata(arg0 context.Context, arg1, arg2 string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetMetadata", arg0, arg1)
+	ret := m.ctrl.Call(m, "GetMetadata", arg0, arg1, arg2)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetMetadata indicates an expected call of GetMetadata
-func (mr *MockEC2MetadataIfaceMockRecorder) GetMetadata(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockEC2MetadataIfaceMockRecorder) GetMetadata(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMetadata", reflect.TypeOf((*MockEC2MetadataIface)(nil).GetMetadata), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMetadata", reflect.TypeOf((*MockEC2MetadataIface)(nil).GetMetadata), arg0, arg1, arg2)
 }

@@ -21,13 +21,15 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
-	"github.com/volcengine/cello/pkg/metrics"
 	"github.com/volcengine/cello/pkg/utils/ip"
 )
 
 const (
+	PrimaryEniMacPath = "mac"
+	instanceIdPath    = "instance_id"
+	instanceTypePath  = "instance_type"
+	regionIdPath      = "region_id"
 	azPath            = "availability_zone"
 	vpcIdPath         = "vpc_id"
 	vpcCidrPath       = "vpc_cidr_block"
@@ -44,7 +46,7 @@ const (
 
 // EC2MetadataIface interface of metadata.
 type EC2MetadataIface interface {
-	GetMetadata(ctx context.Context, path string) (string, error)
+	GetMetadata(ctx context.Context, sign, path string) (string, error)
 }
 
 // EC2MetadataWrapper wrap the interface of metadata to get information from metadata service and monitor for errors.
@@ -54,38 +56,20 @@ type EC2MetadataWrapper struct {
 
 // GetPrimaryENIMac get mac of primary eni from metadata.
 func (meta EC2MetadataWrapper) GetPrimaryENIMac(ctx context.Context) (string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, "mac")
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetPrimaryENIMac", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
-	if err != nil {
-		metrics.MetadataErrInc("GetPrimaryENIMac", err)
-	}
-	return data, err
+	return meta.GetMetadata(ctx, "GetPrimaryENIMac", PrimaryEniMacPath)
 }
 
 // GetAvailabilityZone get az of instance from metadata.
 func (meta EC2MetadataWrapper) GetAvailabilityZone(ctx context.Context) (string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, azPath)
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetAvailabilityZone", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
-	if err != nil {
-		metrics.MetadataErrInc("GetAvailabilityZone", err)
-	}
-	return data, err
+	return meta.GetMetadata(ctx, "GetAvailabilityZone", azPath)
 }
 
 // GetENIsMacs get all macs of ENIs which attached the instance from metadata.
 // NOTICE: this will get all interfaces macs include rdma which unable to get any information,
 // and other interfaces not created by cello, even cross-account interfaces
 func (meta EC2MetadataWrapper) GetENIsMacs(ctx context.Context) ([]string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, enisMacsPath)
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetENIsMacs", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
+	data, err := meta.GetMetadata(ctx, "GetENIsMacs", enisMacsPath)
 	if err != nil {
-		metrics.MetadataErrInc("GetENIsMacs", err)
 		return nil, fmt.Errorf("get ENIs failed : %w", err)
 	}
 	return strings.Split(data, "\n"), nil
@@ -93,72 +77,33 @@ func (meta EC2MetadataWrapper) GetENIsMacs(ctx context.Context) ([]string, error
 
 // GetInstanceID get the instance ID from metadata.
 func (meta EC2MetadataWrapper) GetInstanceID(ctx context.Context) (string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, "instance_id")
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetInstanceID", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
-	if err != nil {
-		metrics.MetadataErrInc("GetInstanceID", err)
-	}
-	return data, err
+	return meta.GetMetadata(ctx, "GetInstanceID", instanceIdPath)
 }
 
 // GetInstanceType get the instance type from metadata.
 func (meta EC2MetadataWrapper) GetInstanceType(ctx context.Context) (string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, "instance_type")
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetInstanceType", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
-	if err != nil {
-		metrics.MetadataErrInc("GetInstanceType", err)
-	}
-	return data, err
+	return meta.GetMetadata(ctx, "GetInstanceType", instanceTypePath)
 }
 
 // GetRegionID get the region ID of instance from metadata.
 func (meta EC2MetadataWrapper) GetRegionID(ctx context.Context) (string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, "region_id")
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetRegionID", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
-	if err != nil {
-		metrics.MetadataErrInc("GetRegionID", err)
-	}
-	return data, err
+	return meta.GetMetadata(ctx, "GetRegionID", regionIdPath)
 }
 
 // GetVpcId get the vpc ID of ECS instance from metadata.
 func (meta EC2MetadataWrapper) GetVpcId(ctx context.Context) (string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, vpcIdPath)
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetVpcId", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
-	if err != nil {
-		metrics.MetadataErrInc("GetVpcId", err)
-	}
-	return data, err
+	return meta.GetMetadata(ctx, "GetVpcId", vpcIdPath)
 }
 
 // GetVpcCidr get the vpc Cidr that belongs to the ECS instance from metadata.
 func (meta EC2MetadataWrapper) GetVpcCidr(ctx context.Context) (string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, vpcCidrPath)
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetVpcCidr", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
-	if err != nil {
-		metrics.MetadataErrInc("GetVpcCidr", err)
-	}
-	return data, err
+	return meta.GetMetadata(ctx, "GetVpcCidr", vpcCidrPath)
 }
 
 // GetENIPrimaryIP get primary ip of eni by mac from metadata.
 func (meta EC2MetadataWrapper) GetENIPrimaryIP(ctx context.Context, mac string) (net.IP, error) {
-	start := time.Now()
-	addr, err := meta.GetMetadata(ctx, fmt.Sprintf(eniAddrPath, mac))
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetENIPrimaryIP", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
+	addr, err := meta.GetMetadata(ctx, "GetENIPrimaryIP", fmt.Sprintf(eniAddrPath, mac))
 	if err != nil {
-		metrics.MetadataErrInc("GetENIPrimaryIP", err)
 		return nil, err
 	}
 	return ip.ParseIP(addr)
@@ -166,36 +111,19 @@ func (meta EC2MetadataWrapper) GetENIPrimaryIP(ctx context.Context, mac string) 
 
 // GetENISubnetID get subnet id of eni by mac from metadata.
 func (meta EC2MetadataWrapper) GetENISubnetID(ctx context.Context, mac string) (string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, fmt.Sprintf(eniSubnetIDPath, mac))
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetENISubnetID", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
-	if err != nil {
-		metrics.MetadataErrInc("GetENISubnetID", err)
-	}
-	return data, err
+	return meta.GetMetadata(ctx, "GetENISubnetID", fmt.Sprintf(eniSubnetIDPath, mac))
 }
 
 // GetENIID get id of eni by mac from metadata.
 func (meta EC2MetadataWrapper) GetENIID(ctx context.Context, mac string) (string, error) {
-	start := time.Now()
-	data, err := meta.GetMetadata(ctx, fmt.Sprintf(eniIDPath, mac))
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetENIID", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
-	if err != nil {
-		metrics.MetadataErrInc("GetENIID", err)
-	}
-	return data, err
+	return meta.GetMetadata(ctx, "GetENIID", fmt.Sprintf(eniIDPath, mac))
+
 }
 
 // GetENIIPv4Gateway get ipv4 gateway of eni by mac from metadata.
 func (meta EC2MetadataWrapper) GetENIIPv4Gateway(ctx context.Context, mac string) (net.IP, error) {
-	start := time.Now()
-	gw, err := meta.GetMetadata(ctx, fmt.Sprintf(eniGatewayPath, mac))
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetENIGateway", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
+	gw, err := meta.GetMetadata(ctx, "GetENIIPv4Gateway", fmt.Sprintf(eniGatewayPath, mac))
 	if err != nil {
-		metrics.MetadataErrInc("GetENIGateway", err)
 		return nil, err
 	}
 	return ip.ParseIP(gw)
@@ -204,12 +132,8 @@ func (meta EC2MetadataWrapper) GetENIIPv4Gateway(ctx context.Context, mac string
 // GetENIIPv6Gateway get ipv6 gateway of eni by mac from metadata
 // TODO: metadata service currently does not support.
 func (meta EC2MetadataWrapper) GetENIIPv6Gateway(ctx context.Context, mac string) (net.IP, error) {
-	start := time.Now()
-	gw, err := meta.GetMetadata(ctx, fmt.Sprintf(eniV6GatewayPath, mac))
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetENIGateway", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
+	gw, err := meta.GetMetadata(ctx, "GetENIIPv6Gateway", fmt.Sprintf(eniV6GatewayPath, mac))
 	if err != nil {
-		metrics.MetadataErrInc("GetENIGateway", err)
 		return nil, err
 	}
 	return ip.ParseIP(gw)
@@ -217,12 +141,8 @@ func (meta EC2MetadataWrapper) GetENIIPv6Gateway(ctx context.Context, mac string
 
 // GetENISubnetCIDR get subnet cidr of eni by mac from metadata.
 func (meta EC2MetadataWrapper) GetENISubnetCIDR(ctx context.Context, mac string) (*net.IPNet, error) {
-	start := time.Now()
-	cidr, err := meta.GetMetadata(ctx, fmt.Sprintf(eniSubnetCIDRPath, mac))
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetENISubnetCIDR", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
+	cidr, err := meta.GetMetadata(ctx, "GetENISubnetCIDR", fmt.Sprintf(eniSubnetCIDRPath, mac))
 	if err != nil {
-		metrics.MetadataErrInc("GetENISubnetCIDR", err)
 		return nil, err
 	}
 	_, subnetCIDR, err := net.ParseCIDR(cidr)
@@ -231,12 +151,8 @@ func (meta EC2MetadataWrapper) GetENISubnetCIDR(ctx context.Context, mac string)
 
 // GetENIPrivateIPv4s get private ipv4s of eni by mac from metadata.
 func (meta EC2MetadataWrapper) GetENIPrivateIPv4s(ctx context.Context, mac string) ([]net.IP, error) {
-	start := time.Now()
-	ipsStr, err := meta.GetMetadata(ctx, fmt.Sprintf(eniPrivateIPs, mac))
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetENIPrivateIPv4s", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
+	ipsStr, err := meta.GetMetadata(ctx, "GetENIPrivateIPv4s", fmt.Sprintf(eniPrivateIPs, mac))
 	if err != nil {
-		metrics.MetadataErrInc("GetENIPrivateIPv4s", err)
 		return nil, err
 	}
 	if len(ipsStr) == 0 {
@@ -253,12 +169,8 @@ func (meta EC2MetadataWrapper) GetENIPrivateIPv4s(ctx context.Context, mac strin
 // GetENIPrivateIPv6s get private ipv6s of eni by mac from metadata
 // TODO: metadata service currently does not support.
 func (meta EC2MetadataWrapper) GetENIPrivateIPv6s(ctx context.Context, mac string) ([]net.IP, error) {
-	start := time.Now()
-	ipsStr, err := meta.GetMetadata(ctx, fmt.Sprintf(eniPrivateIPv6s, mac))
-	duration := metrics.MsSince(start)
-	metrics.MetadataLatency.WithLabelValues("GetENIPrivateIPv6s", fmt.Sprint(err != nil), metrics.CelloReqErrCode(err)).Observe(duration)
+	ipsStr, err := meta.GetMetadata(ctx, "GetENIPrivateIPv6s", fmt.Sprintf(eniPrivateIPv6s, mac))
 	if err != nil {
-		metrics.MetadataErrInc("GetENIPrivateIPv6s", err)
 		return nil, err
 	}
 	if len(ipsStr) == 0 {

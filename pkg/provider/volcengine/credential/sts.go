@@ -81,7 +81,7 @@ func (p *STSProvider) getNewSTS() (cr *Credential, err error) {
 		}
 	}()
 
-	data, err = metadata.New().GetMetadata(context.TODO(), fmt.Sprintf("%s/%s", MetadataCredentialPath, p.role))
+	data, err = metadata.New().GetMetadata(context.TODO(), "GetIamRoleCredential", fmt.Sprintf("%s/%s", MetadataCredentialPath, p.role))
 	if err != nil {
 		err = fmt.Errorf("get sts failed, %v", err)
 		return

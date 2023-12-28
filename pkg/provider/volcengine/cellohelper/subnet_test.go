@@ -23,11 +23,10 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/time/rate"
-
 	"github.com/volcengine/volcengine-go-sdk/service/vpc"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
 	"github.com/volcengine/volcengine-go-sdk/volcengine/response"
+	"golang.org/x/time/rate"
 
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 	"github.com/volcengine/cello/pkg/provider/volcengine/ec2"
@@ -187,7 +186,7 @@ func TestPodSubnetManager(t *testing.T) {
 				}
 				return &ec2.DescribeSubnetAttributesOutput{
 					Metadata: metadata,
-				}, apiErr.NewAPIRequestErr(metadata, nil)
+				}, apiErr.NewAPIRequestStatus(metadata, nil).GetError()
 			}
 
 			return &ec2.DescribeSubnetAttributesOutput{
