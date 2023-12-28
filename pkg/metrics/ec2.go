@@ -16,81 +16,67 @@
 package metrics
 
 import (
-	"errors"
+	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-
-	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 )
 
 var (
-	// OpenAPILatency latency of openapi call.
-	OpenAPILatency = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Name: "openapi_latency_ms",
-			Help: "cello openapi call latency in ms",
+	// OpenAPILatency volcengine open api latency
+	OpenAPILatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "openapi_latency_ms",
+			Help:    "volcengine openapi latency in ms",
+			Buckets: []float64{50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 13800, 14800, 16800, 20800, 28800, 44800},
 		},
-		[]string{"api", "error", "code", "requestId"},
+		[]string{"api"},
 	)
 
-	// OpenAPIErr error counter of openapi call.
-	OpenAPIErr = prometheus.NewCounterVec(
+	// OpenAPIStatistic counter of volcengine openapi call.
+	OpenAPIStatistic = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "openapi_error_count",
-			Help: "The number of times openapi returns an error",
+			Name: "openapi_statistic",
+			Help: "The statistic of openapi call",
 		},
-		[]string{"api", "error", "code", "requestId"},
+		[]string{"api", "httpCode", "errCode"},
 	)
 
-	// MetadataLatency latency of metadata call.
-	MetadataLatency = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Name: "metadata_latency_ms",
-			Help: "cello metadata call latency in ms",
+	MetadataLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "metadata_latency_ms",
+			Help:    "volcengine metadata latency in ms",
+			Buckets: []float64{50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 13800, 14800, 16800, 20800, 28800, 44800},
 		},
-		[]string{"metadata", "error", "status"},
+		[]string{"url"},
 	)
 
-	// MetadataErr error counter of metadata call.
-	MetadataErr = prometheus.NewCounterVec(
+	// MetadataStatistic counter of volcengine openapi call.
+	MetadataStatistic = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "metadata_error_count",
-			Help: "The number of times metadata returns an error",
+			Name: "metadata_statistic",
+			Help: "The statistic of metadata call",
 		},
-		[]string{"metadata", "error"},
+		[]string{"url", "httpCode", "errCode"},
 	)
 )
 
-// OpenAPIErrInc help to increment count of OpenAPIErr.
-func OpenAPIErrInc(api string, err error) {
-	OpenAPIErr.With(prometheus.Labels{"api": api, "error": err.Error(), "code": CelloReqErrCode(err), "requestId": CelloReqId(err)}).Inc()
+// OpenAPILatencyRecord record latency of api
+func OpenAPILatencyRecord(api string, startTime time.Time) {
+	OpenAPILatency.WithLabelValues(api).Observe(float64(time.Since(startTime).Milliseconds()))
 }
 
-// MetadataErrInc help to increment count of MetadataErr.
-func MetadataErrInc(metadata string, err error) {
-	MetadataErr.With(prometheus.Labels{"metadata": metadata, "error": err.Error()}).Inc()
+// OpenAPIStatisticRecord record statistic of api call
+func OpenAPIStatisticRecord(api string, httpCode int, errCode string) {
+	OpenAPIStatistic.WithLabelValues(api, strconv.Itoa(httpCode), errCode).Inc()
 }
 
-// CelloReqId return requestId of api request.
-func CelloReqId(err error) string {
-	if err == nil {
-		return ""
-	}
-	var aer apiErr.APIRequestError
-	if errors.As(err, &aer) {
-		return aer.RequestId()
-	}
-	return ""
+// MetadataLatencyRecord record latency of metadata
+func MetadataLatencyRecord(url string, startTime time.Time) {
+	MetadataLatency.WithLabelValues(url).Observe(float64(time.Since(startTime).Milliseconds()))
 }
 
-// CelloReqErrCode return error code of api request.
-func CelloReqErrCode(err error) string {
-	if err == nil {
-		return ""
-	}
-	var aer apiErr.APIRequestError
-	if errors.As(err, &aer) {
-		return aer.ErrorCode()
-	}
-	return err.Error() // Unknown err code
+// MetadataStatisticRecord record statistic of metadata call
+func MetadataStatisticRecord(url string, httpCode int, errCode string) {
+	MetadataStatistic.WithLabelValues(url, strconv.Itoa(httpCode), errCode).Inc()
 }

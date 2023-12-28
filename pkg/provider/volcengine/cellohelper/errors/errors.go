@@ -17,19 +17,19 @@ package errors
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/pkg/errors"
-	"golang.org/x/time/rate"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-
 	"github.com/volcengine/volcengine-go-sdk/volcengine/response"
-
-	"github.com/volcengine/cello/pkg/tracing"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
+	RequestSuccess = ""
+
+	// ClientErr means client can not send request
+	ClientErr         = "ClientError"
+	ClientErrHttpCode = 5000
+
 	InvalidParameter = "InvalidParameter"
 	MissingParameter = "MissingParameter"
 	InternalError    = "InternalError"
@@ -62,60 +62,83 @@ type APIRequestError interface {
 	RequestId() string
 }
 
-// APIRequestErr is error wrapper of openapi sdk.
-type APIRequestErr struct {
-	sdkErr    error
-	requestId string
-	codeN     int
-	code      string
-	message   string
+// APIRequestStat is error wrapper of openapi sdk.
+type APIRequestStat struct {
+	clientErr error  // error from client
+	httpCode  int    // httpCode from metadata of api response or from client
+	requestId string // requestId from metadata of api response
+	codeN     int    // codeN from error of api response
+	code      string // code from error of api response
+	message   string // message from error of api response
 }
 
-func (e *APIRequestErr) Error() string {
-	var info string
-	if e.sdkErr != nil {
-		info = "sdkErr: " + e.sdkErr.Error()
+func (e *APIRequestStat) Error() string {
+	if e.clientErr != nil {
+		return fmt.Sprintf("client error: %s httpCode: %d", e.clientErr.Error(), e.httpCode)
 	}
 
 	if e.message != "" {
-		return fmt.Sprintf("apiErr: %s(%s [%d]) RequestId %s", e.message, e.code, e.codeN, e.requestId)
-	} else {
-		return info
+		return fmt.Sprintf("%s(%s [%d]) requestId %s hpptCode %d", e.message, e.code, e.codeN, e.requestId, e.httpCode)
 	}
+	return ""
 }
 
-func (e *APIRequestErr) ErrorCodeN() int {
+func (e *APIRequestStat) HttpCode() int {
+	return e.httpCode
+}
+
+func (e *APIRequestStat) ErrorCodeN() int {
 	return e.codeN
 }
 
-func (e *APIRequestErr) ErrorCode() string {
+func (e *APIRequestStat) ErrorCode() string {
 	return e.code
 }
 
-func (e *APIRequestErr) Message() string {
+func (e *APIRequestStat) Message() string {
 	return e.message
 }
 
-func (e *APIRequestErr) RequestId() string {
+func (e *APIRequestStat) RequestId() string {
 	return e.requestId
 }
 
-// NewAPIRequestErr wrap openapi error and sdk error.
-func NewAPIRequestErr(responseMetadata *response.ResponseMetadata, sdkErr error) APIRequestError {
-	err := &APIRequestErr{
-		sdkErr: sdkErr,
+// NewAPIRequestStatus wrap error and info of response.
+func NewAPIRequestStatus(responseMetadata *response.ResponseMetadata, cErr error) *APIRequestStat {
+	// response first
+	if responseMetadata != nil && responseMetadata.RequestId != "" { // get response
+		stat := &APIRequestStat{
+			clientErr: nil,
+			httpCode:  responseMetadata.HTTPCode,
+			requestId: responseMetadata.RequestId,
+			code:      RequestSuccess,
+		}
+		if responseMetadata.Error != nil {
+			stat.codeN = responseMetadata.Error.CodeN
+			stat.code = responseMetadata.Error.Code
+			stat.message = responseMetadata.Error.Message
+		}
+		return stat
+	} else if cErr != nil {
+		return &APIRequestStat{
+			clientErr: cErr,
+			httpCode:  ClientErrHttpCode,
+			code:      ClientErr,
+		}
 	}
-	if responseMetadata != nil && responseMetadata.Error != nil {
-		err.requestId = responseMetadata.RequestId
-		err.codeN = responseMetadata.Error.CodeN
-		err.code = responseMetadata.Error.Code
-		err.message = responseMetadata.Error.Message
+	return &APIRequestStat{}
+}
+
+func (e *APIRequestStat) GetError() APIRequestError {
+	if e.code != RequestSuccess {
+		return e
 	}
-	return err
+	return nil
 }
 
 func ErrEqual(errCode string, err error) bool {
-	respErr, ok := err.(APIRequestError)
+	var respErr APIRequestError
+	ok := errors.As(err, &respErr)
 	if ok {
 		return respErr.ErrorCode() == errCode
 	}
@@ -175,81 +198,6 @@ func (c *OpenApiErrCodeChain) ErrChainEqual(err error) bool {
 		}
 	}
 	return false
-}
-
-type EventInfoField struct {
-	Key   string
-	Value interface{}
-}
-
-func (f *EventInfoField) String() string {
-	return fmt.Sprintf("%s=%v", f.Key, f.Value)
-}
-
-var (
-	cantRetryErrEventLimiter *rate.Limiter
-	flowLimitEventLimiter    *rate.Limiter
-)
-
-func AllowRecordErrEvent() bool {
-	if cantRetryErrEventLimiter == nil {
-		return true
-	}
-	return cantRetryErrEventLimiter.Allow()
-}
-
-func AllowRecordFlowLimitEvent() bool {
-	if flowLimitEventLimiter == nil {
-		return true
-	}
-	return flowLimitEventLimiter.Allow()
-}
-
-// RecordOpenAPIErrEvent report Event with message according to APIRequestError,
-// if message is "", a default message will be used.
-func RecordOpenAPIErrEvent(err error, fields ...EventInfoField) {
-	respErr, ok := err.(APIRequestError)
-	if !ok {
-		return
-	}
-	errCode := respErr.ErrorCode()
-
-	fieldsInfo := ""
-	for _, field := range fields {
-		fieldsInfo += field.String()
-		fieldsInfo += " "
-	}
-	fmtInfo := fmt.Sprintf("%s, %s", errCode, fieldsInfo)
-	if respErr.RequestId() != "" {
-		fmtInfo = fmt.Sprintf("%s RequestId: %s", fmtInfo, respErr.RequestId())
-	}
-
-	if strings.HasPrefix(errCode, "QuotaExceeded") ||
-		strings.HasPrefix(errCode, "LimitExceeded") {
-		if AllowRecordErrEvent() {
-			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventVpcResourceQuotaExceeded, fmtInfo)
-		}
-	}
-
-	switch errCode {
-	case InsufficientIpInSubnet:
-		if AllowRecordErrEvent() {
-			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventInsufficientIpInSubnet, fmtInfo)
-		}
-	case FlowLimitExceeded, AccountFlowLimitExceeded:
-		if AllowRecordFlowLimitEvent() {
-			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventOpenApiFlowLimit, fmtInfo)
-		}
-	}
-}
-
-func init() {
-	if flowLimitEventLimiter == nil {
-		flowLimitEventLimiter = rate.NewLimiter(2, 2)
-	}
-	if cantRetryErrEventLimiter == nil {
-		cantRetryErrEventLimiter = rate.NewLimiter(5, 5)
-	}
 }
 
 // define some errors that need to be propagated upwards
