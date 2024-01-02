@@ -26,9 +26,10 @@ var (
 	// OpenAPILatency volcengine open api latency
 	OpenAPILatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "openapi_latency_ms",
-			Help:    "volcengine openapi latency in ms",
-			Buckets: []float64{50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 13800, 14800, 16800, 20800, 28800, 44800},
+			Subsystem: metricsSubsystem,
+			Name:      "openapi_latency_ms",
+			Help:      "volcengine openapi latency in ms",
+			Buckets:   []float64{50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 13800, 14800, 16800, 20800, 28800, 44800},
 		},
 		[]string{"api"},
 	)
@@ -36,17 +37,19 @@ var (
 	// OpenAPIStatistic counter of volcengine openapi call.
 	OpenAPIStatistic = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "openapi_statistic",
-			Help: "The statistic of openapi call",
+			Subsystem: metricsSubsystem,
+			Name:      "openapi_statistic",
+			Help:      "The statistic of openapi call",
 		},
 		[]string{"api", "httpCode", "errCode"},
 	)
 
 	MetadataLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "metadata_latency_ms",
-			Help:    "volcengine metadata latency in ms",
-			Buckets: []float64{50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 13800, 14800, 16800, 20800, 28800, 44800},
+			Subsystem: metricsSubsystem,
+			Name:      "metadata_latency_ms",
+			Help:      "volcengine metadata latency in ms",
+			Buckets:   []float64{50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 13800, 14800, 16800, 20800, 28800, 44800},
 		},
 		[]string{"url"},
 	)
@@ -54,8 +57,9 @@ var (
 	// MetadataStatistic counter of volcengine openapi call.
 	MetadataStatistic = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "metadata_statistic",
-			Help: "The statistic of metadata call",
+			Subsystem: metricsSubsystem,
+			Name:      "metadata_statistic",
+			Help:      "The statistic of metadata call",
 		},
 		[]string{"url", "httpCode", "errCode"},
 	)
