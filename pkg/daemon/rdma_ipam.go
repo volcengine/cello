@@ -170,7 +170,7 @@ func (d *daemon) initRdmaIpamManager() (err error) {
 
 	defer func() {
 		if err != nil {
-			metrics.SubSysErrInc(RdmaSubSysName, RdmaIpamInitFailed, err)
+			metrics.SubSysErrInc(RdmaSubSysName, RdmaIpamInitFailed)
 			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, RdmaIpamInitFailed, err.Error())
 		} else {
 			_ = tracing.RecordNodeEvent(v1.EventTypeNormal, RdmaIpamInitSucceed, "rdma ipam init succeed")
