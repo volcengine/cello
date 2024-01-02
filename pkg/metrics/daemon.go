@@ -19,10 +19,12 @@ import "github.com/prometheus/client_golang/prometheus"
 
 var (
 	// RpcLatency the latency of rpc call.
-	RpcLatency = prometheus.NewSummaryVec(
-		prometheus.SummaryOpts{
-			Name: "rpc_latency_ms",
-			Help: "cello rpc call latency in ms",
+	RpcLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Subsystem: metricsSubsystem,
+			Name:      "rpc_latency_ms",
+			Help:      "cello rpc call latency in ms",
+			Buckets:   []float64{50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600, 26600, 27600, 29600, 33600, 41600, 57600, 89600, 110000, 120000},
 		},
 		[]string{"rpc_api", "error"},
 	)
@@ -30,8 +32,9 @@ var (
 	// ResourceManagerErr error counter of resource manager.
 	ResourceManagerErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "resource_manager_error_count",
-			Help: "The number of errors encountered in eni manager",
+			Subsystem: metricsSubsystem,
+			Name:      "resource_manager_error_count",
+			Help:      "The number of errors encountered in eni manager",
 		},
 		[]string{"fn", "error"},
 	)
@@ -39,10 +42,11 @@ var (
 	// SubSysErr error counter of sub system.
 	SubSysErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "sub_sys_error_count",
-			Help: "The number of errors encountered in sub sys",
+			Subsystem: metricsSubsystem,
+			Name:      "sub_sys_error_count",
+			Help:      "The number of errors encountered in sub sys",
 		},
-		[]string{"subsys", "code", "error"},
+		[]string{"subsys", "code"},
 	)
 )
 
@@ -50,6 +54,6 @@ func ResourceManagerErrInc(fn string, err error) {
 	ResourceManagerErr.WithLabelValues(fn, err.Error()).Inc()
 }
 
-func SubSysErrInc(subsys string, code string, err error) {
-	SubSysErr.WithLabelValues(subsys, code, err.Error()).Inc()
+func SubSysErrInc(subsys string, code string) {
+	SubSysErr.WithLabelValues(subsys, code).Inc()
 }
