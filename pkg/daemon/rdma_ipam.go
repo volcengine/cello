@@ -41,6 +41,7 @@ import (
 	"github.com/volcengine/cello/pkg/tracing"
 	"github.com/volcengine/cello/pkg/utils/datatype"
 	"github.com/volcengine/cello/pkg/utils/device"
+	ip2 "github.com/volcengine/cello/pkg/utils/ip"
 	"github.com/volcengine/cello/pkg/utils/iproute"
 	"github.com/volcengine/cello/pkg/utils/logger"
 	"github.com/volcengine/cello/pkg/utils/runtime"
@@ -63,30 +64,20 @@ type RdmaIpamManager struct {
 
 func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 	info := types.RdmaInfo{}
-	linkHasAddresses := func(link netlink.Link, ips []net.IPNet, matchPrefix bool) ([]net.IPNet, error) {
+	linkHasAddresses := func(link netlink.Link, ips []net.IP) ([]net.IPNet, error) {
 		var matches []net.IPNet
 		addresses, inErr := iproute.GetLinkAddresses(link)
 		if inErr != nil {
 			return nil, fmt.Errorf("get address for device %s failed, %v", link.Attrs().HardwareAddr, inErr)
 		}
-		addrMap := map[string]net.IPNet{}
+
 		ipMap := map[string]net.IPNet{}
 		for _, addr := range addresses {
 			ipMap[addr.IP.String()] = *addr.IPNet
-			addrMap[addr.IPNet.String()] = *addr.IPNet
-		}
-
-		matchMap := ipMap
-		if matchPrefix {
-			matchMap = addrMap
 		}
 
 		for _, ipAddr := range ips {
-			k := ipAddr.IP.String()
-			if matchPrefix {
-				k = ipAddr.String()
-			}
-			if m, exist := matchMap[k]; exist {
+			if m, exist := ipMap[ipAddr.String()]; exist {
 				matches = append(matches, m)
 			}
 		}
@@ -112,43 +103,39 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 	if err = apiErr.BackoffErrWrapper(err, inErr); err != nil {
 		return nil, fmt.Errorf("get rdma info failed, %v", err)
 	}
-	rdmaIpAddresses := volcengine.StringValueSlice(output.Instances[0].RdmaIpAddresses)
-	if len(rdmaIpAddresses) == 0 {
+	rdmaIpAddrStrs := volcengine.StringValueSlice(output.Instances[0].RdmaIpAddresses)
+	if len(rdmaIpAddrStrs) == 0 {
 		return &info, nil
 	}
-	if len(rdmaInterfaces) != len(rdmaIpAddresses) {
-		return nil, fmt.Errorf("number of rdma get from local is %d, not equal to %d get from remote",
-			len(rdmaInterfaces), len(rdmaIpAddresses))
+
+	rdmaIpAddr, err := ip2.ParseIPs(rdmaIpAddrStrs)
+	if err != nil {
+		return nil, fmt.Errorf("parse %v failed, %v", rdmaIpAddrStrs, err)
 	}
 
+	// rdmaInterfaces may include non rdma interfaces
 	for _, r := range rdmaInterfaces {
 		link, mErr := netlink.LinkByName(r.NetName)
 		if mErr != nil {
 			return nil, mErr
 		}
-		for _, rdmaIPStr := range rdmaIpAddresses {
-			rdmaIP := net.ParseIP(rdmaIPStr)
-			matches, err2 := linkHasAddresses(link, []net.IPNet{{
-				IP:   rdmaIP,
-				Mask: net.CIDRMask(32, 32),
-			}}, false)
-			if err2 != nil {
-				return nil, fmt.Errorf("find %s on %s failed, %v", rdmaIPStr, link.Attrs().HardwareAddr, err2)
-			}
-			if len(matches) == 1 {
-				log.Infof("Found %v match %s on %s", matches, rdmaIPStr, r.NetName)
-				info.RdmaInterfaces = append(info.RdmaInterfaces, types.RdmaInterface{
-					IfName:   link.Attrs().Name,
-					Mac:      link.Attrs().HardwareAddr.String(),
-					DeviceId: r.PciAddr,
-					Cidr:     matches[0].String(),
-				})
-			}
+		matches, err2 := linkHasAddresses(link, rdmaIpAddr)
+		if err2 != nil {
+			return nil, fmt.Errorf("check rdma ips on %s failed, %v", link.Attrs().HardwareAddr, err2)
+		}
+		if len(matches) == 1 {
+			log.Infof("Found rdma %s match %s on %s", matches[0].String(), matches[0].IP.String(), r.NetName)
+			info.RdmaInterfaces = append(info.RdmaInterfaces, types.RdmaInterface{
+				IfName:   link.Attrs().Name,
+				Mac:      link.Attrs().HardwareAddr.String(),
+				DeviceId: r.PciAddr,
+				Cidr:     matches[0].String(),
+			})
 		}
 	}
 
-	if len(rdmaIpAddresses) != len(info.RdmaInterfaces) {
-		return nil, fmt.Errorf("not found all rdma interfaces, rdma from remote: %v, from local: %v", rdmaIpAddresses, info.RdmaInterfaces)
+	if len(rdmaIpAddrStrs) != len(info.RdmaInterfaces) {
+		return nil, fmt.Errorf("not found all rdma interfaces, rdma from remote: %v, from local: %v", rdmaIpAddrStrs, info.RdmaInterfaces)
 	}
 	hpcRoute, err := getHpcRoute(info.RdmaInterfaces)
 	if err != nil {
