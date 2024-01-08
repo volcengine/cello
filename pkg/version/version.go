@@ -20,7 +20,7 @@ import (
 	"runtime"
 )
 
-var Version = "v1.7.4"
+var Version = "v1.7.5"
 var ComponentName = "cello-agent"
 var GitCommit = "unset"
 var NodeName = "unset"
