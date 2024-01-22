@@ -20,7 +20,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
 
@@ -49,7 +48,7 @@ func (m *getInstanceMeta) Handle(c *gin.Context) {
 		c.JSON(http.StatusOK, output)
 	case "DescribeInstanceTypes":
 		output, err := m.api.DescribeInstanceTypes(&ecs.DescribeInstanceTypesInput{
-			InstanceTypes: []*string{volcengine.String(m.meta.GetInstanceType())},
+			InstanceTypeIds: []*string{volcengine.String(m.meta.GetInstanceType())},
 		})
 		if err != nil {
 			_ = c.Error(err)

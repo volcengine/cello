@@ -751,7 +751,7 @@ func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
 	log.InfoS("Waiting to get the maximum number of ip on an eni")
 	werr := wait.ExponentialBackoff(backoff.BackOff(backoff.APIFastRetry), func() (bool, error) {
 		resp, err = e.ec2Client.DescribeInstanceTypes(&ecs.DescribeInstanceTypesInput{
-			InstanceTypes: volcengine.StringSlice([]string{e.GetInstanceType()}),
+			InstanceTypeIds: volcengine.StringSlice([]string{e.GetInstanceType()}),
 		})
 		if err != nil {
 			log.ErrorS(err, "DescribeInstanceType failed",
