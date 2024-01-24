@@ -21,10 +21,9 @@ var (
 	// RpcLatency the latency of rpc call.
 	RpcLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Subsystem: metricsSubsystem,
-			Name:      "rpc_latency_ms",
-			Help:      "cello rpc call latency in ms",
-			Buckets:   []float64{50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600, 26600, 27600, 29600, 33600, 41600, 57600, 89600, 110000, 120000},
+			Name:    "rpc_latency_ms",
+			Help:    "cello rpc call latency in ms",
+			Buckets: []float64{50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600, 26600, 27600, 29600, 33600, 41600, 57600, 89600, 110000, 120000},
 		},
 		[]string{"rpc_api", "error"},
 	)
@@ -32,9 +31,8 @@ var (
 	// ResourceManagerErr error counter of resource manager.
 	ResourceManagerErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Subsystem: metricsSubsystem,
-			Name:      "resource_manager_error_count",
-			Help:      "The number of errors encountered in eni manager",
+			Name: "resource_manager_error_count",
+			Help: "The number of errors encountered in eni manager",
 		},
 		[]string{"fn", "error"},
 	)
@@ -42,9 +40,8 @@ var (
 	// SubSysErr error counter of sub system.
 	SubSysErr = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Subsystem: metricsSubsystem,
-			Name:      "sub_sys_error_count",
-			Help:      "The number of errors encountered in sub sys",
+			Name: "sub_sys_error_count",
+			Help: "The number of errors encountered in sub sys",
 		},
 		[]string{"subsys", "code"},
 	)
