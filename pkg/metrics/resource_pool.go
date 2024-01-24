@@ -21,45 +21,40 @@ var (
 	// ResourcePoolMaxCap Gauge of resource pool maximum capacity.
 	ResourcePoolMaxCap = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Subsystem: metricsSubsystem,
-			Name:      "resource_pool_max_cap",
-			Help:      "The max capacity of resource pool"},
+			Name: "resource_pool_max_cap",
+			Help: "The max capacity of resource pool"},
 		[]string{"name", "type"},
 	)
 
 	// ResourcePoolTarget Gauge of resource pool target.
 	ResourcePoolTarget = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Subsystem: metricsSubsystem,
-			Name:      "resource_pool_target",
-			Help:      "The cache target of resource pool"},
+			Name: "resource_pool_target",
+			Help: "The cache target of resource pool"},
 		[]string{"name", "type"},
 	)
 
 	// ResourcePoolTargetMin Gauge of resource pool targetMin.
 	ResourcePoolTargetMin = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Subsystem: metricsSubsystem,
-			Name:      "resource_pool_target_min",
-			Help:      "The min cache target of resource pool"},
+			Name: "resource_pool_target_min",
+			Help: "The min cache target of resource pool"},
 		[]string{"name", "type"},
 	)
 
 	// ResourcePoolTotal Gauge of total resources in resource pool.
 	ResourcePoolTotal = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Subsystem: metricsSubsystem,
-			Name:      "resource_pool_total",
-			Help:      "The total number of resource in pool"},
+			Name: "resource_pool_total",
+			Help: "The total number of resource in pool"},
 		[]string{"name", "type"},
 	)
 
 	// ResourcePoolAvailable Gauge of available resources in resource pool.
 	ResourcePoolAvailable = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Subsystem: metricsSubsystem,
-			Name:      "resource_pool_available",
-			Help:      "The available number of resource in pool"},
+			Name: "resource_pool_available",
+			Help: "The available number of resource in pool"},
 		[]string{"name", "type"},
 	)
 )
