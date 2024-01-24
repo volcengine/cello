@@ -27,10 +27,6 @@ import (
 	"github.com/volcengine/cello/pkg/utils/logger"
 )
 
-const (
-	metricsSubsystem = "cello"
-)
-
 var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "metrics"})
 
 const (
