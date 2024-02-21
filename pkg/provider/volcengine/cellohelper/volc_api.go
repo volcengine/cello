@@ -25,13 +25,12 @@ import (
 	"time"
 
 	"github.com/containernetworking/plugins/pkg/ip"
-	v1 "k8s.io/api/core/v1"
-	k8sErr "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/wait"
-
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 	"github.com/volcengine/volcengine-go-sdk/service/vpc"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
+	v1 "k8s.io/api/core/v1"
+	k8sErr "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/volcengine/cello/pkg/backoff"
 	"github.com/volcengine/cello/pkg/config"
@@ -126,7 +125,7 @@ func (e *VolcApiImpl) deleteENI(eniID string) error {
 			return true, nil
 		}
 		errCodes = &apiErr.OpenApiErrCodeChain{}
-		if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidEniInvalidStatus, apiErr.InvalidVpcInvalidStatus).ErrChainEqual(err) {
+		if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus).ErrChainEqual(err) {
 			return false, err
 		}
 		return false, nil
@@ -166,8 +165,7 @@ func (e *VolcApiImpl) freeENI(eniID string, sleepDelayAfterDetach time.Duration)
 			return true, nil
 		}
 		errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus,
-			apiErr.InvalidEniIdNotFound, apiErr.InvalidEniInstanceMismatch,
-			apiErr.InvalidEniInvalidStatus)
+			apiErr.InvalidEniIdNotFound, apiErr.InvalidEniInstanceMismatch)
 
 		if err == nil || errCodes.ErrChainEqual(err) {
 			return false, err
@@ -262,7 +260,7 @@ func (e *VolcApiImpl) attachENI(eniID string) (*ec2.DescribeNetworkInterfaceAttr
 			NetworkInterfaceId: volcengine.String(eniID),
 		})
 		errCodes := &apiErr.OpenApiErrCodeChain{}
-		if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus, apiErr.InvalidEniInvalidStatus,
+		if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus,
 			apiErr.LimitExceededEnisPerInstance).ErrChainEqual(err) {
 			return false, err
 		}
@@ -511,7 +509,7 @@ func (e *VolcApiImpl) AllocIPAddresses(eniID, eniMac string, v4Cnt, v6Cnt int) (
 				return true, nil
 			}
 			errCodes := &apiErr.OpenApiErrCodeChain{}
-			if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus, apiErr.InvalidEniInvalidStatus, apiErr.InsufficientIpInSubnet,
+			if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus, apiErr.InsufficientIpInSubnet,
 				apiErr.LimitExceededPrivateIpsPerEni, apiErr.QuotaExceededSecurityGroupIp).ErrChainEqual(err) {
 				return false, err
 			}
@@ -562,7 +560,7 @@ func (e *VolcApiImpl) AllocIPAddresses(eniID, eniMac string, v4Cnt, v6Cnt int) (
 				return true, nil
 			}
 			errCodes := &apiErr.OpenApiErrCodeChain{}
-			if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus, apiErr.InvalidEniInvalidStatus, apiErr.InsufficientIpInSubnet,
+			if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus, apiErr.InsufficientIpInSubnet,
 				apiErr.LimitExceededIpv6AddressesPerEni, apiErr.InvalidSubnetDisableIpv6, apiErr.QuotaExceededSecurityGroupIp).ErrChainEqual(err) {
 				return false, err
 			}
@@ -656,7 +654,7 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 				return true, nil
 			}
 			errCodes := &apiErr.OpenApiErrCodeChain{}
-			if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus, apiErr.InvalidEniInvalidStatus).ErrChainEqual(err) {
+			if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus).ErrChainEqual(err) {
 				return false, err
 			}
 			errCodes = &apiErr.OpenApiErrCodeChain{}
@@ -683,7 +681,7 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 				return true, nil
 			}
 			errCodes := &apiErr.OpenApiErrCodeChain{}
-			if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus, apiErr.InvalidEniInvalidStatus).ErrChainEqual(err) {
+			if errCodes.WithPublicErrCodes().WithErrCodes(apiErr.InvalidVpcInvalidStatus).ErrChainEqual(err) {
 				return false, err
 			}
 			errCodes = &apiErr.OpenApiErrCodeChain{}
