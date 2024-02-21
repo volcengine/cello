@@ -17,3 +17,5 @@ ci/tf/*.tfstate
 ci/tf/*.tfstate.backup
 ci/tf/hosts.yaml
 ci/tf/values.yaml
+
+*.DS_Store
