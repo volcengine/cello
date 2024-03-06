@@ -9,6 +9,7 @@
 
 # ci files
 ci/playbook/kube
+ci/playbook/inventory.yaml
 ci/output
 ci/tf/.terraform
 ci/tf/.terraform.lock.hcl
