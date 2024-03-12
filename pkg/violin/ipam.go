@@ -165,8 +165,7 @@ func (mgr *IPManager) DeviceById(id string) (device.NetDevice, error) {
 				if err != nil {
 					return nil, err
 				}
-				var rangeset allocator.RangeSet
-				rangeset = []allocator.Range{
+				rangeset := []allocator.Range{
 					{
 						RangeStart: startIP,
 						Subnet: cniTypes.IPNet{
@@ -175,7 +174,7 @@ func (mgr *IPManager) DeviceById(id string) (device.NetDevice, error) {
 						},
 					},
 				}
-				err = mgr.ipams.AddRangeSet(dev.IfName(), mgr.ipamStore, &rangeset)
+				err = mgr.ipams.AddRangeSet(dev.IfName(), mgr.ipamStore, (*allocator.RangeSet)(&rangeset))
 				if err != nil {
 					return nil, fmt.Errorf("faild to add range for dev %v range: %v err: %w",
 						dev.IfName(), rangeset, err)
@@ -195,7 +194,7 @@ func (mgr *IPManager) DeviceById(id string) (device.NetDevice, error) {
 }
 
 func availableCIDR(addrs []netlink.Addr) (start net.IP, subnet *net.IPNet, err error) {
-	if addrs == nil || len(addrs) == 0 {
+	if len(addrs) == 0 {
 		return nil, nil, fmt.Errorf("no available CIDR found")
 	}
 	for i := range addrs {

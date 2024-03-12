@@ -126,7 +126,7 @@ func NewDaemonWithOptions(ctx context.Context, nodeName string, options ...LiteA
 		k8sClientQPS:   DefaultKubeClientQPS,
 		k8sClientBurst: DefaultKubeClientBurst,
 		k8sContentType: DefaultKubeContentType,
-		useragent:      DefaultUserAgent,
+		useragent:      DefaultUserAgent + Version,
 		apiAddress:     DefaultRPCAddress,
 	}
 
