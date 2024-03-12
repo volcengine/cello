@@ -39,14 +39,14 @@ func LoadConfigFromFile(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = validateConfig(&c)
+	err = ValidateConfig(&c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate config")
 	}
 	return &c, nil
 }
 
-func validateConfig(c *Config) error {
+func ValidateConfig(c *Config) error {
 	err := os.MkdirAll(c.DataDir, 0755)
 	if err != nil {
 		return err

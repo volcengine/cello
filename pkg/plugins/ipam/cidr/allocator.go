@@ -45,7 +45,7 @@ type ipamSet struct {
 }
 
 func NewAllocatorGroup(c *Config) (*AllocatorGroup, error) {
-	err := validateConfig(c)
+	err := ValidateConfig(c)
 	if err != nil {
 		return nil, err
 	}
