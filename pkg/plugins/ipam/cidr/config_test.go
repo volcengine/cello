@@ -95,7 +95,7 @@ var _ = Describe("Cidr IPAM Config", func() {
 				},
 			},
 		}
-		err := cidr.PrepareConfig(config)
+		err := cidr.ValidateConfig(config)
 		Expect(strings.Contains(err.Error(), "start not smaller than end")).To(Equal(true))
 		Expect(strings.Contains(err.Error(), "abc")).To(Equal(true))
 	})

@@ -587,7 +587,7 @@ func (d *daemon) DeleteEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRe
 func (d *daemon) createVpcEndpoint(ctx context.Context, req *pbrpc.CreateEndpointRequest) (resp *pbrpc.CreateEndpointResponse, err error) {
 	lg := log.WithFields(logger.Fields{
 		"Namespace":          req.Namespace,
-		"NetName":            req.Name,
+		"Name":               req.Name,
 		"SandboxContainerId": req.InfraContainerId,
 		"IfName":             req.IfName,
 	})
@@ -747,7 +747,7 @@ func (d *daemon) createVpcEndpoint(ctx context.Context, req *pbrpc.CreateEndpoin
 func (d *daemon) deleteVpcEndpoint(ctx context.Context, req *pbrpc.DeleteEndpointRequest) (resp *pbrpc.DeleteEndpointResponse, err error) {
 	lg := log.WithFields(logger.Fields{
 		"Namespace":          req.Namespace,
-		"NetName":            req.Name,
+		"Name":               req.Name,
 		"SandboxContainerId": req.InfraContainerId,
 	})
 	lg.InfoS("Handle DeleteEndpoint")

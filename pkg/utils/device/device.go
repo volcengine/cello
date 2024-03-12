@@ -31,9 +31,8 @@ const (
 	netDevDir    = "/sys/class/net"
 	sysBusPciDir = "/sys/bus/pci/devices"
 )
-var (
-	ErrNoNetDir = errors.New("no net directory")
-)
+
+var ErrNoNetDir = errors.New("no net directory")
 
 type NetDevice interface {
 	IfName() string
