@@ -6,10 +6,10 @@ Edit cluster variables in file `ci/tf/example.tfvars` and run:
 ``` bash
 ./provision.sh
 ```
-kubectl config file locates at `ci/kube/config-public`.
+kubectl config file locates at `ci/playbook/kube/config-public`.
 
 ```bash
-export KUBECONFIG=ci/kube/config-public
+export KUBECONFIG=ci/playbook/kube/config-public
 kubectl get nodes -A -o wide
 ```
 

@@ -13,6 +13,6 @@ all:
     ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p -q -i ${key_pair_path} root@${jump_host}"
     ansible_ssh_private_key_file: ${key_pair_path}
     host_key_checking: false
-    ansible_python_interpreter: /usr/bin/python3
+    ansible_python_interpreter: python3
     ansible_user: root
     k8s_api_server_ip: ${jump_host}
