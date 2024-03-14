@@ -32,6 +32,10 @@ variable "zone_id" {
   type = string
 }
 
+variable "instance_type" {
+  type = string
+}
+
 variable "vpc_name" {
   type = string
 }
@@ -127,7 +131,7 @@ resource "volcengine_security_group_rule" "sg_rule_allow_api_server" {
 resource "volcengine_ecs_instance" "control_plane" {
   zone_id              = var.zone_id
   image_id             = "image-ybqi99s7yq8rx7mnk44b"
-  instance_type        = "ecs.g3i.xlarge"
+  instance_type        = var.instance_type
   instance_name        = var.control_plane_node_name
   description          = var.control_plane_node_name
   host_name            = var.control_plane_node_name
@@ -144,7 +148,7 @@ resource "volcengine_ecs_instance" "control_plane" {
 resource "volcengine_ecs_instance" "worker" {
   zone_id              = var.zone_id
   image_id             = "image-ybqi99s7yq8rx7mnk44b"
-  instance_type        = "ecs.g3i.xlarge"
+  instance_type        = var.instance_type
   instance_name        = var.worker_node_name
   description          = var.worker_node_name
   host_name            = var.worker_node_name
@@ -161,7 +165,7 @@ resource "volcengine_ecs_instance" "worker" {
 resource "volcengine_ecs_instance" "worker2" {
   zone_id              = var.zone_id
   image_id             = "image-ybqi99s7yq8rx7mnk44b"
-  instance_type        = "ecs.g3i.xlarge"
+  instance_type        = var.instance_type
   instance_name        = var.worker2_node_name
   description          = var.worker2_node_name
   host_name            = var.worker2_node_name
