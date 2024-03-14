@@ -72,6 +72,11 @@ variable "control_eip_name" {
   type = string
 }
 
+
+variable "project_name" {
+  type = string
+}
+
 # Configure the Volcengine Provider
 provider "volcengine" {
   access_key = var.access_key
@@ -82,6 +87,7 @@ provider "volcengine" {
 resource "volcengine_vpc" "vpc_cello" {
   vpc_name   = var.vpc_name
   cidr_block = var.vpc_cidr
+  project_name = var.project_name
   enable_ipv6 = true
 }
 
@@ -121,7 +127,7 @@ resource "volcengine_security_group_rule" "sg_rule_allow_api_server" {
 resource "volcengine_ecs_instance" "control_plane" {
   zone_id              = var.zone_id
   image_id             = "image-ybqi99s7yq8rx7mnk44b"
-  instance_type        = "ecs.g2i.xlarge"
+  instance_type        = "ecs.g3i.xlarge"
   instance_name        = var.control_plane_node_name
   description          = var.control_plane_node_name
   host_name            = var.control_plane_node_name
@@ -132,13 +138,13 @@ resource "volcengine_ecs_instance" "control_plane" {
   subnet_id            = volcengine_subnet.subnet_node.id
   ipv6_address_count   = 1
   security_group_ids   = [data.volcengine_security_groups.sg_default.security_groups[0].id]
-
+  project_name = var.project_name
 }
 
 resource "volcengine_ecs_instance" "worker" {
   zone_id              = var.zone_id
   image_id             = "image-ybqi99s7yq8rx7mnk44b"
-  instance_type        = "ecs.g2i.xlarge"
+  instance_type        = "ecs.g3i.xlarge"
   instance_name        = var.worker_node_name
   description          = var.worker_node_name
   host_name            = var.worker_node_name
@@ -149,12 +155,13 @@ resource "volcengine_ecs_instance" "worker" {
   subnet_id            = volcengine_subnet.subnet_node.id
   ipv6_address_count   = 1
   security_group_ids   = [data.volcengine_security_groups.sg_default.security_groups[0].id]
+  project_name = var.project_name
 }
 
 resource "volcengine_ecs_instance" "worker2" {
   zone_id              = var.zone_id
   image_id             = "image-ybqi99s7yq8rx7mnk44b"
-  instance_type        = "ecs.g2i.xlarge"
+  instance_type        = "ecs.g3i.xlarge"
   instance_name        = var.worker2_node_name
   description          = var.worker2_node_name
   host_name            = var.worker2_node_name
@@ -165,6 +172,7 @@ resource "volcengine_ecs_instance" "worker2" {
   subnet_id            = volcengine_subnet.subnet_node.id
   ipv6_address_count   = 1
   security_group_ids   = [data.volcengine_security_groups.sg_default.security_groups[0].id]
+  project_name = var.project_name
 }
 
 resource "volcengine_eip_address" "control_plane" {
@@ -172,6 +180,7 @@ resource "volcengine_eip_address" "control_plane" {
   bandwidth    = 10
   name         = var.control_eip_name
   description  = "EIP for control-plane node"
+  project_name = var.project_name
 }
 
 resource "volcengine_eip_associate" "foo" {

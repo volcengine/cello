@@ -13,7 +13,6 @@ pushd tf > /dev/null
 terraform init $extra_args
 terraform apply -auto-approve -var-file=example.tfvars
 popd > /dev/null
-
 pushd playbook > /dev/null
 ansible-playbook -i ../tf/hosts.yaml k8s.yaml
 popd > /dev/null
