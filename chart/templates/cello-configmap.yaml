@@ -24,7 +24,7 @@ data:
       ],
       {{- end -}}
       {{- if .Values.cello.iamRole }}
-      "ramRole: "{{.Values.cello.iamRole | quote }}",
+      "ramRole": "{{.Values.cello.iamRole | quote }}",
       {{- end }}
       "credentialAccessKeyId": "{{ .Values.cello.accessKey }}",
       "credentialAccessKeySecret": "{{ .Values.cello.secretKey }}",
