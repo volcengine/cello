@@ -19,7 +19,7 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	cniVersion "github.com/containernetworking/cni/pkg/version"
 
-	ipvlan "github.com/volcengine/cello/pkg/plugins/cni/cello-ipvlan"
+	"github.com/volcengine/cello/pkg/plugins/cni/ipvlan"
 )
 
 func main() {

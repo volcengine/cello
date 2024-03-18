@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 
-package cello_rdma
+package ipvlan
 
 import (
 	"context"
@@ -26,8 +26,6 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	cniTypes "github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/040"
-	cniVersion "github.com/containernetworking/cni/pkg/version"
-	"github.com/containernetworking/plugins/pkg/ip"
 
 	"github.com/volcengine/cello/pkg/metrics"
 	"github.com/volcengine/cello/pkg/pbrpc"
@@ -40,7 +38,7 @@ import (
 	celloTypes "github.com/volcengine/cello/types"
 )
 
-var lg = cniLog.Log.WithFields(logger.Fields{"component": "cello-rdma CNI"})
+var lg = cniLog.Log.WithFields(logger.Fields{"component": "cello-ipvlan CNI"})
 
 const (
 	defaultCniTimeout = 120 * time.Second
@@ -76,7 +74,7 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 
 	celloClient, conn, err := grpc.NewCelloClient(ctx)
 	if err != nil {
-		return fmt.Errorf("cello addCmd create cello rpc client failed: %w", err)
+		return fmt.Errorf("cello CmdADD create cello rpc client failed: %w", err)
 	}
 	defer func() {
 		_ = conn.Close()
@@ -86,23 +84,12 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 		return fmt.Errorf("no master device")
 	}
 
-	var ipamType string
-	switch strings.ToLower(cniConfig.DriverType) {
-	case strings.ToLower(pbrpc.IfType_TypePhysicsShare.String()):
-		ipamType = celloTypes.IPAMTypeRdmaShare
-	case strings.ToLower(pbrpc.IfType_TypePhysicsExclusive.String()):
-		ipamType = celloTypes.IPAMTypeRdmaExclusive
-	default:
-		return fmt.Errorf("driveType %s not support", cniConfig.DriverType)
-	}
-
 	createEndpointRequest := &pbrpc.CreateEndpointRequest{
 		Name:             string(k8sConfig.K8S_POD_NAME),
 		Namespace:        string(k8sConfig.K8S_POD_NAMESPACE),
 		InfraContainerId: string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID),
 		IfName:           args.IfName,
 		NetNs:            args.Netns,
-		IpamType:         ipamType,
 		IpamArgs:         &pbrpc.IpamArgs{DeviceId: cniConfig.RuntimeConfig.DeviceID},
 	}
 	createEndpointResponse, err := celloClient.CreateEndpoint(ctx, createEndpointRequest)
@@ -117,7 +104,6 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 				Namespace:        string(k8sConfig.K8S_POD_NAMESPACE),
 				InfraContainerId: string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID),
 				IfName:           args.IfName,
-				IpamType:         ipamType,
 				IpamArgs:         &pbrpc.IpamArgs{DeviceId: cniConfig.RuntimeConfig.DeviceID},
 			}
 			_, err = celloClient.DeleteEndpoint(ctx, deleteEndpointRequest)
@@ -138,15 +124,18 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 	}
 
 	cniResult := &current.Result{
-		CNIVersion: cniVersion.Current(),
+		CNIVersion: cniConfig.CNIVersion,
 		Interfaces: nil,
 		IPs:        nil,
 		Routes:     nil,
 		DNS:        cniTypes.DNS{},
 	}
 	types.AppendNetworkConfigToCNIResult(cniResult, networkConfig)
-	cniResultJson, _ := json.Marshal(cniResult)
-	lg.Debugf("CNI Result: %s", cniResultJson)
+	cniResultJson, err := json.Marshal(cniResult)
+	if err != nil {
+		return fmt.Errorf("unmarshal cni result failed")
+	}
+	lg.Infof("CNI Result: %s", cniResultJson)
 
 	err = cniTypes.PrintResult(cniResult, cniResult.Version())
 	if err != nil {
@@ -198,22 +187,11 @@ func CmdDel(args *skel.CmdArgs) (err error) {
 	}
 	lg.InfoS("Teardown driver success", "PodNamespace", k8sConfig.K8S_POD_NAMESPACE, "PodName", k8sConfig.K8S_POD_NAME, "IfName", args.IfName)
 
-	var ipamType string
-	switch strings.ToLower(cniConfig.DriverType) {
-	case strings.ToLower(pbrpc.IfType_TypePhysicsShare.String()):
-		ipamType = celloTypes.IPAMTypeRdmaShare
-	case strings.ToLower(pbrpc.IfType_TypePhysicsExclusive.String()):
-		ipamType = celloTypes.IPAMTypeRdmaExclusive
-	default:
-		return fmt.Errorf("driveType %s not support", cniConfig.DriverType)
-	}
-
 	deleteEndpointRequest := &pbrpc.DeleteEndpointRequest{
 		Name:             string(k8sConfig.K8S_POD_NAME),
 		Namespace:        string(k8sConfig.K8S_POD_NAMESPACE),
 		InfraContainerId: string(k8sConfig.K8S_POD_INFRA_CONTAINER_ID),
 		IfName:           args.IfName,
-		IpamType:         ipamType,
 		IpamArgs:         &pbrpc.IpamArgs{DeviceId: cniConfig.RuntimeConfig.DeviceID}, // deviceId maybe empty
 	}
 	_, err = celloClient.DeleteEndpoint(ctx, deleteEndpointRequest)
@@ -324,12 +302,6 @@ func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, networks []*pb
 	switch strings.ToLower(conf.DriverType) {
 	case strings.ToLower(pbrpc.IfType_TypePhysicsShare.String()):
 		networkConfig.DP = types.IPVlan
-		networkConfig.ExtraNeigh = []types.Neigh{{
-			Dst: ip.NextIP(gatewayIPv4),
-			Mac: masterLink.Attrs().HardwareAddr,
-		}}
-	case strings.ToLower(pbrpc.IfType_TypePhysicsExclusive.String()):
-		networkConfig.DP = types.ENI
 	default:
 		return nil, fmt.Errorf("unsupported ipType %d", network.IfType)
 	}

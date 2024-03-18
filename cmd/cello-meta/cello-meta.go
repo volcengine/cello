@@ -20,7 +20,7 @@ import (
 	cniVersion "github.com/containernetworking/cni/pkg/version"
 
 	_ "github.com/volcengine/cello/pkg/plugins/cni/cello"
-	celloMeta "github.com/volcengine/cello/pkg/plugins/cni/cello-meta"
+	celloMeta "github.com/volcengine/cello/pkg/plugins/cni/meta"
 )
 
 func main() {
