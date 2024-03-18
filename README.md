@@ -123,9 +123,13 @@ cd cello
 See the [CONTRIBUTING.md](./CONTRIBUTING.md) file for details.
 
 ### Contact
-If you have any questions or want to contribute, you are welcome to communicate most things via GitHub issues or pull requests. Or Contact to Maintainers via email or Feishu group below.
+If you have any questions or want to contribute, you are welcome to communicate with us via GitHub issues or emails. 
+Join the Cello [Lark group](https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=f55qe2de-ddae-4d89-a262-9eee33c5f5d2) to chat with other cello developers or ask any questions. You can also use lark scan QR code below.
 
-<img alt="feishu" height="300" src="./docs/images/feishu.png"/>   
+<img alt="feishu" height="300" src="./docs/images/feishu.png"/>
+
+### Join Us
+The best way to contribute to the Cello project is to join us. If you are interested in Cloud Networking or Cloud Native development, please click this [link](https://job.toutiao.com/s/iePyAdS4) for details.
 
 
 ### License
