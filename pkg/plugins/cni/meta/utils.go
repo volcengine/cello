@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 
-package cello_meta
+package meta
 
 import (
 	"fmt"

@@ -14,4 +14,4 @@
 //
 
 // Package meta is multi-cni command handler.
-package cello_meta
+package meta

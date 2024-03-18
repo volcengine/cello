@@ -143,7 +143,7 @@ func (mgr *IPManager) ListDevices() []device.NetDevice {
 	return devs
 }
 
-func (mgr *IPManager) DeviceById(id string) (device.NetDevice, error) {
+func (mgr *IPManager) DeviceByID(id string) (device.NetDevice, error) {
 	var dev device.NetDevice
 	d, exist := mgr.devices.Load(strings.Trim(id, "\""))
 	if !exist {
