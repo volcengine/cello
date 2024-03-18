@@ -23,7 +23,7 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	cniTypes "github.com/containernetworking/cni/pkg/types"
 
-	celloMeta "github.com/volcengine/cello/pkg/plugins/cni/cello-meta"
+	celloMeta "github.com/volcengine/cello/pkg/plugins/cni/meta"
 	"github.com/volcengine/cello/pkg/plugins/types"
 )
 

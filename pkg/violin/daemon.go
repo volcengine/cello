@@ -154,12 +154,13 @@ func NewDaemonWithOptions(ctx context.Context, nodeName string, options ...LiteA
 		ipam, err = NewIPManager(opt.networks)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create IPManager %v", err)
-		} else {
-			log.Info("Found devices:")
-			for _, dev := range ipam.ListDevices() {
-				log.InfoS("device", "name", dev.IfName(), "id", dev.PciId())
-			}
 		}
+
+		log.Info("Found devices:")
+		for _, dev := range ipam.ListDevices() {
+			log.InfoS("device", "name", dev.IfName(), "id", dev.PciId())
+		}
+
 	}
 
 	return NewDaemon(ctx, k8sService, ipam, &opt, log), nil
@@ -208,6 +209,11 @@ func (agent *liteAgent) startRPCService(ctx context.Context) error {
 	pbrpc.RegisterCelloServer(agent.rpcServer, agent)
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				agent.logger.Panicf("grpc server panic: %v", r)
+			}
+		}()
 		for {
 			select {
 			case <-ctx.Done():
@@ -319,7 +325,7 @@ func (agent *liteAgent) CreateEndpoint(_ context.Context, req *pbrpc.CreateEndpo
 
 	var netWorkInterface *pbrpc.NetworkInterface
 	deviceId := req.GetIpamArgs().GetDeviceId()
-	dev, err := agent.mgr.DeviceById(deviceId)
+	dev, err := agent.mgr.DeviceByID(deviceId)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +389,7 @@ func (agent *liteAgent) DeleteEndpoint(_ context.Context, req *pbrpc.DeleteEndpo
 		return nil, fmt.Errorf("network manager not initialized")
 	}
 
-	dev, err := agent.mgr.DeviceById(req.GetIpamArgs().GetDeviceId())
+	dev, err := agent.mgr.DeviceByID(req.GetIpamArgs().GetDeviceId())
 	if err != nil {
 		err = agent.mgr.ipams.Release("", req.InfraContainerId, req.IfName)
 		if err != nil {
