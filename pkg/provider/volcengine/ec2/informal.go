@@ -407,3 +407,69 @@ type CreateNetworkInterfaceInput struct {
 
 	Type *string `type:"string" enum:"TypeForCreateNetworkInterfaceInput"`
 }
+
+type DescribeTrunkAssociationsInput struct {
+	_ struct{} `type:"structure"`
+
+	BranchInterfaceIds []*string `type:"list"`
+
+	MaxResults *int64 `type:"integer"`
+
+	NextToken *string `type:"string"`
+
+	PageNumber *int64 `type:"integer"`
+
+	PageSize *int64 `max:"100" type:"integer"`
+
+	TrunkInterfaceId *string `type:"string"`
+}
+
+type DescribeTrunkAssociationsOutput struct {
+	_ struct{} `type:"structure"`
+
+	Metadata *response.ResponseMetadata
+
+	NextToken *string `type:"string"`
+
+	PageNumber *int64 `type:"integer"`
+
+	PageSize *int64 `type:"integer"`
+
+	RequestId *string `type:"string"`
+
+	TotalCount *int64 `type:"integer"`
+
+	TrunkAssociations []*TrunkAssociationForDescribeTrunkAssociationsOutput `type:"list"`
+}
+
+type TrunkAssociationForDescribeTrunkAssociationsOutput struct {
+	_ struct{} `type:"structure"`
+
+	BranchInterfaceId *string `type:"string"`
+
+	SegmentationId *int64 `type:"integer"`
+
+	SegmentationType *string `type:"string"`
+
+	TrunkInterfaceId *string `type:"string"`
+}
+
+type DisassociateTrunkInterfaceInput struct {
+	_ struct{} `type:"structure"`
+
+	// BranchInterfaceId is a required field
+	BranchInterfaceId *string `type:"string" required:"true"`
+
+	ClientToken *string `type:"string"`
+
+	// TrunkInterfaceId is a required field
+	TrunkInterfaceId *string `type:"string" required:"true"`
+}
+
+type DisassociateTrunkInterfaceOutput struct {
+	_ struct{} `type:"structure"`
+
+	Metadata *response.ResponseMetadata
+
+	RequestId *string `type:"string"`
+}

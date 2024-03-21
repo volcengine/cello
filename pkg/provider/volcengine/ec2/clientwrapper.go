@@ -371,6 +371,57 @@ func (c *ClientSet) TagResources(input *vpc.TagResourcesInput) (*vpc.TagResource
 	return output, err
 }
 
+func (c *ClientSet) DescribeTrunkAssociations(input *DescribeTrunkAssociationsInput) (*DescribeTrunkAssociationsOutput, error) {
+	reqInfo := universal.RequestUniversal{
+		Action:      "DescribeTrunkAssociations",
+		Version:     "2020-04-01",
+		ServiceName: "vpc",
+		HttpMethod:  universal.GET,
+	}
+	output := &DescribeTrunkAssociationsOutput{}
+
+	start := time.Now()
+	err := c.universal.DoCallWithType(reqInfo, input, output)
+	status := apiErr.NewAPIRequestStatus(output.Metadata, err)
+	if status.ErrorCode() != apiErr.ClientErr {
+		metrics.OpenAPILatencyRecord("DescribeTrunkAssociations", start)
+	}
+	metrics.OpenAPIStatisticRecord("DescribeTrunkAssociations", status.HttpCode(), status.ErrorCode())
+
+	if err = status.GetError(); err != nil {
+		apiErr.RecordOpenAPIErrEvent(err,
+			apiErr.EventInfoField{Key: "API", Value: "DescribeTrunkAssociations"},
+			apiErr.EventInfoField{Key: "TrunkInterfaceId", Value: volcengine.StringValue(input.TrunkInterfaceId)})
+	}
+	return output, err
+}
+
+func (c *ClientSet) DisassociateTrunkInterface(input *DisassociateTrunkInterfaceInput) (*DisassociateTrunkInterfaceOutput, error) {
+	reqInfo := universal.RequestUniversal{
+		Action:      "DisassociateTrunkInterface",
+		Version:     "2020-04-01",
+		ServiceName: "vpc",
+		HttpMethod:  universal.GET,
+	}
+	output := &DisassociateTrunkInterfaceOutput{}
+
+	start := time.Now()
+	err := c.universal.DoCallWithType(reqInfo, input, output)
+	status := apiErr.NewAPIRequestStatus(output.Metadata, err)
+	if status.ErrorCode() != apiErr.ClientErr {
+		metrics.OpenAPILatencyRecord("DisassociateTrunkInterface", start)
+	}
+	metrics.OpenAPIStatisticRecord("DisassociateTrunkInterface", status.HttpCode(), status.ErrorCode())
+
+	if err = status.GetError(); err != nil {
+		apiErr.RecordOpenAPIErrEvent(err,
+			apiErr.EventInfoField{Key: "API", Value: "DisassociateTrunkInterface"},
+			apiErr.EventInfoField{Key: "TrunkInterfaceId", Value: volcengine.StringValue(input.TrunkInterfaceId)},
+			apiErr.EventInfoField{Key: "BranchInterfaceId", Value: volcengine.StringValue(input.BranchInterfaceId)})
+	}
+	return output, err
+}
+
 func NewClient(region, endpoint string, credentialProvider credential.Provider) *ClientSet {
 	config := volcengine.NewConfig().
 		WithRegion(region).
