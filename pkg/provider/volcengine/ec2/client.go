@@ -75,9 +75,15 @@ type APIGroupTag interface {
 	TagResources(input *vpc.TagResourcesInput) (*vpc.TagResourcesOutput, error)
 }
 
+type APIGroupTrunk interface {
+	DescribeTrunkAssociations(input *DescribeTrunkAssociationsInput) (*DescribeTrunkAssociationsOutput, error)
+	DisassociateTrunkInterface(input *DisassociateTrunkInterfaceInput) (*DisassociateTrunkInterfaceOutput, error)
+}
+
 type EC2 interface {
 	APIGroupENI
 	APIGroupSubnet
 	APIGroupECS
 	APIGroupTag
+	APIGroupTrunk
 }
