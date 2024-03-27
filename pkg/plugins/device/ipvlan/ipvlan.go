@@ -30,6 +30,7 @@ type Conf struct {
 	MasterName string
 	IfName     string
 	MTU        int
+	Flag       netlink.IPVlanFlag
 }
 
 func randomIPVlanIfName() (string, error) {
@@ -65,8 +66,10 @@ func (c *Conf) Setup(netNS ns.NetNS) error {
 			Name:        tempIfName,
 			Namespace:   netlink.NsFd(int(netNS.Fd())),
 			ParentIndex: masterLink.Attrs().Index,
+			TxQLen:      1000,
 		},
 		Mode: netlink.IPVLAN_MODE_L2,
+		Flag: c.Flag,
 	}
 
 	err = netlink.LinkAdd(link)

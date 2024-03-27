@@ -86,6 +86,7 @@ func (d *IPVlanDriver) SetupNetwork(config *types.SetupConfig) (err error) {
 		MasterName: parentENI.Attrs().Name,
 		IfName:     config.IfName,
 		MTU:        parentENI.Attrs().MTU,
+		Flag:       config.IPVlanFlag,
 	}
 	err = ipVlanConf.Setup(netNS)
 	if err != nil {
@@ -298,7 +299,7 @@ func (d *IPVlanDriver) setupInitNamespace(cfg *types.SetupConfig) error {
 
 	// 1.1 ensure initSlave device
 	initSlaveName := fmt.Sprintf("ipvl_%d", parentLink.Attrs().Index)
-	initSlaveLink, err := d.createIPVlanSlave(parentLink, initSlaveName)
+	initSlaveLink, err := d.createIPVlanSlave(parentLink, initSlaveName, cfg.IPVlanFlag)
 	if err != nil {
 		return fmt.Errorf("ensure init slave device failed: %s", err.Error())
 	}
@@ -440,7 +441,7 @@ func (d *IPVlanDriver) setupFilters(link netlink.Link, srcEgressRedirectCIDRs []
 	return nil
 }
 
-func (d *IPVlanDriver) createIPVlanSlave(parentLink netlink.Link, slaveName string) (netlink.Link, error) {
+func (d *IPVlanDriver) createIPVlanSlave(parentLink netlink.Link, slaveName string, flag netlink.IPVlanFlag) (netlink.Link, error) {
 	slaveLink, err := netlink.LinkByName(slaveName)
 	if err != nil {
 		if _, ok := err.(netlink.LinkNotFoundError); !ok {
@@ -457,8 +458,10 @@ func (d *IPVlanDriver) createIPVlanSlave(parentLink netlink.Link, slaveName stri
 			Name:        slaveName,
 			ParentIndex: parentLink.Attrs().Index,
 			MTU:         parentLink.Attrs().MTU,
+			TxQLen:      1000,
 		},
 		Mode: netlink.IPVLAN_MODE_L2,
+		Flag: flag,
 	})
 	if err != nil && !errors.Is(err, syscall.EEXIST) {
 		ipvlanLg.InfoS("Slave interface create failed.")
