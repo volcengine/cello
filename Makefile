@@ -48,6 +48,10 @@ cello-cni:
 	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cni/cello-cni $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
     	./cmd/cello-cni
 
+cello-ipvlan:
+	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cni/cello-ipvlan $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
+    	./cmd/cello-ipvlan-cni
+
 cilium-launcher:
 	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/bin/cilium-launcher $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
 		./cmd/launcher/cilium
@@ -57,7 +61,7 @@ protobuf: tidy
 
 all: pkg image
 
-bin: tidy cello-cni cello-ctl cello-agent cilium-launcher
+bin: tidy cello-cni cello-ctl cello-agent cilium-launcher cello-ipvlan
 
 pkg: bin
 	mkdir -p $(OUTPUT)/script
