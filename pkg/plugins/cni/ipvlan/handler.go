@@ -26,6 +26,7 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	cniTypes "github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/040"
+	"github.com/vishvananda/netlink"
 
 	"github.com/volcengine/cello/pkg/metrics"
 	"github.com/volcengine/cello/pkg/pbrpc"
@@ -81,7 +82,7 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 	}()
 
 	if cniConfig.RuntimeConfig.DeviceID == "" {
-		return fmt.Errorf("no master device")
+		lg.WarnS("no master device")
 	}
 
 	createEndpointRequest := &pbrpc.CreateEndpointRequest{
@@ -282,6 +283,7 @@ func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, networks []*pb
 		BandWidth:    conf.RuntimeConfig.Bandwidth,
 		DefaultRoute: network.DefaultRoute,
 		Vid:          network.GetENI().GetVid(),
+		IPVlanFlag:   netlink.IPVLAN_FLAG_BRIDGE,
 	}
 	var routes []cniTypes.Route
 	for _, r := range network.ExtraRoutes {
@@ -304,6 +306,19 @@ func generateSetupConfig(args *skel.CmdArgs, conf *types.NetConf, networks []*pb
 		networkConfig.DP = types.IPVlan
 	default:
 		return nil, fmt.Errorf("unsupported ipType %d", network.IfType)
+	}
+
+	if conf.IPVlanFlag != "" {
+		switch strings.ToLower(conf.IPVlanFlag) {
+		case "vepa":
+			networkConfig.IPVlanFlag = netlink.IPVLAN_FLAG_VEPA
+		case "bridge":
+			networkConfig.IPVlanFlag = netlink.IPVLAN_FLAG_BRIDGE
+		case "private":
+			networkConfig.IPVlanFlag = netlink.IPVLAN_FLAG_PRIVATE
+		default:
+			return nil, fmt.Errorf("unsupported IPVlanFlag %s", conf.IPVlanFlag)
+		}
 	}
 
 	return networkConfig, nil

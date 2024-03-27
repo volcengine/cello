@@ -54,6 +54,8 @@ type NetConf struct {
 	// LocalFastPath is a switch to determine weather cello should set up fast path between host and pod.
 	// Currently only support IPVlan and Vlan (by adding additional veth pair) driver.
 	LocalFastPath bool `json:"localFastPath"`
+	// IPVlanFlag vepa, bridge(default) or private.
+	IPVlanFlag string `json:"ipVlanFlag"`
 
 	// runtime config, support all dynamic config from meta and other runtimes
 	RuntimeConfig struct {
@@ -122,6 +124,7 @@ type SetupConfig struct {
 
 	// for ipVlan host netns config
 	SetupInitNs bool
+	IPVlanFlag  netlink.IPVlanFlag
 
 	ExtraNeigh []Neigh
 }
