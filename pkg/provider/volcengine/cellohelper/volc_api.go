@@ -96,7 +96,7 @@ type VolcApiImpl struct {
 	privateIPMutex sync.RWMutex
 	// ec2
 	ec2Client   ec2.EC2
-	metadataSvc metadata.EC2MetadataWrapper
+	metadataSvc metadata.ClientWrapper
 	// TODO: rm while metadata support ipv6
 	subnetMgr SubnetManager
 	tags      map[string]string
@@ -255,7 +255,7 @@ func (e *VolcApiImpl) createENI(subnet string, securityGroups []string, projectN
 	return eniID, nil
 }
 
-// attachENI calls EC2 API to attach the ENI and make sure it's status is inuse.
+// attachENI calls Volcengine API to attach the ENI and make sure it's status is inuse.
 func (e *VolcApiImpl) attachENI(eniID string) (*ec2.DescribeNetworkInterfaceAttributesOutput, error) {
 	var err error
 	werr := wait.ExponentialBackoff(backoff.BackOff(backoff.APIWriteOps), func() (bool, error) {
@@ -440,25 +440,25 @@ func (e *VolcApiImpl) GetENIIPList(eniMac string) ([]net.IP, []net.IP, error) {
 	e.privateIPMutex.RLock()
 	defer e.privateIPMutex.RUnlock()
 	ctx := context.Background()
-	primaryIP, err := e.metadataSvc.GetENIPrimaryIP(ctx, eniMac)
+	eni, err := e.metadataSvc.InterfaceInfo(ctx, eniMac)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to get ENI: %v, err: %v", eniMac, err)
 	}
-	privateIPv4s, err := e.metadataSvc.GetENIPrivateIPv4s(ctx, eniMac)
+	eniId := eni.NetworkInterfaceID
+	primaryIP, err := ip2.ParseIP(eni.PrimaryIPAddress)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to parse ENI: %v primary address:%v, err: %v", eniId, eni.PrivateIPAddresses, err)
 	}
-
+	privateIPv4s, err := ip2.ParseIPs(eni.PrivateIPAddresses)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse ENI: %v secondary addresses %v, err: %v", eniId, eni.PrivateIPAddresses, err)
+	}
 	// FIXME open after metadata support ipv6
 	//privateIPv6s, err := e.metadataSvc.GetENIPrivateIPv6s(context.Background(), eniMac)
 	//if err != nil {
 	//	return nil, nil, err
 	//}
 
-	eniId, err := e.metadataSvc.GetENIID(ctx, eniMac)
-	if err != nil {
-		return nil, nil, fmt.Errorf("get eni id failed, %v", err)
-	}
 	var eniAttributes *ec2.DescribeNetworkInterfaceAttributesOutput
 	werr := wait.ExponentialBackoff(backoff.BackOff(backoff.APIFastRetry), func() (bool, error) {
 		eniAttributes, err = e.ec2Client.DescribeNetworkInterfaceAttributes(&vpc.DescribeNetworkInterfaceAttributesInput{
@@ -538,7 +538,7 @@ func (e *VolcApiImpl) AllocIPAddresses(eniID, eniMac string, v4Cnt, v6Cnt int) (
 			var inErr error
 			var metaV4s []net.IP
 			v4Err = wait.ExponentialBackoff(backoff.BackOff(backoff.MetaStatusWait), func() (bool, error) {
-				metaV4s, inErr = e.metadataSvc.GetENIPrivateIPv4s(context.Background(), eniMac)
+				metaV4s, inErr = e.metadataSvc.InterfaceSecondaryIPs(context.Background(), eniMac)
 				if inErr != nil {
 					return false, nil
 				}
@@ -711,7 +711,7 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 	var inErr error
 	werr := wait.ExponentialBackoff(backoff.BackOff(backoff.MetaStatusWait), func() (bool, error) {
 		var metaV4s []net.IP
-		metaV4s, inErr = e.metadataSvc.GetENIPrivateIPv4s(context.Background(), eniMac)
+		metaV4s, inErr = e.metadataSvc.InterfaceSecondaryIPs(context.Background(), eniMac)
 		if inErr != nil {
 			return false, nil
 		}
@@ -903,26 +903,25 @@ func (e *VolcApiImpl) GetENI(mac string) (*types.ENI, error) {
 	ctx := context.Background()
 	eniMac, err := net.ParseMAC(mac)
 	if err != nil {
-		return nil, fmt.Errorf("get eni mac failed: %s", err.Error())
+		return nil, fmt.Errorf("failed to get ENI mac err: %s", err.Error())
+	}
+	info, err := e.metadataSvc.InterfaceInfo(ctx, mac)
+	if err != nil {
+		return nil, fmt.Errorf("faild to get ENI info[%s] info : %s", mac, err.Error())
 	}
 
-	v4Gateway, err := e.metadataSvc.GetENIIPv4Gateway(ctx, mac)
-	if err != nil {
-		return nil, fmt.Errorf("faild to get gateway for eni mac [%s]: %s", mac, err.Error())
+	eniID := info.NetworkInterfaceID
+
+	subnetID := info.SubnetID
+
+	v4Gateway := net.ParseIP(info.Gateway)
+	if v4Gateway == nil {
+		log.ErrorS(err, "Get gateway ip failed")
+		return nil, fmt.Errorf("get primary ip failed: %s", err.Error())
 	}
 
-	eniID, err := e.metadataSvc.GetENIID(ctx, mac)
-	if err != nil {
-		return nil, fmt.Errorf("get eni id failed: %s", err.Error())
-	}
-
-	subnetID, err := e.metadataSvc.GetENISubnetID(ctx, mac)
-	if err != nil {
-		return nil, fmt.Errorf("get subnet id failed: %s", err.Error())
-	}
-
-	primaryIP, err := e.metadataSvc.GetENIPrimaryIP(ctx, mac)
-	if err != nil {
+	primaryIP := net.ParseIP(info.PrimaryIPAddress)
+	if primaryIP == nil {
 		log.ErrorS(err, "Get primary ip failed")
 		return nil, fmt.Errorf("get primary ip failed: %s", err.Error())
 	}
@@ -949,7 +948,7 @@ func (e *VolcApiImpl) GetENI(mac string) (*types.ENI, error) {
 		v6Gateway = ip.NextIP(v6Cidr.IP)
 	}
 
-	eni := &types.ENI{
+	return &types.ENI{
 		ID:  eniID,
 		Mac: eniMac,
 		PrimaryIP: types.IPSet{
@@ -967,8 +966,7 @@ func (e *VolcApiImpl) GetENI(mac string) (*types.ENI, error) {
 				IPv6: v6Cidr,
 			},
 		},
-	}
-	return eni, nil
+	}, nil
 }
 
 func New(apiClient ec2.EC2, ipStack types.IPFamily, subnetMgr SubnetManager, instanceMetadata InstanceMetadataGetter,
@@ -985,7 +983,7 @@ func New(apiClient ec2.EC2, ipStack types.IPFamily, subnetMgr SubnetManager, ins
 
 	impl := &VolcApiImpl{
 		ipFamily:               ipStack,
-		metadataSvc:            metadata.NewEC2MetadataWrapper(metadata.New()),
+		metadataSvc:            metadata.NewClientWrapper(metadata.NewClient()),
 		ec2Client:              apiClient,
 		InstanceMetadataGetter: instanceMetadata,
 		subnetMgr:              subnetMgr,
