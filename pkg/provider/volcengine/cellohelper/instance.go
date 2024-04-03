@@ -338,34 +338,34 @@ func (m *InstanceMetadata) GetRegion() string {
 func GetInstanceMetadata() InstanceMetadataGetter {
 	once.Do(func() {
 		ctx := context.Background()
-		meta := metadata.NewEC2MetadataWrapper(metadata.New())
-		vpcId, err := meta.GetVpcId(ctx)
+		meta := metadata.NewClientWrapper(metadata.NewClient())
+		vpcId, err := meta.VPCID(ctx)
 		if err != nil {
 			panic(fmt.Errorf("get vpcId for instance failed, %v", err))
 		}
-		instanceId, err := meta.GetInstanceID(ctx)
+		instanceId, err := meta.InstanceID(ctx)
 		if err != nil {
 			panic(fmt.Errorf("get instanceId for instance failed, %v", err))
 		}
-		instanceType, err := meta.GetInstanceType(ctx)
+		instanceType, err := meta.InstanceType(ctx)
 		if err != nil {
 			panic(fmt.Errorf("get instanceType for instance failed, %v", err))
 		}
-		primaryENIMac, err := meta.GetPrimaryENIMac(ctx)
+		primaryENIMac, err := meta.PrimaryMacAddress(ctx)
 		if err != nil {
 			panic(fmt.Errorf("get primaryENIMac for instance failed, %v", err))
 		}
-		primaryENIId, err := meta.GetENIID(ctx, primaryENIMac)
-		if err != nil {
-			panic(fmt.Errorf("get primaryENIId for instance failed, %v", err))
-		}
-		az, err := meta.GetAvailabilityZone(ctx)
+		az, err := meta.AvailabilityZone(ctx)
 		if err != nil {
 			panic(fmt.Errorf("get az for instance failed, %v", err))
 		}
-		region, err := meta.GetRegionID(ctx)
+		region, err := meta.Region(ctx)
 		if err != nil {
 			panic(fmt.Errorf("get region for instance failed, %v", err))
+		}
+		primaryENIId, err := meta.InterfaceID(ctx, primaryENIMac)
+		if err != nil {
+			panic(fmt.Errorf("get primaryENIId for instance failed, %v", err))
 		}
 		defaultInstanceMetadata = &InstanceMetadata{
 			VpcId:            vpcId,

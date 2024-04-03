@@ -30,12 +30,9 @@ import (
 
 var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "credential"})
 
-const (
-	MetadataCredentialPath = "iam/security_credentials"
-)
-
 // STSProvider provide dynamic Credential from metadata.
 type STSProvider struct {
+	meta              metadata.ClientWrapper
 	role              string
 	currentCredential *Credential
 }
@@ -47,7 +44,7 @@ func (p *STSProvider) Get() *Credential {
 func (p *STSProvider) refresh() *Credential {
 	log.DebugS("Start to refresh sts", "role", p.role)
 	for {
-		c, err := p.getNewSTS()
+		c, err := p.retrieve()
 		if err != nil {
 			log.ErrorS(err, "Failed to get new sts")
 			t := time.NewTimer(10 * time.Second)
@@ -73,7 +70,7 @@ func (p *STSProvider) init() {
 	}()
 }
 
-func (p *STSProvider) getNewSTS() (cr *Credential, err error) {
+func (p *STSProvider) retrieve() (cr *Credential, err error) {
 	var data string
 	defer func() {
 		if err != nil {
@@ -81,7 +78,7 @@ func (p *STSProvider) getNewSTS() (cr *Credential, err error) {
 		}
 	}()
 
-	data, err = metadata.New().GetMetadata(context.TODO(), "GetIamRoleCredential", fmt.Sprintf("%s/%s", MetadataCredentialPath, p.role))
+	data, err = p.meta.STSCredential(context.Background(), p.role)
 	if err != nil {
 		err = fmt.Errorf("get sts failed, %v", err)
 		return
@@ -99,6 +96,7 @@ func (p *STSProvider) getNewSTS() (cr *Credential, err error) {
 func NewSTSProvider(role string) *STSProvider {
 	stsProvider := &STSProvider{
 		role: role,
+		meta: metadata.NewClientWrapper(metadata.NewClient()),
 	}
 	stsProvider.init()
 	return stsProvider

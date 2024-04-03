@@ -24,6 +24,7 @@ import (
 	"github.com/pterm/pterm/putils"
 	"github.com/urfave/cli/v2"
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
+	"golang.org/x/exp/slices"
 
 	"github.com/volcengine/cello/pkg/config"
 	"github.com/volcengine/cello/pkg/daemon"
@@ -300,15 +301,15 @@ func printKV(key, value string) string {
 }
 
 func showMetadataInfo(c *cli.Context) error {
-	getter := metadata.NewEC2MetadataWrapper(metadata.New())
+	metaWrapper := metadata.NewClientWrapper(metadata.NewClient())
 	ctx := context.Background()
 	leveledList := pterm.LeveledList{}
 
-	vpcId, err := getter.GetVpcId(ctx)
+	vpcId, err := metaWrapper.VPCID(ctx)
 	if err != nil {
 		return err
 	}
-	vpcCidr, err := getter.GetVpcCidr(ctx)
+	vpcCidr, err := metaWrapper.VPCCidrBlock(ctx)
 	if err != nil {
 		return err
 	}
@@ -321,12 +322,12 @@ func showMetadataInfo(c *cli.Context) error {
 		Text:  printKV("cidr", vpcCidr),
 	})
 
-	eniMacs, err := getter.GetENIsMacs(ctx)
+	eniMacs, err := metaWrapper.MacAddresses(ctx)
 	if err != nil {
 		return err
 	}
 
-	primaryENIMac, err := getter.GetPrimaryENIMac(ctx)
+	primaryENIMac, err := metaWrapper.PrimaryMacAddress(ctx)
 	if err != nil {
 		return err
 	}
@@ -338,29 +339,16 @@ func showMetadataInfo(c *cli.Context) error {
 	for _, eniMac := range eniMacs {
 		isPrimary := eniMac == primaryENIMac
 
-		id, err := getter.GetENIID(ctx, eniMac)
+		eni, err := metaWrapper.InterfaceInfo(ctx, eniMac)
 		if err != nil {
 			return err
 		}
-		if id == "" {
-			continue
-		}
-		subnetId, err := getter.GetENISubnetID(ctx, eniMac)
-		if err != nil {
-			return err
-		}
-		subnetCidr, err := getter.GetENISubnetCIDR(ctx, eniMac)
-		if err != nil {
-			return err
-		}
-		primaryIP, err := getter.GetENIPrimaryIP(ctx, eniMac)
-		if err != nil {
-			return err
-		}
-		privateIpv4s, err := getter.GetENIPrivateIPv4s(ctx, eniMac)
-		if err != nil {
-			return err
-		}
+
+		id := eni.NetworkInterfaceID
+		subnetId := eni.SubnetID
+		subnetCidr := eni.SubnetCidrBlock
+		primaryIP := eni.PrimaryIPAddress
+		privateIpv4s := eni.PrivateIPAddresses
 
 		leveledList = append(leveledList,
 			pterm.LeveledListItem{
@@ -381,11 +369,11 @@ func showMetadataInfo(c *cli.Context) error {
 			},
 			pterm.LeveledListItem{
 				Level: metadataLevelENIAttribute,
-				Text:  printKV("subnetCidr", subnetCidr.String()),
+				Text:  printKV("subnetCidr", subnetCidr),
 			},
 			pterm.LeveledListItem{
 				Level: metadataLevelENIAttribute,
-				Text:  printKV("primaryIP", primaryIP.String()),
+				Text:  printKV("primaryIP", primaryIP),
 			},
 		)
 		if len(privateIpv4s) > 0 {
@@ -395,17 +383,23 @@ func showMetadataInfo(c *cli.Context) error {
 					Text:  "privateIpv4s",
 				},
 			)
-			sort.Slice(privateIpv4s, func(i, j int) bool {
-				return privateIpv4s[i].String() < privateIpv4s[j].String()
+			slices.SortFunc(privateIpv4s, func(a, b string) int {
+				if a < b {
+					return -1
+				}
+				if a > b {
+					return +1
+				}
+				return 0
 			})
 			for _, addr := range privateIpv4s {
-				if addr.Equal(primaryIP) {
+				if addr == primaryIP {
 					continue
 				}
 				leveledList = append(leveledList,
 					pterm.LeveledListItem{
 						Level: metadataLevelENIAttributeItem,
-						Text:  addr.String(),
+						Text:  addr,
 					},
 				)
 			}
