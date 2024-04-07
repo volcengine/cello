@@ -51,11 +51,9 @@ type ObjectFactory interface {
 	// Create a certain amount of resources
 	Create(count int) ([]types.NetResource, error)
 
-	// Release destroy resource
-	Release(resource types.NetResource) error
-
-	// ReleaseInValid destroy invalid resource
-	ReleaseInValid(resource types.NetResource) (types.NetResource, error)
+	// Release destroy resource, if resource cant be destroyed and convert to a new resource,
+	// it will be return
+	Release(resource types.NetResource) (types.NetResource, error)
 
 	// Valid check if the resource is valid
 	Valid(resource types.NetResource) error
@@ -343,17 +341,17 @@ func (p *poolImpl) Release(resID string) error {
 	err := p.factory.Valid(item.res)
 	if err != nil {
 		// try to delete
-		var temp types.NetResource
-		temp, err = p.factory.ReleaseInValid(item.res)
-		if temp == nil && err == nil {
+		var newRes types.NetResource
+		newRes, err = p.factory.Release(item.res)
+		if newRes == nil && err == nil {
 			p.productTicket()
 			p.metricTotal.Dec()
 			return nil
 		}
-		if temp != nil {
-			p.WarnS("Convert invalid resource to valid", "resID", resID, "validID", temp.GetID())
+		if newRes != nil {
+			p.WarnS("Convert invalid resource to valid", "resID", resID, "validID", newRes.GetID())
 			p.available.Push(&poolItem{
-				res:           temp,
+				res:           newRes,
 				reserveBefore: time.Now(),
 			})
 			p.metricAvailable.Inc()
@@ -502,7 +500,7 @@ func (p *poolImpl) tryReducePool() {
 		}
 		p.metricTotal.Dec()
 		p.metricAvailable.Dec()
-		err := p.factory.Release(item.res)
+		_, err := p.factory.Release(item.res)
 		if err == nil {
 			p.InfoS("Destroy resource succeed", "res", item.res)
 			p.productTicket()
@@ -531,7 +529,7 @@ func (p *poolImpl) checkInvalid() {
 			"id":     invalid.res.GetID(),
 			"reason": "invalid",
 		})
-		ret, err := p.factory.ReleaseInValid(invalid.res)
+		ret, err := p.factory.Release(invalid.res)
 		if err != nil {
 			lg.ErrorS(err, "Release invalid resource failed", "res", invalid.res)
 			continue
@@ -598,27 +596,17 @@ func (p *poolImpl) GetSnapshot() (ResourcePoolSnapshot, error) {
 		}
 	}
 
-	for _, item := range list[types.ResStatusInvalid] {
-		owner := ""
-		if poolRes, exist := pool[item.GetID()]; exist {
-			owner = poolRes.GetOwner()
-		}
-		meta[item.GetID()] = &types.NetResourceSnapshot{
-			VPCResource: item.GetVPCResource(),
-			Status:      types.ResStatusInvalid,
-			Owner:       owner,
-		}
-	}
-
-	for _, item := range list[types.ResStatusLegacy] {
-		owner := ""
-		if poolRes, exist := pool[item.GetID()]; exist {
-			owner = poolRes.GetOwner()
-		}
-		meta[item.GetID()] = &types.NetResourceSnapshot{
-			VPCResource: item.GetVPCResource(),
-			Status:      types.ResStatusLegacy,
-			Owner:       owner,
+	for _, status := range []types.ResStatus{types.ResStatusInvalid, types.ResStatusLegacy, types.ResStatusDisabled} {
+		for _, item := range list[status] {
+			owner := ""
+			if poolRes, exist := pool[item.GetID()]; exist {
+				owner = poolRes.GetOwner()
+			}
+			meta[item.GetID()] = &types.NetResourceSnapshot{
+				VPCResource: item.GetVPCResource(),
+				Status:      status,
+				Owner:       owner,
+			}
 		}
 	}
 
@@ -703,17 +691,12 @@ func (p *poolImpl) GC(getAllocatedResMap func() (map[string]types.NetResourceAll
 	}
 
 	p.invalid = map[string]poolItem{}
-	for id, item := range list[types.ResStatusInvalid] {
-		if _, exist := p.inUse[id]; !exist {
-			p.invalid[id] = poolItem{
-				res: item,
-			}
-		}
-	}
-	for id, item := range list[types.ResStatusLegacy] {
-		if _, exist := p.inUse[id]; !exist {
-			p.invalid[id] = poolItem{
-				res: item,
+	for _, status := range []types.ResStatus{types.ResStatusInvalid, types.ResStatusLegacy, types.ResStatusDisabled} {
+		for id, item := range list[status] {
+			if _, exist := p.inUse[id]; !exist {
+				p.invalid[id] = poolItem{
+					res: item,
+				}
 			}
 		}
 	}

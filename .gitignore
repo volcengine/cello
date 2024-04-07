@@ -5,7 +5,7 @@
 *.swo
 *.db
 *.DS_Store
-
+/vendor
 /pkg/utils/logger/log_test.log
 
 # ci files
