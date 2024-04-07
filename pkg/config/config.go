@@ -59,6 +59,9 @@ type DaemonConfig struct {
 	// Subnets used by pods (actually used by ENI)
 	Subnets []string `yaml:"subnets" json:"subnets,omitempty"`
 
+	// DisabledSubnets used to disable some subnets
+	DisabledSubnets []string `yaml:"disabledSubnets" json:"disabledSubnets,omitempty"`
+
 	// HeathAndDebugPort port for heath check and debug
 	HeathAndDebugPort *uint32 `yaml:"heathAndDebugPort" json:"heathAndDebugPort,omitempty"`
 
@@ -184,6 +187,8 @@ func (c *DaemonConfig) verifyConfig() error {
 		return fmt.Errorf("subnets not configured")
 	}
 	log.Infof("--Subnets=%s", c.Subnets)
+
+	log.Infof("--DisabledSubnets=%s", c.DisabledSubnets)
 
 	if datatype.Uint32Value(c.ReconcileIntervalSec) == 0 {
 		c.ReconcileIntervalSec = datatype.Uint32(DefaultReconcileIntervalSec)

@@ -107,21 +107,17 @@ func (m *mockObjectFactory) Create(count int) ([]types.NetResource, error) {
 	return result, nil
 }
 
-func (m *mockObjectFactory) Release(resource types.NetResource) error {
+func (m *mockObjectFactory) Release(resource types.NetResource) (types.NetResource, error) {
 	if err := m.preProcess(); err != nil {
-		return err
+		return nil, err
 	}
 	if resource == nil {
-		return nil
+		return nil, nil
 	}
 	m.Lock()
 	defer m.Unlock()
 	delete(m.objects, resource.GetID())
-	return nil
-}
-
-func (m *mockObjectFactory) ReleaseInValid(resource types.NetResource) (types.NetResource, error) {
-	return nil, m.Release(resource)
+	return nil, nil
 }
 
 func (m *mockObjectFactory) Valid(resource types.NetResource) error {

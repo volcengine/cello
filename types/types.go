@@ -289,6 +289,11 @@ type VPCResourceAllocated struct {
 	Resource VPCResource
 }
 
+func (r *VPCResource) SupportFamily(family IPFamily) bool {
+	f := NewIPFamily(r.IPv4 != "", r.IPv6 != "")
+	return f.Support(family)
+}
+
 func (r *VPCResource) ToNetResource() (res NetResource) {
 	mac, err := net.ParseMAC(r.ENIMac)
 	if err != nil {
@@ -351,6 +356,7 @@ const (
 	ResStatusNotAdded  ResStatus = "NotAdded"
 	ResStatusNormal    ResStatus = "Normal"
 	ResStatusLegacy    ResStatus = "Legacy"
+	ResStatusDisabled  ResStatus = "Disabled"
 )
 
 type NetResource interface {
@@ -418,9 +424,10 @@ func (m *NetResourceSnapshot) GetOwner() string {
 type IPFamily string
 
 const (
-	IPFamilyIPv4 = "ipv4"
-	IPFamilyIPv6 = "ipv6"
-	IPFamilyDual = "dual"
+	IPFamilyIPv4    = "ipv4"
+	IPFamilyIPv6    = "ipv6"
+	IPFamilyDual    = "dual"
+	IPFamilyUnknown = "unknown"
 )
 
 func (f IPFamily) EnableIPv4() bool {
@@ -437,6 +444,19 @@ func (f IPFamily) Support(s IPFamily) bool {
 	}
 	return (s == IPFamilyIPv4 && f == IPFamilyIPv4) ||
 		(s == IPFamilyIPv6 && f == IPFamilyIPv6)
+}
+
+func NewIPFamily(ipv4, ipv6 bool) IPFamily {
+	if ipv4 && ipv6 {
+		return IPFamilyDual
+	}
+	if ipv4 {
+		return IPFamilyIPv4
+	}
+	if ipv6 {
+		return IPFamilyIPv6
+	}
+	return IPFamilyUnknown
 }
 
 type HpcRoute struct {

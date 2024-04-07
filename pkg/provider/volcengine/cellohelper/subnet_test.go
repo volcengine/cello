@@ -268,7 +268,7 @@ func TestPodSubnetManager(t *testing.T) {
 	t.Logf("podSubnets status: %s\n", statusStr)
 
 	// test disable subnet
-	podSubnetManager.DisableSubnet(subnetId2)
+	podSubnetManager.DisableSubnets(subnetId2)
 	selectedSubnet = podSubnetManager.SelectSubnet(types.IPFamilyIPv4)
 	assert.Equal(t, subnetId1, selectedSubnet.SubnetId)
 

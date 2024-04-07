@@ -119,7 +119,7 @@ func generateENIPoolCfg(limits *helper.InstanceLimits) pool.Config {
 	}
 }
 
-func newEniResourceManager(subnet helper.SubnetManager, secManager helper.SecurityGroupManager, volcApi helper.VolcAPI, allocatedResource map[string]types.NetResourceAllocated, k8s k8s.Service) (*eniResourceManager, error) {
+func newEniResourceManager(subnetManager helper.SubnetManager, secManager helper.SecurityGroupManager, volcApi helper.VolcAPI, allocatedResource map[string]types.NetResourceAllocated, k8s k8s.Service) (*eniResourceManager, error) {
 	log.InfoS("Creating EniResourceManager")
 	m := &eniResourceManager{}
 	limit, err := helper.NewInstanceLimitManager(volcApi)
@@ -132,7 +132,7 @@ func newEniResourceManager(subnet helper.SubnetManager, secManager helper.Securi
 		return nil, fmt.Errorf("get attached enis failed while init, %v", err)
 	}
 
-	factory, err := newEniFactory(secManager, subnet, volcApi, limit, types.IPFamily(*config.Config.IPFamily))
+	factory, err := newEniFactory(secManager, subnetManager, volcApi, limit, types.IPFamily(*config.Config.IPFamily))
 	if err != nil {
 		return nil, fmt.Errorf("create eni factory failed, %v", err)
 	}
@@ -156,8 +156,11 @@ func newEniResourceManager(subnet helper.SubnetManager, secManager helper.Securi
 	poolConfig.Factory = factory
 	poolConfig.PreStart = func(pool pool.ResourcePoolOp) error {
 		for _, e := range created {
+			subnet := subnetManager.GetPodSubnet(e.Subnet.ID)
 			if item, exist := allocatedResource[e.GetID()]; exist {
 				pool.AddInuse(e, item.Owner)
+			} else if res := e.GetVPCResource(); !subnet.Enabled() || !res.SupportFamily(factory.ipFamily) {
+				pool.AddInvalid(e)
 			} else {
 				pool.AddAvailable(e)
 			}
@@ -246,13 +249,8 @@ func (f *eniFactory) CreateWithIPCount(ipCnt int, trunk bool) (types.NetResource
 	return eni, nil
 }
 
-// ReleaseInValid releases invalid NetResource.
-func (f *eniFactory) ReleaseInValid(resource types.NetResource) (types.NetResource, error) {
-	return nil, f.Release(resource)
-}
-
 // Release releases NetResource.
-func (f *eniFactory) Release(resource types.NetResource) error {
+func (f *eniFactory) Release(resource types.NetResource) (types.NetResource, error) {
 	var err error
 	defer func() {
 		if err != nil {
@@ -264,14 +262,24 @@ func (f *eniFactory) Release(resource types.NetResource) error {
 	}()
 	eni := resource.GetVPCResource()
 	err = f.volcApi.FreeENI(eni.ENIId)
-	return err
+	return nil, err
 }
 
 // Valid checks if given NetResource is valid.
 func (f *eniFactory) Valid(resource types.NetResource) error {
-	eni := resource.GetVPCResource()
-	_, err := f.volcApi.GetENI(eni.ENIMac)
-	return err
+	eniRes := resource.GetVPCResource()
+	eni, err := f.volcApi.GetENI(eniRes.ENIMac)
+	if err != nil {
+		return err
+	}
+	subnet := f.subnets.GetPodSubnet(eni.Subnet.ID)
+	if !subnet.Enabled() {
+		return ErrDisabled
+	}
+	if !eniRes.SupportFamily(f.ipFamily) {
+		return ErrLegacy
+	}
+	return nil
 }
 
 // List lists all NetResources.
@@ -282,11 +290,20 @@ func (f *eniFactory) List() (map[types.ResStatus]map[string]types.NetResource, e
 	}
 
 	list := map[types.ResStatus]map[string]types.NetResource{}
-	normal := map[string]types.NetResource{}
+	list[types.ResStatusNormal] = map[string]types.NetResource{}
+	list[types.ResStatusLegacy] = map[string]types.NetResource{}
+	list[types.ResStatusDisabled] = map[string]types.NetResource{}
+
 	for _, eni := range enis {
-		normal[eni.GetID()] = eni
+		subnet := f.subnets.GetPodSubnet(eni.Subnet.ID)
+		if !subnet.Enabled() {
+			list[types.ResStatusDisabled][eni.GetID()] = eni
+		} else if eniRes := eni.GetVPCResource(); !eniRes.SupportFamily(f.ipFamily) {
+			list[types.ResStatusLegacy][eni.GetID()] = eni
+		} else {
+			list[types.ResStatusNormal][eni.GetID()] = eni
+		}
 	}
-	list[types.ResStatusNormal] = normal
 	return list, nil
 }
 
