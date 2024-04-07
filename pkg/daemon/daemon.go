@@ -198,6 +198,11 @@ func newDaemon(k8sService k8s.Service, apiClient ec2.EC2, podPersist PodPersiste
 		return nil, fmt.Errorf("set subnets failed, %v", err)
 	}
 
+	if len(config.Config.DisabledSubnets) != 0 {
+		// disable subnets
+		subnetManager.DisableSubnets(config.Config.DisabledSubnets...)
+	}
+
 	err = secGrpManager.UpdateSecurityGroups(config.Config.SecurityGroups)
 	if err != nil {
 		return nil, fmt.Errorf("set securityGroups failed, %v", err)

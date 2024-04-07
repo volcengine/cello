@@ -21,12 +21,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/volcengine/volcengine-go-sdk/service/vpc"
+	"github.com/volcengine/volcengine-go-sdk/volcengine"
 	"golang.org/x/time/rate"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-
-	"github.com/volcengine/volcengine-go-sdk/service/vpc"
-	"github.com/volcengine/volcengine-go-sdk/volcengine"
 
 	"github.com/volcengine/cello/pkg/backoff"
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
@@ -55,7 +54,7 @@ type PodSubnet struct {
 	LastUpdate              time.Time `json:"lastUpdate"`
 }
 
-func (s *PodSubnet) Enable() bool {
+func (s *PodSubnet) Enabled() bool {
 	s.RLock()
 	defer s.RUnlock()
 	return !s.Disable
@@ -180,8 +179,8 @@ type SubnetManager interface {
 	// If the option of aging is carried, subnets within the time limit will not be updated
 	UpdateSubnetsStatus(options ...UpdateSubnetsStatusOption) error
 
-	// DisableSubnet disable a PodSubnet, it will not be used
-	DisableSubnet(subnetId string)
+	// DisableSubnets disable subnetIds, it will not be used
+	DisableSubnets(subnetIds ...string)
 
 	// Status return status of SubnetManager
 	Status() *Status
@@ -538,9 +537,11 @@ func (m *subnetManager) SelectSubnet(ipFamily types.IPFamily, options ...UpdateS
 	return subnets[0]
 }
 
-func (m *subnetManager) DisableSubnet(subnetId string) {
-	if subnet, exist := m.podSubnets[subnetId]; exist {
-		subnet.DisableSubnet()
+func (m *subnetManager) DisableSubnets(subnetIds ...string) {
+	for _, subnetId := range subnetIds {
+		if subnet, exist := m.podSubnets[subnetId]; exist {
+			subnet.DisableSubnet()
+		}
 	}
 }
 

@@ -44,7 +44,10 @@ const (
 	defaultEniPending = 2
 )
 
-var ErrLegacy = errors.New("legacy resource")
+var (
+	ErrLegacy   = errors.New("legacy resource")
+	ErrDisabled = errors.New("disabled resource")
+)
 
 // eniIPResourceManager is the entity to handle ENI IP resource management.
 type eniIPResourceManager struct {
@@ -126,7 +129,7 @@ func generateIPPoolCfg(limits *helper.InstanceLimits) pool.Config {
 	}
 }
 
-func newEniIPResourceManager(subnet helper.SubnetManager, secManager helper.SecurityGroupManager, volcApi helper.VolcAPI, allocatedResource map[string]types.NetResourceAllocated, k8s k8s.Service) (*eniIPResourceManager, error) {
+func newEniIPResourceManager(subnetManager helper.SubnetManager, secManager helper.SecurityGroupManager, volcApi helper.VolcAPI, allocatedResource map[string]types.NetResourceAllocated, k8s k8s.Service) (*eniIPResourceManager, error) {
 	log.InfoS("Creating EniIPResourceManager")
 	limit, err := helper.NewInstanceLimitManager(volcApi)
 	if err != nil {
@@ -139,7 +142,7 @@ func newEniIPResourceManager(subnet helper.SubnetManager, secManager helper.Secu
 		return nil, fmt.Errorf("get attached enis failed while init, %v", err)
 	}
 
-	eniFact, err := newEniFactory(secManager, subnet, volcApi, limit, types.IPFamily(*config.Config.IPFamily))
+	eniFact, err := newEniFactory(secManager, subnetManager, volcApi, limit, types.IPFamily(*config.Config.IPFamily))
 	if err != nil {
 		return nil, fmt.Errorf("create eni factory failed, %v", err)
 	}
@@ -175,6 +178,11 @@ func newEniIPResourceManager(subnet helper.SubnetManager, secManager helper.Secu
 	poolConfig.PreStart = func(pool pool.ResourcePoolOp) error {
 		// init factory and pool
 		for _, eni := range created {
+			var resErr error
+			eniSubnet := subnetManager.GetPodSubnet(eni.Subnet.ID)
+			if eniSubnet != nil && !eniSubnet.Enabled() {
+				resErr = ErrDisabled
+			}
 			v4s, v6s, inErr := volcApi.GetENIIPList(eni.Mac.String())
 			if inErr != nil {
 				return fmt.Errorf("get ip list on eni %s failed, %v", eni.Mac.String(), inErr)
@@ -191,6 +199,7 @@ func newEniIPResourceManager(subnet helper.SubnetManager, secManager helper.Secu
 
 			v4sMap := ip.NetIPToMap(v4s)
 			v6sMap := ip.NetIPToMap(v6s)
+			// reload inuse resource in pool
 			for _, item := range allocatedResource {
 				if item.Resource.GetVPCResource().ENIId != eni.ID {
 					continue
@@ -217,21 +226,22 @@ func newEniIPResourceManager(subnet helper.SubnetManager, secManager helper.Secu
 				if !factory.ipFamily.EnableIPv6() {
 					ipSet.IPv6 = nil
 				}
-				var resErr error
-				if (factory.ipFamily.EnableIPv4() && ipSet.IPv4 == nil) ||
-					(factory.ipFamily.EnableIPv6() && ipSet.IPv6 == nil) {
-					resErr = ErrLegacy
-				}
-				fEni.appendIPLocked(&ENIIPRes{
+				eniIPRes := &ENIIPRes{
 					ENIIP: &types.ENIIP{
 						ENI:   eni,
 						IPSet: ipSet,
 					},
 					err: resErr,
-				})
+				}
+				if resErr == nil && ((factory.ipFamily.EnableIPv4() && ipSet.IPv4 == nil) ||
+					(factory.ipFamily.EnableIPv6() && ipSet.IPv6 == nil)) {
+					eniIPRes.err = ErrLegacy
+				}
+				fEni.appendIPLocked(eniIPRes)
 			}
 
 			if factory.ipFamily.EnableIPv4() && !factory.ipFamily.EnableIPv6() {
+				// no need to deal with ipv6
 				for _, ipv4 := range v4sMap {
 					eniIP := &ENIIPRes{
 						ENIIP: &types.ENIIP{
@@ -240,11 +250,17 @@ func newEniIPResourceManager(subnet helper.SubnetManager, secManager helper.Secu
 								IPv4: ipv4,
 							},
 						},
+						err: resErr,
 					}
 					fEni.appendIPLocked(eniIP)
-					pool.AddAvailable(eniIP.ENIIP) // no need to deal with ipv6
+					if eniIP.err == nil {
+						pool.AddAvailable(eniIP.ENIIP)
+					} else {
+						pool.AddInvalid(eniIP.ENIIP)
+					}
 				}
 			} else if !factory.ipFamily.EnableIPv4() && factory.ipFamily.EnableIPv6() {
+				// no need to deal with ipv4
 				for _, ipv6 := range v6sMap {
 					eniIP := &ENIIPRes{
 						ENIIP: &types.ENIIP{
@@ -253,9 +269,14 @@ func newEniIPResourceManager(subnet helper.SubnetManager, secManager helper.Secu
 								IPv6: ipv6,
 							},
 						},
+						err: resErr,
 					}
 					fEni.appendIPLocked(eniIP)
-					pool.AddAvailable(eniIP.ENIIP) // no need to deal with ipv4
+					if eniIP.err == nil {
+						pool.AddAvailable(eniIP.ENIIP)
+					} else {
+						pool.AddInvalid(eniIP.ENIIP)
+					}
 				}
 			} else {
 				// pair last
@@ -272,9 +293,10 @@ func newEniIPResourceManager(subnet helper.SubnetManager, secManager helper.Secu
 							ENI:   eni,
 							IPSet: ipSet,
 						},
+						err: resErr,
 					}
 					fEni.appendIPLocked(eniIP)
-					if ipSet.IPv4 == nil || ipSet.IPv6 == nil {
+					if eniIP.err != nil || ipSet.IPv4 == nil || ipSet.IPv6 == nil {
 						pool.AddInvalid(eniIP.ENIIP)
 					} else {
 						pool.AddAvailable(eniIP.ENIIP)
@@ -482,9 +504,8 @@ func (f *eniIPFactory) submitOrder() error {
 		}
 		eni.Lock()
 		subnet := f.eniFactory.subnets.GetPodSubnet(eni.Subnet.ID)
-		subnetIPFamily := subnet.IPFamily()
-		if !subnetIPFamily.Support(f.ipFamily) {
-			log.WarnS("Skip submit order to eni because subnet ipFamily not support", "eniID", eni.ID, "subnetIPFamily", subnetIPFamily, "ipFamily", f.ipFamily)
+		if !subnet.Available(f.ipFamily) { // may due to subnet disabled、ipFamily not support、no available ip address
+			log.WarnS("Skip submit order to eni because subnet is not available", "eniID", eni.ID, "subnet", subnet.SubnetId)
 			eni.forbidAssign = true
 			eni.Unlock()
 			continue
@@ -551,7 +572,7 @@ func (f *eniIPFactory) initENI(eni *ENI) {
 		if !ok {
 			err = fmt.Errorf("net resource created by factory is not expect type, get %+v, try release it", vpcEni)
 			log.Error(err)
-			releaseErr := f.eniFactory.Release(vpcEni)
+			_, releaseErr := f.eniFactory.Release(vpcEni)
 			if releaseErr != nil {
 				log.Errorf("Release unexpect resource %+v failed, %v", vpcEni, releaseErr)
 			}
@@ -559,7 +580,7 @@ func (f *eniIPFactory) initENI(eni *ENI) {
 			ipv4s, ipv6s, err = f.volcApi.GetENIIPList(eni.Mac.String())
 			if err != nil {
 				log.Errorf("Get ip list on eni failed, %v, try release it", err)
-				releaseErr := f.eniFactory.Release(vpcEni)
+				_, releaseErr := f.eniFactory.Release(vpcEni)
 				if releaseErr != nil {
 					log.Errorf("Release eni %+v failed, %v", vpcEni, releaseErr)
 				}
@@ -569,7 +590,7 @@ func (f *eniIPFactory) initENI(eni *ENI) {
 				if len(ipv4s) != len(ipv6s) {
 					err = fmt.Errorf("the number of ipv4 and ipv6 not equal on eni %+v, try release it", vpcEni)
 					log.Error(err)
-					releaseErr := f.eniFactory.Release(vpcEni)
+					_, releaseErr := f.eniFactory.Release(vpcEni)
 					if releaseErr != nil {
 						log.Errorf("Release eni %+v failed, %v", vpcEni, releaseErr)
 					}
@@ -691,8 +712,14 @@ func (f *eniIPFactory) Create(count int) ([]types.NetResource, error) {
 	return allocatedIP, nil
 }
 
-// ReleaseInValid releases invalid NetResource.
-func (f *eniIPFactory) ReleaseInValid(resource types.NetResource) (types.NetResource, error) {
+// Release releases NetResource.
+//  1. eni which resource belong to can be release: release eni directly.
+//  2. resource not include primary ip: just release ip pair.
+//  3. resource include primary ip
+//     3.1 is legacy resource: convert resource to a new resource.
+//     3.2 others: return error
+func (f *eniIPFactory) Release(resource types.NetResource) (types.NetResource, error) {
+	// check
 	res, ok := resource.(*types.ENIIP)
 	if !ok {
 		return nil, fmt.Errorf("type of resource is not %s", types.NetResourceTypeEniIp)
@@ -700,108 +727,8 @@ func (f *eniIPFactory) ReleaseInValid(resource types.NetResource) (types.NetReso
 	if res.ENI == nil {
 		return nil, fmt.Errorf("eni of resource is nil")
 	}
-
-	var temp *ENI
-	eni := res.ENI
-	ipSet := res.IPSet
-
-	if eni.Trunk {
-		return nil, fmt.Errorf("eni is trunk, operation invalid")
-	}
-
-	f.RLock()
-	for _, e := range f.enis {
-		if e.ENI == nil {
-			continue
-		}
-		if e.ID == res.ENI.ID {
-			temp = e
-			break
-		}
-	}
-	f.RUnlock()
-
-	if temp == nil {
-		log.WarnS("ENI not exist in this instance", "eniID", eni.ID)
-		return nil, nil
-	}
-
-	if ipSet.GetIPv4() == "" || !eni.PrimaryIP.IPv4.Equal(ipSet.IPv4) { // release
-		var v4s, v6s []net.IP
-		if ipSet.IPv4 != nil {
-			v4s = append(v4s, ipSet.IPv4)
-		}
-		if ipSet.IPv6 != nil {
-			v6s = append(v6s, ipSet.IPv6)
-		}
-
-		err := f.volcApi.DeallocIPAddresses(eni.ID, eni.Mac.String(), v4s, v6s)
-		if err != nil {
-			return nil, fmt.Errorf("dealloc ip address failed, %v", err)
-		}
-		temp.Lock()
-		temp.deleteIPLocked(res)
-		temp.Unlock()
-		return nil, nil
-	}
-
-	// Process with primary IP.
-	{
-		if ipSet.IPv6 != nil {
-			err := f.volcApi.DeallocIPAddresses(eni.ID, eni.Mac.String(), nil, []net.IP{ipSet.IPv6})
-			if err != nil {
-				return nil, fmt.Errorf("dealloc ipaddress failed, %v", err)
-			}
-			temp.Lock()
-			temp.deleteIPLocked(res)
-			temp.Unlock()
-		}
-
-		if !f.ipFamily.EnableIPv4() && f.ipFamily.EnableIPv6() { // v6 only
-			return nil, nil
-		}
-
-		var newV6 net.IP
-		if f.ipFamily.EnableIPv6() { // dual
-			// pair with ipv6
-			_, v6s, err := f.volcApi.AllocIPAddresses(temp.ID, temp.Mac.String(), 0, 1)
-			if err != nil || len(v6s) != 1 {
-				return nil, fmt.Errorf("alloc ipv6 address failed while pair with primary ipv4, %v", err)
-			}
-			newV6 = v6s[0]
-		}
-
-		newEniIP := &types.ENIIP{
-			ENI: temp.ENI,
-			IPSet: types.IPSet{
-				IPv4: ipSet.IPv4,
-				IPv6: newV6,
-			},
-		}
-		f.Lock()
-		temp.Lock()
-		temp.deleteIPLocked(res)
-		temp.appendIPLocked(&ENIIPRes{
-			ENIIP: newEniIP,
-		})
-		temp.Unlock()
-		f.Unlock()
-		return newEniIP, nil
-	}
-}
-
-// Release releases NetResource.
-func (f *eniIPFactory) Release(resource types.NetResource) error {
-	// check
-	res, ok := resource.(*types.ENIIP)
-	if !ok {
-		return fmt.Errorf("type of resource is not %s", types.NetResourceTypeEniIp)
-	}
-	if res.ENI == nil {
-		return fmt.Errorf("eni of resource is nil")
-	}
 	var eni *ENI
-	var eniIP *types.ENIIP
+	var resInFac *ENIIPRes
 
 	f.RLock()
 outLoop:
@@ -814,7 +741,7 @@ outLoop:
 			e.Lock()
 			for _, ipRes := range e.ips {
 				if ipRes.IPSet.String() == res.IPSet.String() {
-					eniIP = ipRes.ENIIP
+					resInFac = ipRes
 					e.Unlock()
 					break outLoop
 				}
@@ -824,60 +751,88 @@ outLoop:
 	}
 	f.RUnlock()
 
-	if eni == nil || eniIP == nil {
-		return apiErr.ErrNotFound
+	if eni == nil || resInFac == nil {
+		return nil, apiErr.ErrNotFound
 	}
 
 	if eni.Trunk {
-		return fmt.Errorf("eni is trunk, operation invalid")
+		return nil, fmt.Errorf("eni is trunk, operation invalid")
 	}
 
-	// check eni should release
+	// 1. check if eni could be release.
 	eni.Lock()
 	if len(eni.ips) == 1 { // primary ip or pair with primary ip
 		if eni.pending > 0 {
 			eni.Unlock()
-			return fmt.Errorf("allocate action on eni %s", eni.ID)
+			return nil, fmt.Errorf("allocate action on eni %s", eni.ID)
 		}
 		f.eniPending <- struct{}{}
 		eni.forbidAssign = true
 		eni.Unlock()
+
+		if _, err := f.eniFactory.Release(eni); err != nil {
+			<-f.eniPending
+			return nil, fmt.Errorf("release ENI for eniip failed, %v", err)
+		}
 
 		f.Lock()
 		close(eni.stopWorker)
 		f.deleteEniLocked(eni)
 		f.Unlock()
 
-		err := f.eniFactory.Release(eni)
 		<-f.eniPending
-		if err != nil {
-			return fmt.Errorf("release ENI for eniip failed, %v", err)
+		return nil, nil
+	}
+	eni.Unlock()
+
+	// 2. resource not include primary ip or is v6 only
+	if !res.ENI.PrimaryIP.IPv4.Equal(res.IPSet.IPv4) || !f.ipFamily.Support(types.IPFamilyIPv4) {
+		// release ip
+		var v4s, v6s []net.IP
+		if res.IPSet.IPv4 != nil {
+			v4s = append(v4s, res.IPSet.IPv4)
 		}
-		return nil
-	}
-	eni.Unlock()
-
-	if res.ENI.PrimaryIP.IPv4.Equal(res.IPSet.IPv4) {
-		return apiErr.ErrInvalidDeletionPrimaryIP
-	}
-
-	// release ip
-	var v4s, v6s []net.IP
-	if res.IPSet.IPv4 != nil {
-		v4s = append(v4s, res.IPSet.IPv4)
-	}
-	if res.IPSet.IPv6 != nil {
-		v6s = append(v6s, res.IPSet.IPv6)
+		if res.IPSet.IPv6 != nil {
+			v6s = append(v6s, res.IPSet.IPv6)
+		}
+		err := f.volcApi.DeallocIPAddresses(res.ENI.ID, res.ENI.Mac.String(), v4s, v6s)
+		if err != nil && !strings.Contains(err.Error(), apiErr.ErrHalfwayFailed.Error()) {
+			return nil, fmt.Errorf("dealloc ipaddress failed, %v", err)
+		}
+		eni.Lock()
+		eni.deleteIPLocked(resInFac.ENIIP)
+		eni.Unlock()
+		return nil, nil
 	}
 
-	err := f.volcApi.DeallocIPAddresses(res.ENI.ID, res.ENI.Mac.String(), v4s, v6s)
-	if err != nil && !strings.Contains(err.Error(), apiErr.ErrHalfwayFailed.Error()) {
-		return fmt.Errorf("dealloc ipaddress failed, %v", err)
+	// 3. resource include primary ip.
+	// 3.1 legacy resource
+	if errors.Is(resInFac.err, ErrLegacy) {
+		if f.ipFamily.EnableIPv6() && res.IPSet.IPv6 == nil {
+			// pair with ipv6
+			_, v6s, err := f.volcApi.AllocIPAddresses(res.ENI.ID, res.ENI.Mac.String(), 0, 1)
+			if err != nil || len(v6s) != 1 {
+				return nil, fmt.Errorf("alloc ipv6 address failed while pair with primary ipv4, %v", err)
+			}
+			newRes := &types.ENIIP{
+				ENI: resInFac.ENI,
+				IPSet: types.IPSet{
+					IPv4: res.IPSet.IPv4,
+					IPv6: v6s[0],
+				},
+			}
+			f.Lock()
+			eni.Lock()
+			eni.deleteIPLocked(res)
+			eni.appendIPLocked(&ENIIPRes{
+				ENIIP: newRes,
+			})
+			eni.Unlock()
+			f.Unlock()
+			return newRes, nil
+		}
 	}
-	eni.Lock()
-	eni.deleteIPLocked(eniIP)
-	eni.Unlock()
-	return nil
+	return nil, apiErr.ErrInvalidDeletionPrimaryIP
 }
 
 // Valid checks if given NetResource is valid.
@@ -927,6 +882,7 @@ func (f *eniIPFactory) List() (map[types.ResStatus]map[string]types.NetResource,
 	list[types.ResStatusNormal] = map[string]types.NetResource{}
 	list[types.ResStatusLegacy] = map[string]types.NetResource{}
 	list[types.ResStatusInvalid] = map[string]types.NetResource{}
+	list[types.ResStatusDisabled] = map[string]types.NetResource{}
 
 	eniMacs, err := f.volcApi.GetSecondaryENIMACs()
 	if err != nil {
@@ -982,6 +938,8 @@ func (f *eniIPFactory) List() (map[types.ResStatus]map[string]types.NetResource,
 				list[types.ResStatusNormal][item.GetID()] = item
 			} else if errors.Is(eniipRes.err, ErrLegacy) {
 				list[types.ResStatusLegacy][item.GetID()] = item
+			} else if errors.Is(eniipRes.err, ErrDisabled) {
+				list[types.ResStatusDisabled][item.GetID()] = item
 			} else {
 				list[types.ResStatusInvalid][item.GetID()] = item
 			}
@@ -1063,7 +1021,7 @@ func (f *eniIPFactory) GC() error {
 		return nil
 	}
 
-	log.DebugS("Start gc for eniIPFactory")
+	log.InfoS("Start gc for eniIPFactory")
 	ipKey := func(eniId, ip string) string {
 		return fmt.Sprintf("%s/%s", eniId, ip)
 	}
@@ -1211,21 +1169,24 @@ func (f *eniIPFactory) GC() error {
 				})
 			}
 		case types.IPFamilyDual:
-			pairCnt := math.Min(len(item.v4s), len(item.v6s))
-			pairs := types.PairIPs(item.v4s, item.v6s)
-			for i := 0; i < pairCnt; i++ {
-				fEni.appendIPLocked(&ENIIPRes{
-					ENIIP: &types.ENIIP{
-						ENI:   item.ENI,
-						IPSet: pairs[i],
-					},
-				})
-			}
-			v4s := item.v4s[pairCnt:]
-			v6s := item.v6s[pairCnt:]
-			err = f.volcApi.DeallocIPAddresses(item.ID, item.Mac.String(), v4s, v6s)
-			if err != nil {
-				log.ErrorS(err, "Dealloc extra ip addresses failed", "v4s", v4s, "v6s", v6s)
+			curV4Cnt := len(item.v4s)
+			curV6Cnt := len(item.v6s)
+			pairCnt := math.Max(curV4Cnt, curV6Cnt)
+			v4Address, v6Address, inErr := f.volcApi.AllocIPAddresses(temp.ID, item.Mac.String(), pairCnt-curV4Cnt, pairCnt-curV6Cnt)
+			if inErr == nil {
+				item.v4s = append(item.v4s, v4Address...)
+				item.v6s = append(item.v6s, v6Address...)
+				pairs := types.PairIPs(item.v4s, item.v6s)
+				for _, pair := range pairs {
+					fEni.appendIPLocked(&ENIIPRes{
+						ENIIP: &types.ENIIP{
+							ENI:   item.ENI,
+							IPSet: pair,
+						},
+					})
+				}
+			} else {
+				log.ErrorS(inErr, "Allocate ip address while factory gc failed", "eni", item.ID, "v4Cnt", pairCnt-curV4Cnt, "v6Cnt", pairCnt-curV6Cnt)
 			}
 		}
 		if fEni == temp {
