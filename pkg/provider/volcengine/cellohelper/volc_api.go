@@ -553,6 +553,12 @@ func (e *VolcApiImpl) AllocIPAddresses(eniID, eniMac string, v4Cnt, v6Cnt int) (
 		}()
 	}
 
+	if e.ipFamily.Support(types.IPFamilyDual) && v4Cnt > 0 && v6Cnt > 0 {
+		// v4 and v6 now use the same lock in vpc and need to wait for the lock to be released.
+		// 500ms is the statistical value.
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	if e.ipFamily.EnableIPv6() && v6Cnt > 0 {
 		var assignIPResp *ec2.AssignIpv6AddressesOutput
 		werr := wait.ExponentialBackoff(backoff.BackOff(backoff.APIWriteOps), func() (bool, error) {
@@ -672,6 +678,12 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 		if err = apiErr.BackoffErrWrapper(werr, err); err != nil {
 			errs = append(errs, err)
 		}
+	}
+
+	if e.ipFamily.Support(types.IPFamilyDual) && len(ipv4s) > 0 && len(ipv6s) > 0 {
+		// v4 and v6 now use the same lock in vpc and need to wait for the lock to be released.
+		// 500ms is the statistical value.
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	if len(ipv6s) > 0 {
