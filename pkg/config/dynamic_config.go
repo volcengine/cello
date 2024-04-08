@@ -67,6 +67,9 @@ func GetMergedConfigFromConfigMap(k8s k8s.Service) (*DaemonConfig, error) {
 	if nodeConfig.Subnets != nil {
 		clusterConfig.Subnets = nodeConfig.Subnets
 	}
+	if nodeConfig.DisabledSubnets != nil {
+		clusterConfig.DisabledSubnets = nodeConfig.DisabledSubnets
+	}
 	if nodeConfig.CustomENIQuota != nil {
 		clusterConfig.CustomENIQuota = nodeConfig.CustomENIQuota
 	}
