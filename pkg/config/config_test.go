@@ -106,7 +106,8 @@ func TestConfigMerge(t *testing.T) {
 		RamRole:                     datatype.String("ForTest"),
 		OpenApiAddress:              datatype.String("ForTest"),
 		SecurityGroups:              []string{"sg-abcdef", "sg-ghijklm"},
-		Subnets:                     []string{"subnet-2bznh8mcy0wzk2dx0efgng9q8", "subnet-2bznh8ievst1c2dx0efzr4q2k"},
+		Subnets:                     []string{"subnet-2bznh8mcy0wzk2dx0efgng9q8", "subnet-2bznh8ievst1c2dx0efzr4q2k", "subnet-2bznh6mcy0wzk3dx0efgng9q8"},
+		DisabledSubnets:             []string{"subnet-2bznh6mcy0wzk3dx0efgng9q8"},
 		ReconcileIntervalSec:        datatype.Uint32(DefaultReconcileIntervalSec),
 		PoolTarget:                  datatype.Uint32(5),
 		PoolTargetMin:               datatype.Uint32(10),
@@ -151,6 +152,7 @@ func TestConfigMerge(t *testing.T) {
 	assert.Equal(t, true, sets.NewString(Config.SecurityGroups...).Equal(sets.NewString(nodeConfig.SecurityGroups...)))
 	// Subnets
 	assert.Equal(t, true, sets.NewString(Config.Subnets...).Equal(sets.NewString(nodeConfig.Subnets...)))
+	assert.Equal(t, true, sets.NewString(Config.DisabledSubnets...).Equal(sets.NewString(nodeConfig.DisabledSubnets...)))
 }
 
 func TestParseStaticConf(t *testing.T) {
