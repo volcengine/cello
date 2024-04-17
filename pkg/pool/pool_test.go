@@ -133,6 +133,12 @@ func (m *mockObjectFactory) Valid(resource types.NetResource) error {
 	return apiErr.ErrNotFound
 }
 
+func (m *mockObjectFactory) getById(id string) types.NetResource {
+	m.Lock()
+	defer m.Unlock()
+	return m.objects[id]
+}
+
 func (m *mockObjectFactory) List() (map[types.ResStatus]map[string]types.NetResource, error) {
 	if err := m.preProcess(); err != nil {
 		return nil, err
@@ -285,8 +291,15 @@ func TestCreatePool(t *testing.T) {
 			if invalid == 0 &&
 				inUse == arg.initInuse &&
 				available == math.Min(math.Max(arg.maxCap-arg.initInuse, 0), math.Max(arg.target, math.Max(arg.targetMin-arg.initInuse, 0))) {
+				status := pool.Status()
+				assert.Equal(t, status.TargetMin, arg.targetMin)
+				assert.Equal(t, status.Target, arg.target)
+				assert.Equal(t, status.MaxCap, arg.maxCap)
+				assert.Equal(t, status.Available, available)
+				assert.Equal(t, status.Total, inUse+available)
 				return true, nil
 			}
+
 			time.Sleep(2 * time.Second)
 		}
 		return false, fmt.Errorf("actual result: inUse: %d, available: %d, invalid: %d", inUse, available, invalid)
@@ -505,10 +518,12 @@ func TestRelease(t *testing.T) {
 		initInvalid    int
 		releaseId      string
 		releaseInvalid bool
+		checkInvalid   bool
 	}{
-		{3, 5, 20, 5, 5, 0, "ID-2", false},
-		{3, 5, 20, 5, 5, 0, "ID-6", true},
-		{3, 5, 20, 5, 5, 0, "no-exist", true},
+		{3, 5, 20, 5, 5, 0, "ID-2", false, false},
+		{3, 5, 20, 5, 5, 0, "ID-6", true, false},
+		{3, 5, 20, 5, 5, 0, "no-exist", true, false},
+		{3, 5, 20, 5, 5, 0, "ID-1", false, true},
 	}
 	exec := func(arg struct {
 		target         int
@@ -519,9 +534,15 @@ func TestRelease(t *testing.T) {
 		initInvalid    int
 		releaseId      string
 		releaseInvalid bool
+		checkInvalid   bool
 	}) (bool, error) {
 		factory := newMockObjectFactory(arg.maxCap)
 		pool := createPool(factory, arg.target, arg.targetMin, arg.maxCap, false, arg.initInuse, arg.initAvailable, arg.initInvalid, defaultMonitorInterval)
+		if arg.checkInvalid {
+			res := factory.getById(arg.releaseId)
+			_, err := factory.Release(res)
+			assert.NoError(t, err)
+		}
 		err := pool.Release(arg.releaseId)
 		if arg.releaseInvalid {
 			assert.ErrorIs(t, err, ErrResourceInvalid)
