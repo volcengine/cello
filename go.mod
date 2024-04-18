@@ -3,7 +3,7 @@ module github.com/volcengine/cello
 go 1.20
 
 require (
-	code.byted.org/containernetworking/catena v1.4.0
+	code.byted.org/containernetworking/volcengine-k8s-network-api v0.1.3
 	github.com/Mellanox/rdmamap v1.1.0
 	github.com/boltdb/bolt v1.3.1
 	github.com/containernetworking/cni v1.1.2
