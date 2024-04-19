@@ -821,14 +821,12 @@ outLoop:
 					IPv6: v6s[0],
 				},
 			}
-			f.Lock()
 			eni.Lock()
 			eni.deleteIPLocked(res)
 			eni.appendIPLocked(&ENIIPRes{
 				ENIIP: newRes,
 			})
 			eni.Unlock()
-			f.Unlock()
 			return newRes, nil
 		}
 	}
