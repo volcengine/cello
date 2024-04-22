@@ -110,6 +110,22 @@ func TestClientWrapper_InterfaceInfo(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestClientWrapper_InterfaceInfoWithEmptyAddresses(t *testing.T) {
+	info, err := meta.InterfaceInfo(ctx, mock.AnotherMac)
+	assert.NoError(t, err)
+	if assert.NotNil(t, info) {
+		assert.Equal(t, mock.GatewayIP, info.Gateway)
+		assert.Equal(t, mock.InterfaceId, info.NetworkInterfaceID)
+		assert.Equal(t, mock.PrimaryIP, info.PrimaryIPAddress)
+		assert.Equal(t, mock.SubnetId, info.SubnetID)
+		assert.Equal(t, mock.SubnetCidr, info.SubnetCidrBlock)
+		assert.Empty(t, info.PrivateIPAddresses)
+	}
+
+	_, err = meta.InterfaceInfo(ctx, "")
+	assert.Error(t, err)
+}
+
 func TestClientWrapper_InterfaceID(t *testing.T) {
 	id, err := meta.InterfaceID(ctx, mock.Mac)
 	assert.NoError(t, err)
@@ -127,6 +143,12 @@ func TestClientWrapper_IPAddresses(t *testing.T) {
 	assert.NoError(t, err)
 	res := strings.Split(mock.PrivateIps, "\n")
 	assert.Equal(t, len(res), len(ips))
+}
+
+func TestClientWrapper_EmptyAddresses(t *testing.T) {
+	ips, err := meta.InterfaceSecondaryIPs(ctx, mock.AnotherMac)
+	assert.NoError(t, err)
+	assert.Empty(t, ips)
 }
 
 func TestClientWrapper_STS(t *testing.T) {

@@ -164,6 +164,9 @@ func (client ClientWrapper) InterfaceSecondaryIPs(ctx context.Context, mac strin
 	ips := make([]net.IP, 0)
 
 	for _, addr := range strings.Split(string(addrs), "\n") {
+		if len(addr) == 0 {
+			continue
+		}
 		ips = append(ips, net.ParseIP(addr))
 	}
 
@@ -179,7 +182,13 @@ func (client ClientWrapper) InterfaceInfo(ctx context.Context, mac string) (*Int
 	var nicInfo InterfaceInfo
 	err = json.Unmarshal(data, &nicInfo)
 
-	nicInfo.PrivateIPAddresses = strings.Split(nicInfo.PrivateIpv4s, "\n")
+	for _, addr := range strings.Split(nicInfo.PrivateIpv4s, "\n") {
+		if len(addr) == 0 {
+			continue
+		}
+		nicInfo.PrivateIPAddresses = append(nicInfo.PrivateIPAddresses, addr)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get network inteface %v information: %w", mac, err)
 	}
