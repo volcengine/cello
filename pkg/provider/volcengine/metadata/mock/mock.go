@@ -23,23 +23,26 @@ import (
 
 // Raw data from metadata response.
 const (
-	Role           = "ServiceRoleForVolcECS"
-	RegionId       = "cn-beijing"
-	AzId           = "cn-beijing-a"
-	InstanceId     = "i-1234567890"
-	InstanceTypeId = "ecs.g1ie.xlarge"
-	VpcId          = "vpc-1234567890"
-	VpcCidrBlock   = "172.16.0.0/16"
-	Macs           = "00:16:3e:15:0b:69\n00:16:3e:16:f0:f9\n00:16:3e:36:fe:9c\n00:16:3e:65:71:29"
-	Mac            = "00:16:3e:16:f0:f9"
-	GatewayIP      = "172.16.1.1"
-	PrimaryIP      = "172.16.1.9"
-	InterfaceId    = "eni-rs2vnlglkhdsv0x57806fyj"
-	SubnetId       = "subnet-13fic2voyqk1s3n6nu4ysssg5"
-	SubnetCidr     = "172.16.1.0/24"
-	PrivateIps     = "172.16.1.10\n172.16.1.17\n172.16.1.18\n172.16.1.19\n172.16.1.20\n172.16.1.21\n172.16.1.22\n172.16.1.28\n172.16.1.29\n172.16.1.38\n172.16.1.39\n172.16.1.40\n172.16.1.41\n172.16.1.42"
-	NetworkInfo    = "{\"NetworkInterfaceId\":\"eni-rs2vnlglkhdsv0x57806fyj\",\"PrimaryIpAddress\":\"172.16.1.9\",\"Gateway\":\"172.16.1.1\",\"SubnetId\":\"subnet-13fic2voyqk1s3n6nu4ysssg5\",\"SubnetCidrBlock\":\"172.16.1.0/24\",\"PrivateIpv4s\":\"172.16.1.10\\n172.16.1.17\\n172.16.1.18\\n172.16.1.19\\n172.16.1.20\\n172.16.1.21\\n172.16.1.22\\n172.16.1.28\\n172.16.1.29\\n172.16.1.38\\n172.16.1.39\\n172.16.1.40\\n172.16.1.41\\n172.16.1.42\"}"
-	ServiceToken   = "{\"ExpiredTime\":\"2024-04-09T03:54:40+08:00\",\"CurrentTime\":\"2024-04-08T21:54:40+08:00\",\"AccessKeyId\":\"mock-access-key-id\",\"SecretAccessKey\":\"mock-secret-access-key\",\"SessionToken\":\"mock-session-token\"}"
+	Role             = "ServiceRoleForVolcECS"
+	RegionId         = "cn-beijing"
+	AzId             = "cn-beijing-a"
+	InstanceId       = "i-1234567890"
+	InstanceTypeId   = "ecs.g1ie.xlarge"
+	VpcId            = "vpc-1234567890"
+	VpcCidrBlock     = "172.16.0.0/16"
+	Macs             = "00:16:3e:15:0b:69\n00:16:3e:16:f0:f9\n00:16:3e:36:fe:9c\n00:16:3e:65:71:29"
+	Mac              = "00:16:3e:16:f0:f9"
+	GatewayIP        = "172.16.1.1"
+	PrimaryIP        = "172.16.1.9"
+	InterfaceId      = "eni-rs2vnlglkhdsv0x57806fyj"
+	SubnetId         = "subnet-13fic2voyqk1s3n6nu4ysssg5"
+	SubnetCidr       = "172.16.1.0/24"
+	PrivateIps       = "172.16.1.10\n172.16.1.17\n172.16.1.18\n172.16.1.19\n172.16.1.20\n172.16.1.21\n172.16.1.22\n172.16.1.28\n172.16.1.29\n172.16.1.38\n172.16.1.39\n172.16.1.40\n172.16.1.41\n172.16.1.42"
+	AnotherMac       = "00:16:3e:36:fe:9c"
+	EmptyPrivateIps  = ""
+	NetworkInfo      = "{\"NetworkInterfaceId\":\"eni-rs2vnlglkhdsv0x57806fyj\",\"PrimaryIpAddress\":\"172.16.1.9\",\"Gateway\":\"172.16.1.1\",\"SubnetId\":\"subnet-13fic2voyqk1s3n6nu4ysssg5\",\"SubnetCidrBlock\":\"172.16.1.0/24\",\"PrivateIpv4s\":\"172.16.1.10\\n172.16.1.17\\n172.16.1.18\\n172.16.1.19\\n172.16.1.20\\n172.16.1.21\\n172.16.1.22\\n172.16.1.28\\n172.16.1.29\\n172.16.1.38\\n172.16.1.39\\n172.16.1.40\\n172.16.1.41\\n172.16.1.42\"}"
+	EmptyNetworkInfo = "{\"NetworkInterfaceId\":\"eni-rs2vnlglkhdsv0x57806fyj\",\"PrimaryIpAddress\":\"172.16.1.9\",\"Gateway\":\"172.16.1.1\",\"SubnetId\":\"subnet-13fic2voyqk1s3n6nu4ysssg5\",\"SubnetCidrBlock\":\"172.16.1.0/24\",\"PrivateIpv4s\":\"\"}"
+	ServiceToken     = "{\"ExpiredTime\":\"2024-04-09T03:54:40+08:00\",\"CurrentTime\":\"2024-04-08T21:54:40+08:00\",\"AccessKeyId\":\"mock-access-key-id\",\"SecretAccessKey\":\"mock-secret-access-key\",\"SessionToken\":\"mock-session-token\"}"
 )
 
 type Client struct{}
@@ -79,14 +82,17 @@ func (m *Client) Get(ctx context.Context, sign, path string) ([]byte, error) {
 		return []byte(InterfaceId), nil
 	case "network/interfaces/macs/00:16:3e:15:0b:69/private_ip_addresses",
 		"network/interfaces/macs/00:16:3e:16:f0:f9/private_ip_addresses",
-		"network/interfaces/macs/00:16:3e:36:fe:9c/private_ip_addresses",
 		"network/interfaces/macs/00:16:3e:65:71:29/private_ip_addresses":
 		return []byte(PrivateIps), nil
+	case
+		"network/interfaces/macs/00:16:3e:36:fe:9c/private_ip_addresses":
+		return []byte(EmptyPrivateIps), nil
 	case "network/interfaces/macs/00:16:3e:15:0b:69/network_info",
 		"network/interfaces/macs/00:16:3e:16:f0:f9/network_info",
-		"network/interfaces/macs/00:16:3e:36:fe:9c/network_info",
 		"network/interfaces/macs/00:16:3e:65:71:29/network_info":
 		return []byte(NetworkInfo), nil
+	case "network/interfaces/macs/00:16:3e:36:fe:9c/network_info":
+		return []byte(EmptyNetworkInfo), nil
 	case "iam/security_credentials/" + Role:
 		return []byte(ServiceToken), nil
 	default:
