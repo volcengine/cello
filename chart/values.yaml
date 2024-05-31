@@ -1,6 +1,6 @@
 image:
   repository: "cr-cn-beijing.volces.com/cello/cello"
-  tag: v1.6.6
+  tag: v1.6.8
   pullPolicy: "Always"
 
 cello:
