@@ -88,7 +88,7 @@ func (d *VlanDriver) SetupNetwork(cfg *types.SetupConfig) (err error) {
 	}
 	err = vlanCfg.Setup(netNs)
 	if err != nil {
-		return fmt.Errorf("setup vlan device error, %s", err.Error())
+		return fmt.Errorf("setup vlan device with vid: %v error, %s", cfg.Vid, err.Error())
 	}
 
 	setVeth := cfg.IfName == celloTypes.DefaultIfName && (cfg.LocalFastPath || len(cfg.RedirectToHostCIDRs) != 0)
