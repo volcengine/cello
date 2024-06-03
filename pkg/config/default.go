@@ -36,7 +36,7 @@ const (
 
 	DefaultKubeClientQPS   = 5.0
 	DefaultKubeClientBurst = 10
-	DefaultKubeContentType = runtime.ContentTypeJSON
+	DefaultKubeContentType = runtime.ContentTypeProtobuf
 
 	DefaultRdmaIpamDataDir = "/var/run/cello/rdma-ipam"
 )
