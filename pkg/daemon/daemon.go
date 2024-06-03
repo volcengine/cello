@@ -621,13 +621,11 @@ func (d *daemon) createVpcEndpoint(ctx context.Context, req *pbrpc.CreateEndpoin
 	}()
 
 	k8sPod, err := d.k8s.GetCachedPod(req.Namespace, req.Name)
-	if err != nil {
+	if err != nil && !apiErrors.IsNotFound(err) {
 		return nil, fmt.Errorf("get pod from cache failed, %v", err)
 	}
 
-	newPod := d.translatePod(k8sPod)
-	newPod.SandboxContainerId = req.InfraContainerId
-	newPod.NetNs = req.NetNs
+	newPod := d.extractPodMetadata(k8sPod, req.Namespace, req.Name, req.InfraContainerId, req.NetNs)
 	netCtx := &netContext{
 		Context: ctx,
 		log:     lg,
@@ -802,7 +800,7 @@ func (d *daemon) deleteVpcEndpoint(ctx context.Context, req *pbrpc.DeleteEndpoin
 		return nil, fmt.Errorf("get pod from cache failed, %v", err)
 	}
 
-	newPod := d.translatePod(k8sPod)
+	newPod := d.extractPodMetadata(k8sPod, req.Namespace, req.Name, req.InfraContainerId, "")
 	if newPod != nil && !d.verifyPodNetwork(newPod.PodNetworkMode) {
 		return nil, fmt.Errorf("pod network mode not match with daemon")
 	}
@@ -1092,26 +1090,27 @@ func IsMain(ifName string) bool {
 	return ifName == "" || ifName == types.DefaultIfName
 }
 
-func (d *daemon) translatePod(pod *v1.Pod) *types.Pod {
-	if pod == nil {
-		return nil
-	}
+func (d *daemon) extractPodMetadata(pod *v1.Pod, namespace, name, containerId, ns string) *types.Pod {
 	result := &types.Pod{
-		Namespace: pod.Namespace,
-		Name:      pod.Name,
+		Namespace:          namespace,
+		Name:               name,
+		SandboxContainerId: containerId,
+		NetNs:              ns,
 	}
-
-	if vpcENI, ok := pod.Annotations[types.AnnotationPodNetworksDefinition]; ok {
-		var err error
-		result.VpcENI, err = strconv.ParseBool(vpcENI)
-		if err != nil {
-			_ = tracing.RecordPodEvent(pod.Name, pod.Namespace, v1.EventTypeWarning,
-				"ParsePodFailed", fmt.Sprintf("Parse vpc eni %s failed.", vpcENI))
+	if pod != nil {
+		if vpcENI, ok := pod.Annotations[types.AnnotationPodNetworksDefinition]; ok {
+			var err error
+			result.VpcENI, err = strconv.ParseBool(vpcENI)
+			if err != nil {
+				_ = tracing.RecordPodEvent(pod.Name, pod.Namespace, v1.EventTypeWarning,
+					"ParsePodFailed", fmt.Sprintf("Parse vpc eni %s failed.", vpcENI))
+			}
 		}
-	}
-
-	if value, ok := pod.Annotations[types.AnnotationEvictionPolicyKey]; ok {
-		result.AllowEviction = value == types.AllowEviction
+		if value, ok := pod.Annotations[types.AnnotationEvictionPolicyKey]; ok {
+			result.AllowEviction = value == types.AllowEviction
+		}
+	} else {
+		result.AllowEviction = false
 	}
 
 	if d.networkMode == config.NetworkModeENIShare {
