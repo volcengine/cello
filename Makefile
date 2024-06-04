@@ -28,6 +28,7 @@ BUILD_INFO=-X main.BuildInfo=$(VERSION)@$(BRANCH)_$(DATE)
 BUILD_ARGS =
 BUILD_ARGS+=--build-arg TARGETOS=$(OS)
 BUILD_ARGS+=--build-arg TARGETARCH=$(ARCH)
+BUILD_ARGS+=--platform $(OS)/$(ARCH)
 ifdef GOPROXY
 	BUILD_ARGS+=--build-arg GOPROXY=$(GOPROXY)
 endif
