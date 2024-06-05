@@ -864,11 +864,17 @@ func (f *eniIPFactory) Valid(resource types.NetResource) error {
 		}
 	}
 
-	if find != nil {
-		return find.err
+	if find == nil {
+		return apiErr.ErrNotFound
 	}
 
-	return apiErr.ErrNotFound
+	if find.err != nil {
+		return find.err
+	}
+	if vRes := find.GetVPCResource(); !vRes.SupportFamily(f.ipFamily) {
+		return ErrLegacy
+	}
+	return nil
 }
 
 // List return list of normal、legacy、invalid resource
@@ -934,7 +940,8 @@ func (f *eniIPFactory) List() (map[types.ResStatus]map[string]types.NetResource,
 				list[types.ResStatusInvalid][item.GetID()] = item
 			} else if eniipRes.err == nil {
 				list[types.ResStatusNormal][item.GetID()] = item
-			} else if errors.Is(eniipRes.err, ErrLegacy) {
+			} else if vRes := item.GetVPCResource(); !vRes.SupportFamily(f.ipFamily) ||
+				errors.Is(eniipRes.err, ErrLegacy) {
 				list[types.ResStatusLegacy][item.GetID()] = item
 			} else if errors.Is(eniipRes.err, ErrDisabled) {
 				list[types.ResStatusDisabled][item.GetID()] = item
