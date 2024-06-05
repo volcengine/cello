@@ -310,17 +310,22 @@ func (p *poolImpl) Allocate(ctx context.Context, prefer, owner string) (types.Ne
 			exec := func() (types.NetResource, error) {
 				p.blockPause()
 				defer p.unblockPause()
-				resources, err := p.factory.Create(1)
-				if err != nil || len(resources) == 0 {
+				resources, inErr := p.factory.Create(1)
+				if inErr != nil || len(resources) == 0 {
 					p.productTicket()
-					lg.ErrorS(err, "Factory create resource err")
-					return nil, fmt.Errorf("factory create resource err: %v", err)
+					lg.ErrorS(inErr, "Factory create resource err")
+					return nil, fmt.Errorf("factory create resource err: %v", inErr)
 				}
 				p.AddInuse(resources[0], owner)
 				lg.InfoS("Allocate resource from pool success after create", "resID", resources[0].GetID())
 				return resources[0], nil
 			}
-			return exec()
+			newRes, inErr := exec()
+			if inErr != nil {
+				time.Sleep(defaultPoolBackoffPeriod)
+				continue
+			}
+			return newRes, nil
 		default:
 			time.Sleep(defaultPoolBackoffPeriod)
 		}

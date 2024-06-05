@@ -543,6 +543,14 @@ func (d *daemon) allocateENI(ctx *netContext, oldPod *types.Pod) (*types.ENI, er
 	if err != nil {
 		return nil, err
 	}
+
+	// check ip family, unlikely
+	family := datatype.StringValue(config.Config.IPFamily)
+	if res := eni.GetVPCResource(); !res.SupportFamily(types.IPFamily(family)) {
+		_ = d.eniManager.Release(ctx, &res)
+		return nil, fmt.Errorf("net resource allocated not support family %s, wait next try", family)
+	}
+
 	return eni.(*types.ENI), nil
 }
 
@@ -567,6 +575,14 @@ func (d *daemon) allocateENIIP(ctx *netContext, oldPod *types.Pod) (*types.ENIIP
 	if err != nil {
 		return nil, err
 	}
+
+	// check ip family, unlikely
+	family := datatype.StringValue(config.Config.IPFamily)
+	if res := eniip.GetVPCResource(); !res.SupportFamily(types.IPFamily(family)) {
+		_ = d.eniIPManager.Release(ctx, &res)
+		return nil, fmt.Errorf("net resource allocated not support family %s, wait next try", family)
+	}
+
 	return eniip.(*types.ENIIP), err
 }
 
