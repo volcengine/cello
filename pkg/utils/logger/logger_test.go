@@ -87,7 +87,7 @@ func TestGetLogrusLocation(t *testing.T) {
 	assert.Equal(t, expectedLumberJackLogger, getLogrusLocation(logLocation))
 }
 
-func TestLoggerStdout(_ *testing.T) {
+func TestLoggerStdout(t *testing.T) {
 	config := &Configuration{
 		LogLevel:     "Info",
 		LogLocation:  "stdout",
@@ -95,6 +95,7 @@ func TestLoggerStdout(_ *testing.T) {
 	}
 
 	log := New(config)
+	assert.NotNil(t, log)
 	log.Debug("this is a test for logger[debug]")
 	log.Info("this is a test for logger[info]")
 	log.Warn("this is a test for logger[warn]")
@@ -130,13 +131,14 @@ func isFileExist(filename string) bool {
 	return true
 }
 
-func TestLoggerWithFields(_ *testing.T) {
+func TestLoggerWithFields(t *testing.T) {
 	config := &Configuration{
 		LogLevel:    "Info",
 		LogLocation: "stdout",
 	}
 
 	log := New(config)
+	assert.NotNil(t, log)
 
 	fields := Fields{
 		"key1": "val1",
@@ -148,7 +150,7 @@ func TestLoggerWithFields(_ *testing.T) {
 	log.ErrorWithFields(fields, "this is a test for logger[error]")
 }
 
-func TestLoggerWithFields2(_ *testing.T) {
+func TestLoggerWithFields2(t *testing.T) {
 	config := &Configuration{
 		LogLevel:     "Info",
 		LogLocation:  "stdout",
@@ -156,6 +158,7 @@ func TestLoggerWithFields2(_ *testing.T) {
 	}
 
 	log := New(config)
+	assert.NotNil(t, log)
 
 	fields := Fields{
 		"key1": "val1",
