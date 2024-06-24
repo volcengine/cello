@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -28,12 +27,13 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 	"github.com/volcengine/volcengine-go-sdk/service/vpc"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
+	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
 	k8sErr "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/volcengine/cello/pkg/backoff"
-	"github.com/volcengine/cello/pkg/config"
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 	"github.com/volcengine/cello/pkg/provider/volcengine/ec2"
 	"github.com/volcengine/cello/pkg/provider/volcengine/metadata"
@@ -98,8 +98,9 @@ type VolcApiImpl struct {
 	ec2Client   ec2.EC2
 	metadataSvc metadata.ClientWrapper
 	// TODO: rm while metadata support ipv6
-	subnetMgr SubnetManager
-	tags      map[string]string
+	subnetMgr         SubnetManager
+	tags              map[string]string
+	compatibleTagKeys []string
 }
 
 // deleteENI delete an ENI with available status.
@@ -364,10 +365,24 @@ func (e *VolcApiImpl) FreeENI(eniID string) error {
 
 // GetAttachedENIs return all attached eni created by cello
 func (e *VolcApiImpl) GetAttachedENIs(withTrunk bool) (result []*types.ENI, err error) {
-	enis, err := e.getNetworkInterfacesByDescribe(ENIStatusInuse, "", nil, BuildFilterForDescribeNetworkInterfacesInput(e.tags))
+	// Currently, invoking 'DescribeNetworkInterfaces' with multiple tag filters
+	// would cause extremely low performance in DB queries.
+	enis, err := e.getNetworkInterfacesByDescribe(ENIStatusInuse, "", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("filter eni by tags failed, %v", err)
 	}
+
+	// Filter eni by tags.
+	enis = slices.DeleteFunc(enis, func(eni *ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput) bool {
+		return !isENIManagedByCello(eni.Tags, e.compatibleTagKeys)
+	})
+
+	/*
+		enis, err := e.getNetworkInterfacesByDescribe(ENIStatusInuse, "", nil, BuildFilterForDescribeNetworkInterfacesInput(e.tags))
+		if err != nil {
+			return nil, fmt.Errorf("filter eni by tags failed, %v", err)
+		}
+	*/
 
 	var macs []string
 	celloCreatedEni := map[string]*ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput{}
@@ -425,10 +440,21 @@ func (e *VolcApiImpl) GetSecondaryENIMACs() ([]string, error) {
 	// the full mac obtained from the metadata service also includes non-secondary network interfaces,
 	// so openapi can only be used instead.
 	var result []string
-	enis, err := e.getNetworkInterfacesByDescribe(ENIStatusInuse, ENITypeSecondary, nil, BuildFilterForDescribeNetworkInterfacesInput(e.tags))
+	enis, err := e.getNetworkInterfacesByDescribe(ENIStatusInuse, ENITypeSecondary, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("filter eni by tags failed, %v", err)
 	}
+	// Filter eni by tags.
+	enis = slices.DeleteFunc(enis, func(eni *ec2.NetworkInterfaceSetForDescribeNetworkInterfacesOutput) bool {
+		return !isENIManagedByCello(eni.Tags, e.compatibleTagKeys)
+	})
+	/*
+		enis, err := e.getNetworkInterfacesByDescribe(ENIStatusInuse, "", nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("filter eni by tags failed, %v", err)
+		}
+	*/
+
 	for _, eni := range enis {
 		result = append(result, volcengine.StringValue(eni.MacAddress))
 	}
@@ -829,7 +855,8 @@ func (e *VolcApiImpl) cleanUpLeakedENIs() {
 	}
 }
 
-func (e *VolcApiImpl) describeNetworkInterfacesWithPage(pageNumber int, status string, eniType string, eniIDs []string, inputFilter []*vpc.TagFilterForDescribeNetworkInterfacesInput) (*ec2.DescribeNetworkInterfacesOutput, error) {
+func (e *VolcApiImpl) describeNetworkInterfacesWithPage(pageNumber int, status string, eniType string, eniIDs []string,
+	inputFilter []*vpc.TagFilterForDescribeNetworkInterfacesInput) (*ec2.DescribeNetworkInterfacesOutput, error) {
 	var resp *ec2.DescribeNetworkInterfacesOutput
 	var err error
 	input := &vpc.DescribeNetworkInterfacesInput{
@@ -872,6 +899,7 @@ func (e *VolcApiImpl) getNetworkInterfacesByDescribe(status string, eniType stri
 		if total == 0 {
 			return result, nil
 		}
+
 		result = append(result, resp.NetworkInterfaceSets...)
 		if first {
 			pages = total / maxPageSize
@@ -981,16 +1009,38 @@ func (e *VolcApiImpl) GetENI(mac string) (*types.ENI, error) {
 	}, nil
 }
 
+// isENIManagedByCello check if the eni is managed by cello locally by compare eni tags with compatible tag and prefixes.
+// currently, we only check if <prefix>created-by:cello tag exists.
+func isENIManagedByCello(tags []*vpc.TagForDescribeNetworkInterfacesOutput, compatibleTagKeys []string) bool {
+	if len(tags) == 0 {
+		return false
+	}
+	tagsMap := make(map[string]string, len(tags))
+	for _, tag := range tags {
+		tagsMap[volcengine.StringValue(tag.Key)] = volcengine.StringValue(tag.Value)
+	}
+	for _, compatibleTagKey := range compatibleTagKeys {
+		value, ok := tagsMap[compatibleTagKey]
+		if ok && value == ComponentTagValue {
+			return true
+		}
+	}
+	return false
+}
+
 func New(apiClient ec2.EC2, ipStack types.IPFamily, subnetMgr SubnetManager, instanceMetadata InstanceMetadataGetter,
-	platform, accountSitePrefix string) (*VolcApiImpl, error) {
+	tagPrefixes []string, additionalTags map[string]string) (*VolcApiImpl, error) {
 	tags := make(map[string]string)
-	if platform == "" || strings.EqualFold(platform, config.PlatformVKE) {
-		tags[accountSitePrefix+VkePlatformTagKey] = VkePlatformTagValue
-		tags[accountSitePrefix+VkeComponentTagKey] = Component
-		tags[accountSitePrefix+VkeInstanceIdTagKey] = instanceMetadata.GetInstanceId()
-	} else {
-		tags[K8sComponentTagKey] = Component
-		tags[K8sInstanceIdTagKey] = instanceMetadata.GetInstanceId()
+	if len(tagPrefixes) == 0 {
+		tagPrefixes = []string{""}
+	}
+	tags[tagPrefixes[0]+ComponentTagKey] = ComponentTagValue
+	tags[tagPrefixes[0]+InstanceIDTagKey] = instanceMetadata.GetInstanceId()
+	maps.Copy(tags, additionalTags)
+
+	compatibleTagKeys := make([]string, 0, len(tagPrefixes))
+	for _, prefix := range tagPrefixes {
+		compatibleTagKeys = append(compatibleTagKeys, prefix+ComponentTagKey)
 	}
 
 	impl := &VolcApiImpl{
@@ -1000,6 +1050,7 @@ func New(apiClient ec2.EC2, ipStack types.IPFamily, subnetMgr SubnetManager, ins
 		InstanceMetadataGetter: instanceMetadata,
 		subnetMgr:              subnetMgr,
 		tags:                   tags,
+		compatibleTagKeys:      compatibleTagKeys,
 	}
 
 	go wait.Forever(impl.cleanUpLeakedENIs, time.Hour)

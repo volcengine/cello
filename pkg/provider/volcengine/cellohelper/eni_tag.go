@@ -21,18 +21,11 @@ import (
 )
 
 const (
-	VkeTagPrefix        = "vke:"
-	VkePlatformTagKey   = VkeTagPrefix + "createdby-vke-flag"
-	VkePlatformTagValue = "true"
-	VkeComponentTagKey  = VkeTagPrefix + "created-by"
-	VkeInstanceIdTagKey = VkeTagPrefix + "ecs-id"
+	ComponentTagKey  = "created-by"
+	InstanceIDTagKey = "ecs-id"
 
-	K8sTagPrefix        = "k8s:cello:"
-	K8sComponentTagKey  = K8sTagPrefix + "created-by"
-	K8sInstanceIdTagKey = K8sTagPrefix + "ecs-id"
-
-	Component      = "cello"
-	eniDescription = "interface create by cello"
+	ComponentTagValue = "cello"
+	eniDescription    = "interface create by cello"
 )
 
 func BuildTagsForCreateNetworkInterfaceInput(tags map[string]string) []*vpc.TagForCreateNetworkInterfaceInput {
@@ -55,26 +48,4 @@ func BuildFilterForDescribeNetworkInterfacesInput(tags map[string]string) []*vpc
 		})
 	}
 	return tagsInput
-}
-
-// ConvertTagForDescribeNetworkInterfacesOutput convert list of vpc.TagForDescribeNetworkInterfacesOutput to map[string]string
-func ConvertTagForDescribeNetworkInterfacesOutput(output []*vpc.TagForDescribeNetworkInterfacesOutput) map[string]string {
-	tags := map[string]string{}
-	for _, item := range output {
-		if item == nil {
-			continue
-		}
-		tags[volcengine.StringValue(item.Key)] = volcengine.StringValue(item.Value)
-	}
-	return tags
-}
-
-// AssertTag assert actual tags match the expected tags
-func AssertTag(expected, actual map[string]string) bool {
-	for k, v := range expected {
-		if value, exist := actual[k]; !exist || value != v {
-			return false
-		}
-	}
-	return true
 }

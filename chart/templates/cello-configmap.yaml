@@ -7,20 +7,32 @@ data:
   conf: |
     {
       "subnets": [
-        {{- $last := sub (len .Values.cello.subnetIDs) 1}}
+        {{- $lastSubnet := sub (len .Values.cello.subnetIDs) 1}}
         {{- range $idx,$item := .Values.cello.subnetIDs }}
-        {{ quote $item }}{{ if ne $idx $last }},{{end}}
+        {{ quote $item }}{{ if ne $idx $lastSubnet }},{{end}}
         {{- end}}
       ],
       "securityGroups": [
-        {{- $last := sub (len .Values.cello.securityGroupIDs) 1}}
+        {{- $lastSG := sub (len .Values.cello.securityGroupIDs) 1}}
         {{- range $idx,$item := .Values.cello.securityGroupIDs }}
-        {{ quote $item }}{{ if ne $idx $last }},{{end}}
+        {{ quote $item }}{{ if ne $idx $lastSG }},{{end}}
         {{- end}}
       ],
       {{- if .Values.cello.iamRole }}
       "ramRole": {{ .Values.cello.iamRole | toJson }},
       {{- end }}
+      interfaceTagPrefixes: [
+        {{- $lastPrefix := sub (len .Values.cello.interfaceTagPrefixes) 1}}
+        {{- range $idx,$item := .Values.cello.interfaceTagPrefixes }}
+        {{ quote $item }}{{ if ne $idx $lastPrefix }},{{end}}
+        {{- end}}
+      ],
+      additionalTags: [
+        {{- $lastTag := sub (len .Values.cello.additionalTags) 1}}
+        {{- range $idx,$item := .Values.cello.additionalTags }}
+        {{ quote $item }}{{ if ne $idx $lastTag }},{{end}}
+        {{- end}}
+      ],
       "credentialAccessKeyId": {{ .Values.cello.accessKey | toJson }},
       "credentialAccessKeySecret": {{ .Values.cello.secretKey | toJson }},
       "openApiAddress": "{{ .Values.cello.openAPIAddress }}",
@@ -30,7 +42,6 @@ data:
       "poolMonitorIntervalSec": 120,
       "networkMode": "eni_shared",
       "ipFamily": "{{ .Values.cello.ipFamily }}",
-      "platform": "kubernetes",
       "kubeClientQPS": 5.0,
       "kubeClientBurst": 10
     }

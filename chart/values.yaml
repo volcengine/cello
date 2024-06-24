@@ -25,6 +25,9 @@ cello:
   k8sServicePort: ""
   # Health check port.
   healthCheckPort: 11414
+  # ENI that managed by cello would be
+  interfaceTagPrefixes: [ "k8s:"]
+  additionalTags: []
 cilium:
   debug: false
   bpf-lb-sock-hostns-only: false
