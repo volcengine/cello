@@ -18,12 +18,11 @@ package config
 import "k8s.io/apimachinery/pkg/runtime"
 
 const (
-	SourceClusterConfigMap  = "clusterConfigMap"
-	SourceNodeMerged        = "nodeMerged"
-	NetworkModeENIShare     = "eni_shared"
-	NetworkModeENIExclusive = "eni_exclusive"
-	PlatformVKE             = "vke"
-	SitePrefixVolcanoEngine = "volc:"
+	SourceClusterConfigMap   = "clusterConfigMap"
+	SourceNodeMerged         = "nodeMerged"
+	NetworkModeENIShare      = "eni_shared"
+	NetworkModeENIExclusive  = "eni_exclusive"
+	InterfaceTagPrefixForVKE = "volc:vke:"
 
 	// DefaultDebugPort is the port for debug and prometheus metrics.
 	DefaultDebugPort                   = 11414

@@ -108,13 +108,13 @@ type DaemonConfig struct {
 	// Source config source
 	Source *string `yaml:"source" json:"source,omitempty"`
 
-	// Platform is the platform used by user to deploy the kubernetes cluster. Optional values:
-	// - "vke": The cluster is provided by Volcengine Kubernetes Engine(VKE).
-	// - "kubernetes": The cluster is hosted by user(self-managed).
-	Platform *string `yaml:"platform" json:"platform,omitempty"`
+	// InterfaceTagPrefixes is the default interface tag's prefix, the first item would be used as tag prefix.
+	// all the interfaces managed by cello would be tagged <first-prefix>created-by:cello and <first-prefix>ecs-id: <instance-id>.
+	// Other prefixes would be used as compatible prefixes.
+	InterfaceTagPrefixes []string `yaml:"interfaceTagPrefixes" json:"interfaceTagPrefixes,omitempty"`
 
-	// AccountSitePrefix is the resource tag prefix when using VKE.
-	AccountSitePrefix *string `yaml:"accountSitePrefix" json:"accountSitePrefix,omitempty"`
+	// AdditionalTags is the additional tags that cello will add to when creating eni.
+	AdditionalTags map[string]string `yaml:"additionalTags" json:"additionalTags,omitempty"`
 
 	// Regular apiserver request QPS limit for kube client
 	KubeClientQPS *float64 `yaml:"kubeClientQPS" json:"kubeClientQPS,omitempty"`
@@ -276,15 +276,15 @@ func (c *DaemonConfig) verifyConfig() error {
 
 	log.Infof("--Source=%s", datatype.StringValue(c.Source))
 
-	if c.Platform == nil {
-		c.Platform = datatype.String(PlatformVKE)
+	if len(c.InterfaceTagPrefixes) == 0 {
+		c.InterfaceTagPrefixes = []string{InterfaceTagPrefixForVKE}
 	}
-	log.Infof("--Platform=%s", datatype.StringValue(c.Platform))
+	log.Infof("--InterfaceTagPrefix=%s", c.InterfaceTagPrefixes)
 
-	if c.AccountSitePrefix == nil {
-		c.AccountSitePrefix = datatype.String(SitePrefixVolcanoEngine)
+	if c.AdditionalTags == nil {
+		c.AdditionalTags = make(map[string]string)
 	}
-	log.Infof("--SiteNamePrefix=%s", datatype.StringValue(c.AccountSitePrefix))
+	log.Infof("--AdditionalTags=%v", c.AdditionalTags)
 
 	if c.EnableRdmaIpam == nil {
 		c.EnableRdmaIpam = datatype.Bool(true)

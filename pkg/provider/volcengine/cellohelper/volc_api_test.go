@@ -20,6 +20,8 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/volcengine/volcengine-go-sdk/service/vpc"
+	"github.com/volcengine/volcengine-go-sdk/volcengine"
 	"golang.org/x/time/rate"
 
 	"github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/mock"
@@ -42,34 +44,62 @@ func Test_New(t *testing.T) {
 	instanceId := "i-y1234566787"
 	meta.EXPECT().GetInstanceId().AnyTimes().Return(instanceId)
 
-	t.Run("New Volc API on Volc-VKE ", func(t *testing.T) {
-		accountSitePreifx := "volc:"
-		helper, err := New(ec2, types.IPFamilyDual, podSubnetManager, meta, "vke", accountSitePreifx)
+	t.Run("New Volc API on Volcengine-VKE ", func(t *testing.T) {
+		helper, err := New(ec2, types.IPFamilyDual, podSubnetManager, meta,
+			[]string{"volc:vke:", "sys:vke:"}, map[string]string{"volc:vke:createdby-vke-flag": "true"})
 		assert.NoError(t, err)
 		assert.NotNil(t, helper)
-		assert.Equal(t, "true", helper.tags[accountSitePreifx+VkePlatformTagKey])
-		assert.Equal(t, Component, helper.tags[accountSitePreifx+VkeComponentTagKey])
-		assert.Equal(t, instanceId, helper.tags[accountSitePreifx+VkeInstanceIdTagKey])
+		assert.Equal(t, "true", helper.tags["volc:vke:createdby-vke-flag"])
+		assert.Equal(t, ComponentTagValue, helper.tags["volc:vke:"+ComponentTagKey])
+		assert.Equal(t, instanceId, helper.tags["volc:vke:"+InstanceIDTagKey])
 	})
 
 	t.Run("New Volc API on BytePlus-VKE ", func(t *testing.T) {
-		accountSitePreifx := "sys:"
-		helper, err := New(ec2, types.IPFamilyDual, podSubnetManager, meta, "vke", accountSitePreifx)
+		helper, err := New(ec2, types.IPFamilyDual, podSubnetManager, meta,
+			[]string{"sys:vke:", "volc:vke:"}, map[string]string{"sys:vke:createdby-vke-flag": "true"})
 		assert.NoError(t, err)
 		assert.NotNil(t, helper)
-		assert.Equal(t, "true", helper.tags[accountSitePreifx+VkePlatformTagKey])
-		assert.Equal(t, Component, helper.tags[accountSitePreifx+VkeComponentTagKey])
-		assert.Equal(t, instanceId, helper.tags[accountSitePreifx+VkeInstanceIdTagKey])
+		assert.Equal(t, "true", helper.tags["sys:vke:createdby-vke-flag"])
+		assert.Equal(t, ComponentTagValue, helper.tags["sys:vke:"+ComponentTagKey])
+		assert.Equal(t, instanceId, helper.tags["sys:vke:"+InstanceIDTagKey])
 	})
 
-	t.Run("New Volc API on K8s", func(t *testing.T) {
-		accountSitePreifx := "volc:"
-		helper, err := New(ec2, types.IPFamilyDual, podSubnetManager, meta, "k8s", accountSitePreifx)
-		assert.NoError(t, err)
-		assert.NotNil(t, helper)
-		assert.Equal(t, "", helper.tags[accountSitePreifx+VkePlatformTagKey])
-		assert.Equal(t, Component, helper.tags[K8sComponentTagKey])
-		assert.Equal(t, instanceId, helper.tags[K8sInstanceIdTagKey])
-	})
+}
 
+func Test_managedByCello(t *testing.T) {
+	instanceId := "i-y1234566787"
+	eniTagsWithVolcPrefix := []*vpc.TagForDescribeNetworkInterfacesOutput{
+		{
+			Key:   volcengine.String("volc:vke:createdby-vke-flag"),
+			Value: volcengine.String("true"),
+		},
+		{
+			Key:   volcengine.String("volc:vke:" + ComponentTagKey),
+			Value: volcengine.String(ComponentTagValue),
+		},
+		{
+			Key:   volcengine.String("volc:vke:" + InstanceIDTagKey),
+			Value: volcengine.String(instanceId),
+		},
+	}
+	eniTagsWithSysPrefix := []*vpc.TagForDescribeNetworkInterfacesOutput{
+		{
+			Key:   volcengine.String("sys:vke:createdby-vke-flag"),
+			Value: volcengine.String("true"),
+		},
+		{
+			Key:   volcengine.String("sys:vke:" + ComponentTagKey),
+			Value: volcengine.String(ComponentTagValue),
+		},
+		{
+			Key:   volcengine.String("sys:vke:" + InstanceIDTagKey),
+			Value: volcengine.String(instanceId),
+		},
+	}
+
+	assert.True(t, isENIManagedByCello(eniTagsWithVolcPrefix, []string{"sys:vke:" + ComponentTagKey, "volc:vke:" + ComponentTagKey}))
+	assert.True(t, isENIManagedByCello(eniTagsWithSysPrefix, []string{"sys:vke:" + ComponentTagKey, "volc:vke:" + ComponentTagKey}))
+	assert.False(t, isENIManagedByCello(eniTagsWithVolcPrefix, []string{"sys:vke:" + ComponentTagKey}))
+	assert.False(t, isENIManagedByCello(eniTagsWithSysPrefix, []string{"volc:vke:" + ComponentTagKey}))
+	assert.False(t, isENIManagedByCello([]*vpc.TagForDescribeNetworkInterfacesOutput{}, []string{"sys:vke:" + ComponentTagKey, "volc:vke:" + ComponentTagKey}))
 }
