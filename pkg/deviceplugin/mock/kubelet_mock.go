@@ -31,9 +31,9 @@ import (
 type Kubelet struct {
 	srv              *grpc.Server
 	sock             net.Listener
-	Res              []deviceResource
+	Res              map[string]*deviceResource
 	devicepluginPath string
-	registered       bool
+	registered       map[string]struct{}
 	ctx              context.Context
 	cancel           context.CancelFunc
 	sync.Mutex
@@ -52,19 +52,20 @@ func NewMockKubelet(devicepluginPath string) *Kubelet {
 		devicepluginPath: devicepluginPath,
 		srv:              nil,
 		sock:             nil,
-		Res:              make([]deviceResource, 0),
+		Res:              make(map[string]*deviceResource),
+		registered:       make(map[string]struct{}),
 		ctx:              ctx,
 		cancel:           cancel,
 	}
 }
 
 func (m *Kubelet) Register(_ context.Context, request *pluginapi.RegisterRequest) (*pluginapi.Empty, error) {
-	m.Res = append(m.Res, deviceResource{
+	m.Res[request.ResourceName] = &deviceResource{
 		name:     request.ResourceName,
 		endpoint: request.Endpoint,
-	})
+	}
 	m.Mutex.Lock()
-	m.registered = true
+	m.registered[request.ResourceName] = struct{}{}
 	m.Mutex.Unlock()
 
 	conn, err := grpc.DialContext(m.ctx, path.Join(m.devicepluginPath, request.Endpoint),
@@ -79,8 +80,8 @@ func (m *Kubelet) Register(_ context.Context, request *pluginapi.RegisterRequest
 	if err != nil {
 		return &pluginapi.Empty{}, err
 	}
-	m.Res[len(m.Res)-1].Client = pluginapi.NewDevicePluginClient(conn)
-	m.Res[len(m.Res)-1].Watcher, _ = m.Res[0].Client.ListAndWatch(m.ctx, &pluginapi.Empty{})
+	m.Res[request.ResourceName].Client = pluginapi.NewDevicePluginClient(conn)
+	m.Res[request.ResourceName].Watcher, _ = m.Res[request.ResourceName].Client.ListAndWatch(m.ctx, &pluginapi.Empty{})
 
 	return &pluginapi.Empty{}, nil
 }
@@ -102,7 +103,6 @@ func (m *Kubelet) StartServer() error {
 	if err != nil {
 		return err
 	}
-	m.Res = []deviceResource{}
 
 	_, err = grpc.DialContext(m.ctx, kubeletSock,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -118,7 +118,7 @@ func (m *Kubelet) StartServer() error {
 }
 
 func (m *Kubelet) Stop() error {
-	m.registered = false
+	m.registered = make(map[string]struct{})
 	m.cancel()
 	m.srv.Stop()
 	m.srv = nil
@@ -130,9 +130,9 @@ func (m *Kubelet) Stop() error {
 	return nil
 }
 
-func (m *Kubelet) Registered() bool {
+func (m *Kubelet) Registered(name string) bool {
 	m.Mutex.Lock()
-	hasRegistered := m.registered
+	_, ok := m.registered[name]
 	m.Mutex.Unlock()
-	return hasRegistered
+	return ok
 }
