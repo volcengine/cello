@@ -47,6 +47,9 @@ type DaemonConfig struct {
 	// RamRole used in dynamic authentication, mutually exclusive with static authentication and takes precedence over static authentication
 	RamRole *string `yaml:"ramRole" json:"ramRole,omitempty"`
 
+	// CredentialFile credential file for accessing volcengine api
+	CredentialFile *string `yaml:"credentialFile" json:"credentialFile,omitempty"`
+
 	// OpenApiAddress address of top gateway for accessing volc openapi
 	OpenApiAddress *string `yaml:"openApiAddress" json:"openApiAddress,omitempty"`
 
@@ -145,13 +148,19 @@ type DaemonConfig struct {
 
 // verifyConfig verify DaemonConfig.
 func (c *DaemonConfig) verifyConfig() error {
-	if c.RamRole == nil && (c.CredentialAccessKeyId == nil || c.CredentialAccessKeySecret == nil) {
-		return fmt.Errorf("authentication method for accessing volc api is not provided")
+	if c.CredentialFile == nil && c.RamRole == nil &&
+		(c.CredentialAccessKeyId == nil || c.CredentialAccessKeySecret == nil) {
+		return fmt.Errorf("authentication method for volcengine OpenAPI is not provided")
+	}
+
+	if c.CredentialFile != nil {
+		if datatype.StringValue(c.CredentialFile) == "" {
+			return fmt.Errorf("credentialFile empty")
+		}
+		log.Infof("--CredentialFile=%s", datatype.StringValue(c.CredentialFile))
 	}
 
 	if c.RamRole != nil {
-		c.CredentialAccessKeyId = nil
-		c.CredentialAccessKeySecret = nil
 		if datatype.StringValue(c.RamRole) == "" {
 			return fmt.Errorf("ramRole configured empty")
 		}
@@ -159,7 +168,6 @@ func (c *DaemonConfig) verifyConfig() error {
 	}
 
 	if c.CredentialAccessKeyId != nil && c.CredentialAccessKeySecret != nil {
-		c.RamRole = nil
 		if datatype.StringValue(c.CredentialAccessKeyId) == "" ||
 			datatype.StringValue(c.CredentialAccessKeySecret) == "" {
 			return fmt.Errorf("credential configured empty")

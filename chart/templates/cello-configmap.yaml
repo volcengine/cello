@@ -18,9 +18,6 @@ data:
         {{ quote $item }}{{ if ne $idx $lastSG }},{{end}}
         {{- end}}
       ],
-      {{- if .Values.cello.iamRole }}
-      "ramRole": {{ .Values.cello.iamRole | toJson }},
-      {{- end }}
       "interfaceTagPrefixes": [
         {{- $lastPrefix := sub (len .Values.cello.interfaceTagPrefixes) 1}}
         {{- range $idx,$item := .Values.cello.interfaceTagPrefixes }}
@@ -28,6 +25,9 @@ data:
         {{- end}}
       ],
       "additionalTags": {{ .Values.cello.additionalTags | default dict | toJson }},
+      {{- if .Values.cello.iamRole }}
+      "ramRole": {{ .Values.cello.iamRole | toJson }},
+      {{- end }}
       "credentialAccessKeyId": {{ .Values.cello.accessKey | toJson }},
       "credentialAccessKeySecret": {{ .Values.cello.secretKey | toJson }},
       "openApiAddress": "{{ .Values.cello.openAPIAddress }}",
