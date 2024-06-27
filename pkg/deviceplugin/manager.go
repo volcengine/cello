@@ -80,16 +80,7 @@ func (manager *PluginManager) register() error {
 
 // Serve starts device plugins server and watch kubelet restarts.
 func (manager *PluginManager) Serve(stopCh chan struct{}) error {
-	err := manager.startPluginServers()
-	if err != nil {
-		log.ErrorS(err, "Device plugin startPluginServers failed")
-		return err
-	}
-	err = manager.register()
-	if err != nil {
-		log.ErrorS(err, "Device plugin register failed")
-		return err
-	}
+	started := false
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.ErrorS(err, "Create watcher failed")
@@ -100,9 +91,12 @@ func (manager *PluginManager) Serve(stopCh chan struct{}) error {
 		log.ErrorS(err, "Watch kubelet failed")
 		return err
 	}
-
 	go func() {
 		for {
+			if !started {
+				time.Sleep(time.Second)
+				continue
+			}
 			select {
 			case event, ok := <-watcher.Events:
 				if !ok {
@@ -116,12 +110,11 @@ func (manager *PluginManager) Serve(stopCh chan struct{}) error {
 					_ = manager.startPluginServers()
 					err = manager.register()
 					if err != nil {
-						log.ErrorS(err, "Register failed after kubelet restart")
+						log.FatalS(err, "Register failed after kubelet restart")
 					}
 				} else if event.Name == "kubelet.sock" && event.Op&fsnotify.Remove == fsnotify.Remove {
 					log.InfoS("Kubelet stopped")
 				}
-
 			case err := <-watcher.Errors:
 				if err != nil {
 					log.ErrorS(err, "Watch kubelet failed")
@@ -133,7 +126,17 @@ func (manager *PluginManager) Serve(stopCh chan struct{}) error {
 			}
 		}
 	}()
-
+	err = manager.startPluginServers()
+	if err != nil {
+		log.ErrorS(err, "Device plugin startPluginServers failed")
+		return err
+	}
+	err = manager.register()
+	if err != nil {
+		log.ErrorS(err, "Device plugin register failed")
+		return err
+	}
+	started = true
 	return nil
 }
 
