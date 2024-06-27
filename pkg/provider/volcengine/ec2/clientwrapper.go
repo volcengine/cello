@@ -31,7 +31,6 @@ import (
 
 	"github.com/volcengine/cello/pkg/metrics"
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
-	"github.com/volcengine/cello/pkg/provider/volcengine/credential"
 	"github.com/volcengine/cello/pkg/utils/logger"
 	"github.com/volcengine/cello/pkg/version"
 )
@@ -422,17 +421,14 @@ func (c *ClientSet) DisassociateTrunkInterface(input *DisassociateTrunkInterface
 	return output, err
 }
 
-func NewClient(region, endpoint string, credentialProvider credential.Provider) *ClientSet {
+func NewClient(region, endpoint string, cred *credentials.Credentials) *ClientSet {
 	config := volcengine.NewConfig().
 		WithRegion(region).
 		WithHTTPClient(&http.Client{
 			Timeout: 10 * time.Second,
 		}).
 		WithDisableSSL(true).
-		WithDynamicCredentials(func(ctx context.Context) (*credentials.Credentials, *string) {
-			cred := credentialProvider.Get()
-			return credentials.NewStaticCredentials(cred.AccessKeyId, cred.SecretAccessKey, cred.SessionToken), volcengine.String(region)
-		}).
+		WithCredentials(cred).
 		WithEndpoint(volcengineutil.NewEndpoint().WithCustomerEndpoint(endpoint).GetEndpoint()).
 		WithExtraUserAgent(volcengine.String(version.UserAgent()))
 

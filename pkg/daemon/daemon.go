@@ -33,6 +33,7 @@ import (
 
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
+	"github.com/volcengine/volcengine-go-sdk/volcengine/credentials"
 	"google.golang.org/grpc"
 	v1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
@@ -52,6 +53,7 @@ import (
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 	"github.com/volcengine/cello/pkg/provider/volcengine/credential"
 	"github.com/volcengine/cello/pkg/provider/volcengine/ec2"
+	"github.com/volcengine/cello/pkg/provider/volcengine/metadata"
 	"github.com/volcengine/cello/pkg/signal"
 	"github.com/volcengine/cello/pkg/store"
 	"github.com/volcengine/cello/pkg/tracing"
@@ -95,31 +97,6 @@ type daemon struct {
 	rdmaIpamManager *RdmaIpamManager
 }
 
-// createEc2 creates an ec2 client.
-func createEc2(instanceMeta helper.InstanceMetadataGetter) (ec2.EC2, error) {
-	var credentialProvider credential.Provider
-	if config.Config.RamRole != nil {
-		log.InfoS("Set credential provider by ramRole", "RamRole", *config.Config.RamRole)
-		credentialProvider = credential.NewSTSProvider(*config.Config.RamRole)
-	} else if config.Config.CredentialAccessKeyId != nil && config.Config.CredentialAccessKeySecret != nil {
-		log.InfoS("Set credential provider by static ak/sk")
-		credentialProvider = credential.NewStaticProvider(&credential.Credential{
-			AccessKeyId:     datatype.StringValue(config.Config.CredentialAccessKeyId),
-			SecretAccessKey: datatype.StringValue(config.Config.CredentialAccessKeySecret),
-		})
-	} else {
-		return nil, fmt.Errorf("no credential provided")
-	}
-
-	endpoint := ""
-	if config.Config.OpenApiAddress != nil {
-		log.InfoS("Set openapi address", "OpenApiAddress", *config.Config.OpenApiAddress)
-		endpoint = *config.Config.OpenApiAddress
-	}
-	apiClient := ec2.NewClient(instanceMeta.GetRegion(), endpoint, credentialProvider)
-	return apiClient, nil
-}
-
 func NewDaemon() (*daemon, error) {
 	// k8s
 	nodeName := os.Getenv(envNodeName)
@@ -160,10 +137,39 @@ func NewDaemon() (*daemon, error) {
 		return nil, fmt.Errorf("create persistence db failed: %w", err)
 	}
 
-	apiClient, err := createEc2(instanceMeta)
-	if err != nil {
-		return nil, err
+	credentialProviders := make([]credentials.Provider, 0)
+	if config.Config.CredentialFile != nil {
+		credentialProviders = append(credentialProviders, &credential.SecretFileProvider{
+			Path:         *config.Config.CredentialFile,
+			ExpiryWindow: 0,
+		})
 	}
+	if config.Config.RamRole != nil {
+		log.InfoS("Set credential provider by ramRole", "RamRole", *config.Config.RamRole)
+		credentialProviders = append(credentialProviders, &credential.InstanceRoleProvider{
+			RoleName:     *config.Config.RamRole,
+			Client:       metadata.NewClientWrapper(metadata.NewClient()),
+			ExpiryWindow: 0,
+		})
+	}
+	if config.Config.CredentialAccessKeyId != nil && config.Config.CredentialAccessKeySecret != nil {
+		credentialProviders = append(credentialProviders, &credentials.StaticProvider{
+			Value: credentials.Value{
+				AccessKeyID:     *config.Config.CredentialAccessKeyId,
+				SecretAccessKey: *config.Config.CredentialAccessKeySecret,
+			},
+		})
+	}
+	if len(credentialProviders) == 0 {
+		return nil, fmt.Errorf("no credential provider")
+	}
+
+	endpoint := ""
+	if config.Config.OpenApiAddress != nil {
+		log.InfoS("Set openapi address", "OpenApiAddress", *config.Config.OpenApiAddress)
+		endpoint = *config.Config.OpenApiAddress
+	}
+	apiClient := ec2.NewClient(instanceMeta.GetRegion(), endpoint, credentials.NewChainCredentials(credentialProviders))
 
 	if config.Config.ProjectName == nil {
 		projectName, inErr := getInstanceProject(apiClient, instanceMeta)

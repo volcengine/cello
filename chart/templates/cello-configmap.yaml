@@ -18,9 +18,6 @@ data:
         {{ quote $item }}{{ if ne $idx $lastSG }},{{end}}
         {{- end}}
       ],
-      {{- if .Values.cello.iamRole }}
-      "ramRole": "{{.Values.cello.iamRole | quote }}",
-      {{- end }}
       interfaceTagPrefixes: [
         {{- $lastPrefix := sub (len .Values.cello.interfaceTagPrefixes) 1}}
         {{- range $idx,$item := .Values.cello.interfaceTagPrefixes }}
@@ -33,6 +30,9 @@ data:
         {{ quote $item }}{{ if ne $idx $lastTag }},{{end}}
         {{- end}}
       ],
+      {{- if .Values.cello.iamRole }}
+      "ramRole: "{{.Values.cello.iamRole | quote }}",
+      {{- end }}
       "credentialAccessKeyId": "{{ .Values.cello.accessKey }}",
       "credentialAccessKeySecret": "{{ .Values.cello.secretKey }}",
       "openApiAddress": "{{ .Values.cello.openAPIAddress }}",
