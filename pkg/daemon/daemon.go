@@ -139,18 +139,13 @@ func NewDaemon() (*daemon, error) {
 
 	credentialProviders := make([]credentials.Provider, 0)
 	if config.Config.CredentialFile != nil {
-		credentialProviders = append(credentialProviders, &credential.SecretFileProvider{
-			Path:         *config.Config.CredentialFile,
-			ExpiryWindow: 0,
-		})
+		credentialProviders = append(credentialProviders,
+			credential.NewSecretFileProvider(*config.Config.CredentialFile))
 	}
 	if config.Config.RamRole != nil {
 		log.InfoS("Set credential provider by ramRole", "RamRole", *config.Config.RamRole)
-		credentialProviders = append(credentialProviders, &credential.InstanceRoleProvider{
-			RoleName:     *config.Config.RamRole,
-			Client:       metadata.NewClientWrapper(metadata.NewClient()),
-			ExpiryWindow: 0,
-		})
+		credentialProviders = append(credentialProviders,
+			credential.NewInstanceRoleProvider(metadata.NewClientWrapper(metadata.NewClient()), *config.Config.RamRole))
 	}
 	if config.Config.CredentialAccessKeyId != nil && config.Config.CredentialAccessKeySecret != nil {
 		credentialProviders = append(credentialProviders, &credentials.StaticProvider{
