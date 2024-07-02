@@ -46,6 +46,16 @@ func NewSecretFileCredentials(path string) *credentials.Credentials {
 	})
 }
 
+func NewSecretFileProvider(path string, options ...func(*SecretFileProvider)) *SecretFileProvider {
+	p := &SecretFileProvider{
+		Path: path,
+	}
+	for _, option := range options {
+		option(p)
+	}
+	return p
+}
+
 func (p *SecretFileProvider) Retrieve() (credentials.Value, error) {
 	data, err := os.ReadFile(p.Path)
 	if err != nil {
