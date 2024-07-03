@@ -1,0 +1,166 @@
+From eec5de4f84c068c2c7283424c8c916fbde2b8d7d Mon Sep 17 00:00:00 2001
+From: Quan Wei <quanwei.153@bytedance.com>
+Date: Tue, 2 Jul 2024 21:24:36 +0800
+Subject: [PATCH] feat(bandwidth): backport enlarge sysctl settings only if
+ they are below baseline
+
+sysctl settings related to BBR are removed
+see: https://github.com/cilium/cilium/commit/8f138b906f719b20fca9ecbf780c9e65229b3384#diff-f189a584d75dbfbcdb55dfcc6b14b17528bea1ecaea20f1016491c42ed7b1da4R125
+---
+ pkg/bandwidth/bandwidth.go | 79 ++++++++++++++++++++++++++------------
+ pkg/sysctl/sysctl.go       | 21 ++++++++++
+ 2 files changed, 75 insertions(+), 25 deletions(-)
+
+diff --git a/pkg/bandwidth/bandwidth.go b/pkg/bandwidth/bandwidth.go
+index e8190eaa9..794b9dc00 100644
+--- a/pkg/bandwidth/bandwidth.go
++++ b/pkg/bandwidth/bandwidth.go
+@@ -15,6 +15,8 @@
+ package bandwidth
+ 
+ import (
++	"fmt"
++
+ 	"github.com/cilium/cilium/pkg/datapath/linux/probes"
+ 	"github.com/cilium/cilium/pkg/logging"
+ 	"github.com/cilium/cilium/pkg/logging/logfields"
+@@ -73,6 +75,56 @@ func ProbeBandwidthManager() {
+ 	}
+ }
+ 
++func setBaselineSysctls() error {
++	// Ensure interger type sysctls are no smaller than our baseline settings
++	baseIntSettings := map[string]int64{
++		"net.core.netdev_max_backlog":  1000,
++		"net.core.somaxconn":           4096,
++		"net.ipv4.tcp_max_syn_backlog": 4096,
++	}
++
++	for name, value := range baseIntSettings {
++		currentValue, err := sysctl.ReadInt(name)
++		if err != nil {
++			return fmt.Errorf("read sysctl %s failed: %s", name, err)
++		}
++
++		scopedLog := log.WithFields(logrus.Fields{
++			logfields.SysParamName:  name,
++			logfields.SysParamValue: currentValue,
++			"baselineValue":         value,
++		})
++
++		if currentValue >= value {
++			scopedLog.Info("Skip setting sysctl as it already meets baseline")
++			continue
++		}
++
++		scopedLog.Info("Setting sysctl to baseline for BPF bandwidth manager")
++		if err := sysctl.WriteInt(name, value); err != nil {
++			return fmt.Errorf("set sysctl %s=%d failed: %s", name, value, err)
++		}
++	}
++
++	baseStringSettings := map[string]string{
++		"net.core.default_qdisc":          "fq",
++		"net.ipv4.tcp_congestion_control": "cubic",
++	}
++
++	for name, value := range baseStringSettings {
++		log.WithFields(logrus.Fields{
++			logfields.SysParamName: name,
++			"baselineValue":        value,
++		}).Info("Setting sysctl to baseline for BPF bandwidth manager")
++
++		if err := sysctl.Write(name, value); err != nil {
++			return fmt.Errorf("set sysctl %s=%s failed: %s", name, value, err)
++		}
++	}
++
++	return nil
++}
++
+ func InitBandwidthManager() {
+ 	if option.Config.DryMode || !option.Config.EnableBandwidthManager {
+ 		return
+@@ -90,31 +142,8 @@ func InitBandwidthManager() {
+ 		log.WithError(err).Fatal("Failed to access ThrottleMap")
+ 	}
+ 
+-	type setting struct {
+-		name string
+-		val  string
+-	}
+-	baseSettings := []setting{
+-		{"net.core.netdev_max_backlog", "1000"},
+-		{"net.core.somaxconn", "4096"},
+-		{"net.core.default_qdisc", "fq"},
+-		{"net.ipv4.tcp_max_syn_backlog", "4096"},
+-		// Temporary disable setting bbr for now until we have a
+-		// kernel fix for pacing out of Pods as described in #15324.
+-		// Then, kernels with the fix can use bbr, and others cubic.
+-		{"net.ipv4.tcp_congestion_control", "cubic"},
+-	}
+-	for _, s := range baseSettings {
+-		log.WithFields(logrus.Fields{
+-			logfields.SysParamName:  s.name,
+-			logfields.SysParamValue: s.val,
+-		}).Info("Setting sysctl")
+-		if err := sysctl.Write(s.name, s.val); err != nil {
+-			log.WithError(err).WithFields(logrus.Fields{
+-				logfields.SysParamName:  s.name,
+-				logfields.SysParamValue: s.val,
+-			}).Fatal("Failed to set sysctl needed by BPF bandwidth manager.")
+-		}
++	if err := setBaselineSysctls(); err != nil {
++		log.WithError(err).Fatal("Failed to set sysctl needed by BPF bandwidth manager.")
+ 	}
+ 
+ 	for _, device := range option.Config.Devices {
+diff --git a/pkg/sysctl/sysctl.go b/pkg/sysctl/sysctl.go
+index cb76e09cd..6ecbf1e3e 100644
+--- a/pkg/sysctl/sysctl.go
++++ b/pkg/sysctl/sysctl.go
+@@ -21,6 +21,7 @@ import (
+ 	"os"
+ 	"path/filepath"
+ 	"regexp"
++	"strconv"
+ 	"strings"
+ 
+ 	"github.com/cilium/cilium/pkg/logging"
+@@ -101,6 +102,11 @@ func Write(name string, val string) error {
+ 	return writeSysctl(name, val)
+ }
+ 
++// WriteInt writes the given integer type sysctl parameter.
++func WriteInt(name string, val int64) error {
++	return writeSysctl(name, strconv.FormatInt(val, 10))
++}
++
+ // Read reads the given sysctl parameter.
+ func Read(name string) (string, error) {
+ 	path, err := parameterPath(name)
+@@ -115,6 +121,21 @@ func Read(name string) (string, error) {
+ 	return strings.TrimRight(string(val), "\n"), nil
+ }
+ 
++// ReadInt reads the given sysctl parameter, return an int64 value.
++func ReadInt(name string) (int64, error) {
++	s, err := Read(name)
++	if err != nil {
++		return -1, err
++	}
++
++	i, err := strconv.ParseInt(s, 10, 64)
++	if err != nil {
++		return -1, err
++	}
++
++	return i, nil
++}
++
+ // ApplySettings applies all settings in sysSettings.
+ func ApplySettings(sysSettings []Setting) error {
+ 	for _, s := range sysSettings {
+-- 
+2.34.1
+
