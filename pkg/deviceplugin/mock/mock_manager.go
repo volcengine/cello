@@ -15,7 +15,11 @@
 
 package mock
 
-import "github.com/volcengine/cello/pkg/deviceplugin"
+import (
+	"context"
+
+	"github.com/volcengine/cello/pkg/deviceplugin"
+)
 
 type PluginManager struct{}
 
@@ -31,7 +35,7 @@ func (p PluginManager) Update(resourceName string, count int) error {
 	return nil
 }
 
-func (p PluginManager) Serve(_ chan struct{}) error {
+func (p PluginManager) Serve(_ context.Context) error {
 	return nil
 }
 

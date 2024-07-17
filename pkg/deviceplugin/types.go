@@ -46,7 +46,7 @@ var (
 type Manager interface {
 	AddPlugin(plugin Plugin)
 	Plugin(resourceName string) Plugin
-	Serve(stopCh chan struct{}) error
+	Serve(ctx context.Context) error
 	Stop()
 	Update(resourceName string, count int) error
 }
