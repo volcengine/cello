@@ -37,7 +37,6 @@ var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "deviceplugin"})
 type PluginManager struct {
 	plugins map[string]Plugin
 	cancel  context.CancelFunc
-	ctx     context.Context
 }
 
 func (manager *PluginManager) Plugin(resourceName string) Plugin {
@@ -45,9 +44,8 @@ func (manager *PluginManager) Plugin(resourceName string) Plugin {
 	return plugin
 }
 
-func NewResourcePluginManager(ctx context.Context, plugins ...Plugin) *PluginManager {
+func NewResourcePluginManager(plugins ...Plugin) *PluginManager {
 	mgr := PluginManager{}
-	mgr.ctx, mgr.cancel = context.WithCancel(ctx)
 	mgr.plugins = make(map[string]Plugin)
 	for _, plugin := range plugins {
 		mgr.plugins[plugin.ResourceName()] = plugin
@@ -57,15 +55,17 @@ func NewResourcePluginManager(ctx context.Context, plugins ...Plugin) *PluginMan
 
 // register registers device plugins grpc endpoints to kubelet
 // should be called after startPluginServers().
-func (manager *PluginManager) register() error {
-	conn, err := dailUnix(manager.ctx, KubeletSocket)
+func (manager *PluginManager) register(ctx context.Context) error {
+	// grpc.Dial and withBlock option are not recommend
+	// see: https://github.com/grpc/grpc-go/blob/master/Documentation/anti-patterns.md.
+	conn, err := grpc.NewClient("unix://"+KubeletSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 	client := pluginapi.NewRegistrationClient(conn)
 	for _, plugin := range manager.plugins {
-		_, err = client.Register(manager.ctx, &pluginapi.RegisterRequest{
+		_, err = client.Register(ctx, &pluginapi.RegisterRequest{
 			Version:      pluginapi.Version,
 			Endpoint:     path.Base(plugin.Endpoint()),
 			ResourceName: path.Join(VolcNameSpace, plugin.ResourceName()),
@@ -79,7 +79,8 @@ func (manager *PluginManager) register() error {
 }
 
 // Serve starts device plugins server and watch kubelet restarts.
-func (manager *PluginManager) Serve(stopCh chan struct{}) error {
+func (manager *PluginManager) Serve(ctx context.Context) error {
+	_, manager.cancel = context.WithCancel(ctx)
 	started := false
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -92,6 +93,7 @@ func (manager *PluginManager) Serve(stopCh chan struct{}) error {
 		return err
 	}
 	go func() {
+		defer watcher.Close()
 		for {
 			if !started {
 				time.Sleep(time.Second)
@@ -100,38 +102,42 @@ func (manager *PluginManager) Serve(stopCh chan struct{}) error {
 			select {
 			case event, ok := <-watcher.Events:
 				if !ok {
-					log.Error("Watch kubelet failed.")
+					log.Fatalf("Watch kubelet failed.")
 					return
 				}
 				if event.Name == KubeletSocket && event.Has(fsnotify.Create) {
 					log.InfoS("KubeletSocket created, restarting.", "KubeletSocket", KubeletSocket)
 					manager.Stop()
-					manager.ctx, manager.cancel = context.WithCancel(context.Background())
-					_ = manager.startPluginServers()
-					err = manager.register()
+					currentCtx, cancel := context.WithCancel(ctx)
+					manager.cancel = cancel
+					err = manager.startPluginServers(currentCtx)
+					if err != nil {
+						log.FatalS(err, "Start Servers failed after kubelet restart")
+						return
+					}
+					err = manager.register(currentCtx)
 					if err != nil {
 						log.FatalS(err, "Register failed after kubelet restart")
+						return
 					}
 				} else if event.Name == "kubelet.sock" && event.Op&fsnotify.Remove == fsnotify.Remove {
 					log.InfoS("Kubelet stopped")
 				}
 			case err := <-watcher.Errors:
 				if err != nil {
-					log.ErrorS(err, "Watch kubelet failed")
+					log.FatalS(err, "Watch kubelet failed")
 				}
-			case <-stopCh:
-				break
-			case <-manager.ctx.Done():
-				break
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
-	err = manager.startPluginServers()
+	err = manager.startPluginServers(ctx)
 	if err != nil {
 		log.ErrorS(err, "Device plugin startPluginServers failed")
 		return err
 	}
-	err = manager.register()
+	err = manager.register(ctx)
 	if err != nil {
 		log.ErrorS(err, "Device plugin register failed")
 		return err
@@ -161,26 +167,27 @@ func (manager *PluginManager) AddPlugin(plugin Plugin) {
 }
 
 // startPluginServers will boot grpc service and listen on /var/lib/kubelet/device-plugin/<res>.sock.
-func (manager *PluginManager) startPluginServers() error {
+func (manager *PluginManager) startPluginServers(ctx context.Context) error {
 	if err := manager.cleanUp(); err != nil {
 		return err
 	}
 	for _, plugin := range manager.plugins {
+		_ = os.Remove(plugin.Endpoint())
 		sock, err := net.Listen("unix", plugin.Endpoint())
 		if err != nil {
 			return err
 		}
-		ctx := manager.ctx
 		p := plugin
 
 		go func() {
-			err := p.Serve(ctx, sock)
+			err = p.Serve(ctx, sock)
 			if err != nil {
 				log.ErrorS(err, "Failed to serve deviceplugin grpc server.")
 			}
 		}()
-
-		conn, err := dailUnix(manager.ctx, plugin.Endpoint())
+		// grpc.Dial and withBlock option are not recommend
+		// see: https://github.com/grpc/grpc-go/blob/master/Documentation/anti-patterns.md.
+		conn, err := grpc.NewClient("unix://"+KubeletSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			return err
 		}
@@ -209,15 +216,4 @@ func (manager *PluginManager) cleanUp() error {
 		}
 	}
 	return nil
-}
-
-func dailUnix(ctx context.Context, path string) (*grpc.ClientConn, error) {
-	conn, err := grpc.DialContext(ctx, path,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-			return net.DialTimeout("unix", path, time.Second*10)
-		}),
-	)
-	return conn, err
 }
