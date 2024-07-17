@@ -47,27 +47,23 @@ type deviceResource struct {
 }
 
 func NewMockKubelet(devicepluginPath string) *Kubelet {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Kubelet{
 		devicepluginPath: devicepluginPath,
 		srv:              nil,
 		sock:             nil,
 		Res:              make(map[string]*deviceResource),
 		registered:       make(map[string]struct{}),
-		ctx:              ctx,
-		cancel:           cancel,
 	}
 }
 
 func (m *Kubelet) Register(_ context.Context, request *pluginapi.RegisterRequest) (*pluginapi.Empty, error) {
+	m.Mutex.Lock()
+	defer m.Mutex.Unlock()
 	m.Res[request.ResourceName] = &deviceResource{
 		name:     request.ResourceName,
 		endpoint: request.Endpoint,
 	}
-	m.Mutex.Lock()
 	m.registered[request.ResourceName] = struct{}{}
-	m.Mutex.Unlock()
-
 	conn, err := grpc.DialContext(m.ctx, path.Join(m.devicepluginPath, request.Endpoint),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
@@ -86,7 +82,8 @@ func (m *Kubelet) Register(_ context.Context, request *pluginapi.RegisterRequest
 	return &pluginapi.Empty{}, nil
 }
 
-func (m *Kubelet) StartServer() error {
+func (m *Kubelet) StartServer(ctx context.Context) error {
+	m.ctx, m.cancel = context.WithCancel(ctx)
 	kubeletSock := path.Join(m.devicepluginPath, "kubelet.sock")
 	socket, err := net.Listen("unix", kubeletSock)
 	if err != nil {
@@ -121,11 +118,17 @@ func (m *Kubelet) Stop() error {
 	m.registered = make(map[string]struct{})
 	m.cancel()
 	m.srv.Stop()
-	m.srv = nil
-	m.ctx, m.cancel = context.WithCancel(context.Background())
-	err := os.Remove(path.Join(m.devicepluginPath, "kubelet.sock"))
+
+	entries, err := os.ReadDir(m.devicepluginPath)
 	if err != nil {
 		return err
+	}
+
+	for _, e := range entries {
+		err = os.RemoveAll(path.Join(m.devicepluginPath, e.Name()))
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

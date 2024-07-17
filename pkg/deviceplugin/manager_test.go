@@ -34,28 +34,29 @@ const (
 
 func TestPluginManager_UseSharedENI(t *testing.T) {
 	setupEnv()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	client := mock.NewMockKubelet(deviceplugin.DevicePluginPath)
-	err := client.StartServer()
+	err := client.StartServer(ctx)
 	assert.NoError(t, err)
 
-	manager := deviceplugin.NewResourcePluginManager(context.Background(),
+	manager := deviceplugin.NewResourcePluginManager(
 		deviceplugin.NewENIDevicePlugin(deviceplugin.ENIIPResourceName, 5))
 	assert.NotNil(t, manager.Plugin(deviceplugin.ENIIPResourceName))
 	defer manager.Stop()
 
-	stopCh := make(chan struct{})
-	err = manager.Serve(stopCh)
+	err = manager.Serve(ctx)
 	assert.NoError(t, err)
 	assert.True(t, client.Registered(deviceplugin.VolcNameSpace+deviceplugin.ENIIPResourceName))
 
 	// Test get options.
 	var pluginOption *pluginapi.DevicePluginOptions
 	pluginOption, err = client.Res[deviceplugin.VolcNameSpace+deviceplugin.ENIIPResourceName].
-		Client.GetDevicePluginOptions(context.Background(), &pluginapi.Empty{})
+		Client.GetDevicePluginOptions(ctx, &pluginapi.Empty{})
 	assert.NotNil(t, pluginOption)
 	assert.NoError(t, err)
 	wantOptions, err := manager.Plugin(deviceplugin.ENIIPResourceName).GetDevicePluginOptions(
-		context.Background(), &pluginapi.Empty{})
+		ctx, &pluginapi.Empty{})
 	assert.NoError(t, err)
 	assert.Equal(t, wantOptions.String(), pluginOption.String())
 
@@ -70,15 +71,23 @@ func TestPluginManager_UseSharedENI(t *testing.T) {
 	assert.Equal(t, 3, len(recv.Devices))
 
 	// Test restart.
-	_ = client.Stop()
+	err = client.Stop()
 	assert.NoError(t, err)
 	time.Sleep(time.Second)
 	_ = manager.Update(deviceplugin.ENIIPResourceName, 4)
 	_ = manager.Update(deviceplugin.ENIIPResourceName, 6)
-	err = client.StartServer()
+	err = client.StartServer(ctx)
 	assert.NoError(t, err)
-	time.Sleep(time.Second)
-	assert.True(t, client.Registered(deviceplugin.VolcNameSpace+deviceplugin.ENIIPResourceName))
+	maxRetries := 5
+	for j := 0; j <= maxRetries; j++ {
+		time.Sleep(time.Second)
+		if client.Registered(deviceplugin.VolcNameSpace + deviceplugin.ENIIPResourceName) {
+			break
+		}
+		if j == maxRetries {
+			t.FailNow()
+		}
+	}
 	watch = client.Res[deviceplugin.VolcNameSpace+deviceplugin.ENIIPResourceName].Watcher
 	recv, err = watch.Recv()
 	assert.NoError(t, err)
@@ -93,31 +102,42 @@ func TestPluginManager_UseSharedENI(t *testing.T) {
 
 func TestPluginManager_UseBranchENI(t *testing.T) {
 	setupEnv()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	client := mock.NewMockKubelet(deviceplugin.DevicePluginPath)
-	err := client.StartServer()
+	err := client.StartServer(ctx)
 	assert.NoError(t, err)
 
-	manager := deviceplugin.NewResourcePluginManager(context.Background(),
+	manager := deviceplugin.NewResourcePluginManager(
 		deviceplugin.NewENIDevicePlugin(deviceplugin.ENIResourceName, 5),
 		deviceplugin.NewENIDevicePlugin(deviceplugin.BranchENIResourceName, 3))
 	assert.NotNil(t, manager.Plugin(deviceplugin.ENIResourceName))
 	defer manager.Stop()
 
 	stopCh := make(chan struct{})
-	err = manager.Serve(stopCh)
+	err = manager.Serve(ctx)
 	assert.NoError(t, err)
 
-	assert.True(t, client.Registered(deviceplugin.VolcNameSpace+deviceplugin.ENIResourceName))
-	assert.True(t, client.Registered(deviceplugin.VolcNameSpace+deviceplugin.BranchENIResourceName))
+	maxRetries := 5
+	for j := 0; j <= maxRetries; j++ {
+		time.Sleep(time.Second)
+		if client.Registered(deviceplugin.VolcNameSpace+deviceplugin.ENIResourceName) &&
+			client.Registered(deviceplugin.VolcNameSpace+deviceplugin.BranchENIResourceName) {
+			break
+		}
+		if j == maxRetries {
+			t.FailNow()
+		}
+	}
 
 	// Test get options.
 	var pluginOption *pluginapi.DevicePluginOptions
 	pluginOption, err = client.Res[deviceplugin.VolcNameSpace+deviceplugin.ENIResourceName].
-		Client.GetDevicePluginOptions(context.Background(), &pluginapi.Empty{})
+		Client.GetDevicePluginOptions(ctx, &pluginapi.Empty{})
 	assert.NotNil(t, pluginOption)
 	assert.NoError(t, err)
 	wantOptions, err := manager.Plugin(deviceplugin.ENIResourceName).GetDevicePluginOptions(
-		context.Background(), &pluginapi.Empty{})
+		ctx, &pluginapi.Empty{})
 	assert.NoError(t, err)
 	assert.Equal(t, wantOptions.String(), pluginOption.String())
 
@@ -133,15 +153,21 @@ func TestPluginManager_UseBranchENI(t *testing.T) {
 
 	// Test restart.
 	_ = client.Stop()
-	assert.NoError(t, err)
 	time.Sleep(time.Second)
 	_ = manager.Update(deviceplugin.ENIResourceName, 4)
 	_ = manager.Update(deviceplugin.ENIResourceName, 6)
-	err = client.StartServer()
+	err = client.StartServer(ctx)
 	assert.NoError(t, err)
-	time.Sleep(time.Second)
-	assert.True(t, client.Registered(deviceplugin.VolcNameSpace+deviceplugin.ENIResourceName))
-	assert.True(t, client.Registered(deviceplugin.VolcNameSpace+deviceplugin.BranchENIResourceName))
+	for j := 0; j <= maxRetries; j++ {
+		time.Sleep(time.Second)
+		if client.Registered(deviceplugin.VolcNameSpace+deviceplugin.ENIResourceName) &&
+			client.Registered(deviceplugin.VolcNameSpace+deviceplugin.BranchENIResourceName) {
+			break
+		}
+		if j == maxRetries {
+			t.FailNow()
+		}
+	}
 	watch = client.Res[deviceplugin.VolcNameSpace+deviceplugin.ENIResourceName].Watcher
 	recv, err = watch.Recv()
 	assert.NoError(t, err)
@@ -155,8 +181,53 @@ func TestPluginManager_UseBranchENI(t *testing.T) {
 	assert.FileExists(t, manager.Plugin(deviceplugin.ENIResourceName).Endpoint())
 }
 
+func TestPluginManager_Restart(t *testing.T) {
+	setupEnv()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := mock.NewMockKubelet(deviceplugin.DevicePluginPath)
+	err := client.StartServer(ctx)
+	assert.NoError(t, err)
+	defer client.Stop()
+
+	manager := deviceplugin.NewResourcePluginManager(
+		deviceplugin.NewENIDevicePlugin(deviceplugin.ENIResourceName, 5),
+		deviceplugin.NewENIDevicePlugin(deviceplugin.BranchENIResourceName, 3))
+	assert.NotNil(t, manager.Plugin(deviceplugin.ENIResourceName))
+
+	err = client.Stop()
+	assert.NoError(t, err)
+
+	err = manager.Serve(ctx)
+	assert.Error(t, err)
+	defer manager.Stop()
+
+	err = client.StartServer(ctx)
+	assert.NoError(t, err)
+	err = manager.Serve(ctx)
+	assert.NoError(t, err)
+	for i := 0; i < 10; i++ {
+		// Test restart.
+		err = client.Stop()
+		assert.NoError(t, err)
+		err = client.StartServer(ctx)
+		assert.NoError(t, err)
+		maxRetries := 5
+		for j := 0; j <= maxRetries; j++ {
+			time.Sleep(time.Second)
+			if client.Registered(deviceplugin.VolcNameSpace+deviceplugin.ENIResourceName) &&
+				client.Registered(deviceplugin.VolcNameSpace+deviceplugin.BranchENIResourceName) {
+				break
+			}
+			if j == maxRetries {
+				t.FailNow()
+			}
+		}
+	}
+}
+
 func setupEnv() {
-	_ = os.MkdirAll(tmpPath, os.ModePerm)
 	deviceplugin.DevicePluginPath = tmpPath
+	_ = os.MkdirAll(deviceplugin.DevicePluginPath, os.ModePerm)
 	deviceplugin.KubeletSocket = deviceplugin.DevicePluginPath + "kubelet.sock"
 }

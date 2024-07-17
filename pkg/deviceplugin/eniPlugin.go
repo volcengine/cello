@@ -98,7 +98,7 @@ func (plugin *ENIDevicePlugin) ListAndWatch(_ *pluginapi.Empty, stream pluginapi
 				return err
 			}
 		case <-plugin.ctx.Done():
-			return nil
+			return plugin.ctx.Err()
 		}
 	}
 }

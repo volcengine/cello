@@ -253,7 +253,7 @@ func newDaemon(k8sService k8s.Service, apiClient ec2.EC2, podPersist PodPersiste
 			return nil, fmt.Errorf("create eni resource manager failed, %v", err)
 		}
 		d.managers[types.NetResourceTypeEni] = d.eniManager
-		d.devicePluginManager = deviceplugin.NewResourcePluginManager(context.TODO(),
+		d.devicePluginManager = deviceplugin.NewResourcePluginManager(
 			deviceplugin.NewENIDevicePlugin(deviceplugin.ENIResourceName,
 				math.Max(0, d.eniManager.GetResourceLimit()-d.GetStockPodCount())))
 		if d.eniManager.SupportTrunk() {
@@ -274,7 +274,7 @@ func newDaemon(k8sService k8s.Service, apiClient ec2.EC2, podPersist PodPersiste
 			return nil, fmt.Errorf("create eniIP resource manager failed, %v", err)
 		}
 		d.managers[types.NetResourceTypeEniIp] = d.eniIPManager
-		d.devicePluginManager = deviceplugin.NewResourcePluginManager(context.TODO(),
+		d.devicePluginManager = deviceplugin.NewResourcePluginManager(
 			deviceplugin.NewENIDevicePlugin(deviceplugin.ENIIPResourceName,
 				math.Max(0, d.eniIPManager.GetResourceLimit()-d.GetStockPodCount())))
 		if d.eniIPManager.SupportTrunk() {
@@ -907,8 +907,9 @@ func (d *daemon) syncPodPersistence() error {
 
 func (d *daemon) startServers(stopCh chan struct{}) error {
 	log.InfoS("Cello daemon ready, start service")
-
-	err := d.devicePluginManager.Serve(stopCh)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := d.devicePluginManager.Serve(ctx)
 	if err != nil {
 		return fmt.Errorf("device plugin start failed: %v", err)
 	}

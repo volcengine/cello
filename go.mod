@@ -10,10 +10,10 @@ require (
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gdexlab/go-render v1.0.1
 	github.com/gin-gonic/gin v1.9.0
-	github.com/golang/glog v1.1.0
+	github.com/golang/glog v1.2.0
 	github.com/golang/mock v1.6.0
 	github.com/google/renameio v0.1.0
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.6.0
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.4.0
 	github.com/metal-stack/go-ipam v1.12.5
 	github.com/onsi/ginkgo v1.16.5
@@ -32,10 +32,10 @@ require (
 	github.com/volcengine/volcengine-go-sdk v1.0.77
 	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8
-	golang.org/x/net v0.22.0
-	golang.org/x/sys v0.18.0
+	golang.org/x/net v0.26.0
+	golang.org/x/sys v0.21.0
 	golang.org/x/time v0.3.0
-	google.golang.org/grpc v1.58.2
+	google.golang.org/grpc v1.63.3
 	google.golang.org/protobuf v1.33.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
@@ -75,7 +75,7 @@ require (
 	github.com/goccy/go-json v0.10.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/gnostic v0.7.0 // indirect
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
@@ -137,15 +137,15 @@ require (
 	go.uber.org/zap v1.26.0 // indirect
 	go4.org/netipx v0.0.0-20230728184502-ec4c8b891b28 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
-	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/oauth2 v0.12.0 // indirect
-	golang.org/x/sync v0.5.0 // indirect
-	golang.org/x/term v0.18.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
-	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20230913181813-007df8e322eb // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20230913181813-007df8e322eb // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230920204549-e6e6cdab5c13 // indirect
+	golang.org/x/crypto v0.24.0 // indirect
+	golang.org/x/oauth2 v0.17.0 // indirect
+	golang.org/x/sync v0.7.0 // indirect
+	golang.org/x/term v0.21.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
+	google.golang.org/appengine v1.6.8 // indirect
+	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240227224415-6ceb2ff114de // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240227224415-6ceb2ff114de // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
