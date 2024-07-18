@@ -64,6 +64,7 @@ func NewInstanceRoleProvider(client metadata.ClientWrapper, roleName string, opt
 }
 
 func (m *InstanceRoleProvider) Retrieve() (credentials.Value, error) {
+	log.InfoS("Retrieve credential token from instance metadata", "roleName", m.RoleName, "providerName", InstanceProviderName)
 	ctx, cancel := context.WithTimeout(context.Background(), m.timeOut)
 	defer cancel()
 	return m.RetrieveWithContext(ctx)
@@ -73,6 +74,7 @@ func (m *InstanceRoleProvider) RetrieveWithContext(ctx context.Context) (credent
 
 	roleCreds, err := requestCred(ctx, m.Client, m.RoleName)
 	if err != nil {
+		log.ErrorS(err, "Failed to get credential from instance metadata", "roleName", m.RoleName, "providerName", InstanceProviderName)
 		return credentials.Value{ProviderName: InstanceProviderName}, err
 	}
 
