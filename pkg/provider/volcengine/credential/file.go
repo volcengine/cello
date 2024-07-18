@@ -17,12 +17,17 @@ package credential
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/volcengine/volcengine-go-sdk/volcengine/credentials"
+
+	"github.com/volcengine/cello/pkg/utils/logger"
 )
+
+var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "credential"})
 
 // SecretFileProviderName provides a name of MetadataRole provider
 const SecretFileProviderName = "SecretFileProvider"
@@ -57,8 +62,10 @@ func NewSecretFileProvider(path string, options ...func(*SecretFileProvider)) *S
 }
 
 func (p *SecretFileProvider) Retrieve() (credentials.Value, error) {
+	log.InfoS("Retrieve credential token from secret file", "path", p.Path, "providerName", SecretFileProviderName)
 	data, err := os.ReadFile(p.Path)
 	if err != nil {
+		log.ErrorS(err, "Failed to read secret file", "path", p.Path)
 		return credentials.Value{ProviderName: SecretFileProviderName},
 			fmt.Errorf("failed to read secret file %v error: %v", p.Path, err)
 	}
@@ -66,12 +73,14 @@ func (p *SecretFileProvider) Retrieve() (credentials.Value, error) {
 	var cred SecretFileCredential
 	err = json.Unmarshal(data, &cred)
 	if err != nil {
+		log.ErrorS(err, "Failed to unmarshal secret file", "path", p.Path, "providerName", SecretFileProviderName)
 		return credentials.Value{ProviderName: SecretFileProviderName},
 			fmt.Errorf("failed to unmarshal secret file %v error: %v", p.Path, err)
 	}
 	p.SetExpiration(cred.Expiration, p.ExpiryWindow)
 
 	if p.IsExpired() {
+		log.ErrorS(errors.New("credential file is expired"), "providerName", SecretFileProviderName, "expiration", cred.Expiration)
 		return credentials.Value{ProviderName: SecretFileProviderName},
 			fmt.Errorf("secret file %v is expired at %v", p.Path, cred.Expiration)
 	}
