@@ -38,7 +38,8 @@ type Pod struct {
 	NetNs string `json:"netNs,omitempty"`
 
 	AllowEviction bool `json:"allowEviction,omitempty"`
-	VpcENI        bool `json:"vpcENI,omitempty"`
+	// VpcENI means whether the pod use vpc eni, always false for now.
+	VpcENI bool `json:"vpcENI,omitempty"`
 
 	MainInterface             *pbrpc.NetworkInterface   `json:"mainInterface,omitempty"`             // Deprecated
 	IsMainInterfaceSharedMode bool                      `json:"isMainInterfaceSharedMode,omitempty"` // Deprecated

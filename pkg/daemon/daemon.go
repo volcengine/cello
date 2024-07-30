@@ -1115,14 +1115,6 @@ func (d *daemon) extractPodMetadata(pod *v1.Pod, namespace, name, containerId, n
 		NetNs:              ns,
 	}
 	if pod != nil {
-		if vpcENI, ok := pod.Annotations[types.AnnotationPodNetworksDefinition]; ok {
-			var err error
-			result.VpcENI, err = strconv.ParseBool(vpcENI)
-			if err != nil {
-				_ = tracing.RecordPodEvent(pod.Name, pod.Namespace, v1.EventTypeWarning,
-					"ParsePodFailed", fmt.Sprintf("Parse vpc eni %s failed.", vpcENI))
-			}
-		}
 		if value, ok := pod.Annotations[types.AnnotationEvictionPolicyKey]; ok {
 			result.AllowEviction = value == types.AllowEviction
 		}
