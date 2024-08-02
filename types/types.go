@@ -459,10 +459,13 @@ func NewIPFamily(ipv4, ipv6 bool) IPFamily {
 	return IPFamilyUnknown
 }
 
+// HpcRoute contains hpc cidr.
+// Dst is hpc cidr, Gw and Dev is unnecessary,
+// it means hpc cidr is get from route if Gw and Dev is not empty.
 type HpcRoute struct {
 	Dst string `json:"dst"`
-	Gw  string `json:"gw"`
-	Dev string `json:"dev"`
+	Gw  string `json:"gw,omitempty"`
+	Dev string `json:"dev,omitempty"`
 }
 
 type RdmaInfo struct {

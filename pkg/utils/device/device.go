@@ -128,7 +128,7 @@ func getNetMac(pciAddr, netName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failde to read mac file %s: %v", macFile, err)
 	}
-	return string(mac), nil
+	return strings.TrimRight(string(mac), "\n"), nil
 }
 
 // ListRdmaNetDevice list net devices of rdma devices which name has prefix.
