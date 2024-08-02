@@ -85,6 +85,7 @@ var (
 		"tunnel":                          "disabled",
 		"enable-policy":                   "never",
 		"enable-bandwidth-manager":        "true",
+		"disable-cnp-status-updates":      "true",
 	}
 
 	ciliumIPv4Args = KV{
