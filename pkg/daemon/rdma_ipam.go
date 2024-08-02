@@ -38,6 +38,7 @@ import (
 	"github.com/volcengine/cello/pkg/pbrpc"
 	"github.com/volcengine/cello/pkg/plugins/ipam/cidr"
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
+	"github.com/volcengine/cello/pkg/provider/volcengine/metadata"
 	"github.com/volcengine/cello/pkg/tracing"
 	"github.com/volcengine/cello/pkg/utils/datatype"
 	"github.com/volcengine/cello/pkg/utils/device"
@@ -89,7 +90,7 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list rdma failed, %v", err)
 	}
-	log.Infof("Found rdma interfaces: %v", rdmaInterfaces)
+	log.Infof("Found rdma interfaces(likely): %v", rdmaInterfaces)
 
 	var output *ecs.DescribeInstancesOutput
 	var inErr error
@@ -101,7 +102,7 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 		return inErr == nil, nil
 	})
 	if err = apiErr.BackoffErrWrapper(err, inErr); err != nil {
-		return nil, fmt.Errorf("get rdma info failed, %v", err)
+		return nil, fmt.Errorf("get rdma ip addresses failed, %v", err)
 	}
 	rdmaIpAddrStrs := volcengine.StringValueSlice(output.Instances[0].RdmaIpAddresses)
 	if len(rdmaIpAddrStrs) == 0 {
@@ -137,9 +138,13 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 	if len(rdmaIpAddrStrs) != len(info.RdmaInterfaces) {
 		return nil, fmt.Errorf("not found all rdma interfaces, rdma from remote: %v, from local: %v", rdmaIpAddrStrs, info.RdmaInterfaces)
 	}
-	hpcRoute, err := getHpcRoute(info.RdmaInterfaces)
+	hpcRoute, err := getHpcCidrByMetadata(info.RdmaInterfaces)
 	if err != nil {
-		return nil, fmt.Errorf("get hpc route failed, %v", err)
+		log.InfoS("Fallback to get hpc cidr by route")
+		hpcRoute, err = getHpcCidrByRoute(info.RdmaInterfaces)
+		if err != nil {
+			return nil, fmt.Errorf("get hpc cidr by route failed, %v", err)
+		}
 	}
 	info.HpcRoute = *hpcRoute
 
@@ -356,7 +361,7 @@ func ownerId(ele ...string) string {
 	return path.Join(ele...)
 }
 
-func getHpcRoute(rdmaInterfaces []types.RdmaInterface) (*types.HpcRoute, error) {
+func getHpcCidrByRoute(rdmaInterfaces []types.RdmaInterface) (*types.HpcRoute, error) {
 	// NOTICE: not support ipv6, and use the largest one
 	var expectedRoutes []struct {
 		dev   string
@@ -407,5 +412,29 @@ func getHpcRoute(rdmaInterfaces []types.RdmaInterface) (*types.HpcRoute, error) 
 		Dst: expectedRoutes[index].route.Dst.String(),
 		Gw:  expectedRoutes[index].route.Gw.String(),
 		Dev: expectedRoutes[index].dev,
+	}, nil
+}
+
+func getHpcCidrByMetadata(rdmaInterfaces []types.RdmaInterface) (*types.HpcRoute, error) {
+	if len(rdmaInterfaces) == 0 {
+		return nil, fmt.Errorf("no rdma interface")
+	}
+	meta := metadata.NewClientWrapper(metadata.NewClient())
+	var hpcCidr string
+	for _, intF := range rdmaInterfaces {
+		intInfo, mErr := meta.InterfaceInfo(context.Background(), intF.Mac)
+		if mErr != nil {
+			return nil, fmt.Errorf("get interface %s info by metadata failed, %v", intF.Mac, mErr)
+		}
+		if len(hpcCidr) == 0 {
+			hpcCidr = intInfo.SubnetCidrBlock
+		}
+		if !intInfo.RdmaCapable || intInfo.SubnetCidrBlock != hpcCidr {
+			return nil, fmt.Errorf("found multi hpc cidr from metadata")
+		}
+	}
+	log.InfoS("Found hpc cidr from metadata", "hpc cidr", hpcCidr)
+	return &types.HpcRoute{
+		Dst: hpcCidr,
 	}, nil
 }

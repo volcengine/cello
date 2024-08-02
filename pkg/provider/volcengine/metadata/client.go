@@ -48,6 +48,7 @@ type InterfaceInfo struct {
 	SubnetCidrBlock    string   `json:"SubnetCidrBlock,omitempty"`
 	PrivateIpv4s       string   `json:"PrivateIpv4s,omitempty"`
 	PrivateIPAddresses []string `json:"PrivateIpAddresses,omitempty"`
+	RdmaCapable        bool     `json:"RdmaCapable,omitempty"`
 }
 
 type Client struct {
