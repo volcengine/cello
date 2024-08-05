@@ -217,7 +217,7 @@ func main() {
 	var lock sync.Mutex
 
 	go func() {
-		log.InfoS("Run cilium-agent with args: %v", ciliumArgs.ToArgs())
+		log.Infof("Run cilium-agent with args: %v", ciliumArgs.ToArgs())
 		lock.Lock()
 		ciliumCmd = exec.Command("cilium-agent", ciliumArgs.ToArgs()...)
 		ciliumCmd.Stdin = os.Stdin
