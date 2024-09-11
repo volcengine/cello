@@ -518,7 +518,7 @@ func (f *eniIPFactory) submitOrder() error {
 
 		if eni.getCurrentIPCountLocked() < f.getLimit().IPv4MaxPerENI {
 			if err := eni.submitOrderLocked(); err != nil {
-				log.ErrorS(err, "Submit order failed")
+				log.ErrorS(err, "Submit order failed", "eni", eni.String())
 				eni.Unlock()
 				continue
 			}
