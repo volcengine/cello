@@ -673,6 +673,7 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 		if err != nil {
 			fmtErr := fmt.Sprintf("DeallocIPAddresses for eni %s failed, %v", eniID, err)
 			_ = tracing.RecordNodeEvent(v1.EventTypeWarning, tracing.EventReleaseResourceFailed, fmtErr)
+			lg.ErrorS(err, "UnAssign ipaddress failed")
 		} else {
 			lg.InfoS("UnAssigned ipaddress")
 		}

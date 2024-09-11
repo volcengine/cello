@@ -416,7 +416,7 @@ func updateHpcTopologyInfo(k8sService k8s.Service, apiClient ec2.EC2, instanceMe
 	return true, nil
 }
 
-func (d *daemon) gc() error {
+func (d *daemon) gc(force bool) error {
 	if time.Since(d.lastGC) < time.Minute {
 		return nil
 	}
@@ -424,13 +424,13 @@ func (d *daemon) gc() error {
 	defer signal.UnmuteChannel(signal.WakeGC)
 	var err error
 
-	log.Infof("Daemon GC start")
+	log.InfoS("Daemon GC start", "force", force)
 	defer func() {
 		if err != nil {
-			log.ErrorS(err, "Daemon gc failed")
+			log.ErrorS(err, "Daemon GC failed", "force", force)
 		} else {
 			d.lastGC = time.Now()
-			log.Infof("Daemon GC finished")
+			log.InfoS("Daemon GC finished", "force", force)
 		}
 	}()
 
@@ -450,14 +450,14 @@ func (d *daemon) gc() error {
 
 	var eniGCErr error
 	if d.eniManager != nil {
-		if eniGCErr = d.eniManager.pool.GC(getAllocatedResMap(types.NetResourceTypeEni)); eniGCErr != nil {
+		if eniGCErr = d.eniManager.pool.GC(force, getAllocatedResMap(types.NetResourceTypeEni)); eniGCErr != nil {
 			eniGCErr = fmt.Errorf("pool of eni gc failed, %v", eniGCErr)
 		}
 	}
 
 	var ipGCErr error
 	if d.eniIPManager != nil {
-		if ipGCErr = d.eniIPManager.pool.GC(getAllocatedResMap(types.NetResourceTypeEniIp)); ipGCErr != nil {
+		if ipGCErr = d.eniIPManager.pool.GC(force, getAllocatedResMap(types.NetResourceTypeEniIp)); ipGCErr != nil {
 			ipGCErr = fmt.Errorf("pool of eni-ip gc failed, %v", ipGCErr)
 		}
 	}
@@ -481,7 +481,8 @@ func (d *daemon) start(stopCh chan struct{}) error {
 		once.Do(func() {
 			time.Sleep(period)
 		})
-		if gcErr := d.gc(); gcErr != nil {
+		log.InfoS("Period wake gc")
+		if gcErr := d.gc(false); gcErr != nil {
 			log.Error("gc err:", gcErr)
 		}
 
@@ -493,7 +494,8 @@ func (d *daemon) start(stopCh chan struct{}) error {
 			case <-stopCh:
 				return
 			case <-sig:
-				if gcErr := d.gc(); gcErr != nil {
+				log.InfoS("Signal wake gc")
+				if gcErr := d.gc(true); gcErr != nil {
 					log.Error("gc err:", gcErr)
 				}
 			}
