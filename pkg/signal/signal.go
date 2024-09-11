@@ -56,6 +56,7 @@ func NotifySignal(signal string, data SigData) {
 	if ch, exist := signalChannels[signal]; exist {
 		select {
 		case ch <- data:
+			log.InfoS("Signal notified", "signal", signal, "data", data)
 		default:
 			log.InfoS("Signal processing", "signal", signal, "data", data)
 		}

@@ -86,7 +86,7 @@ type ResourcePool interface {
 	GetSnapshot() (ResourcePoolSnapshot, error)
 
 	// GC sync resource in ResourcePool with resource in ObjectFactory
-	GC(getAllocatedResMap func() (map[string]types.NetResourceAllocated, error)) error // resourceId -- vpcResource
+	GC(force bool, getAllocatedResMap func() (map[string]types.NetResourceAllocated, error)) error // resourceId -- vpcResource
 
 	// GetResourceLimit get the maximum number of resources that can be created by ObjectFactory
 	GetResourceLimit() int
@@ -192,6 +192,16 @@ func (p *poolImpl) pause() {
 	// order matters !!
 	p.pauseLock.Lock()
 	p.mutex.Lock()
+}
+
+// pauseLock is sync.RWMutex, writer may block all readers which after it,
+// so try get write Lock first.
+func (p *poolImpl) tryPause() bool {
+	if p.pauseLock.TryLock() {
+		p.mutex.Lock()
+		return true
+	}
+	return false
 }
 
 func (p *poolImpl) unpause() {
@@ -651,9 +661,16 @@ func (p *poolImpl) init() error {
 	return nil
 }
 
-func (p *poolImpl) GC(getAllocatedResMap func() (map[string]types.NetResourceAllocated, error)) error {
-	p.pause()
+func (p *poolImpl) GC(force bool, getAllocatedResMap func() (map[string]types.NetResourceAllocated, error)) error {
+	if !force && !p.tryPause() {
+		log.InfoS("GC canceled due can not pause")
+		return nil
+	}
+	if force {
+		p.pause()
+	}
 	defer p.unpause()
+
 	usedResource, err := getAllocatedResMap()
 	if err != nil {
 		return err
