@@ -51,9 +51,8 @@ type ObjectFactory interface {
 	// Create a certain amount of resources
 	Create(count int) ([]types.NetResource, error)
 
-	// Release destroy resource, if resource cant be destroyed and convert to a new resource,
-	// it will be return
-	Release(resource types.NetResource) (types.NetResource, error)
+	// Release batch of resources
+	Release(resources ...types.NetResource) []types.NetResourceWithError
 
 	// Valid check if the resource is valid
 	Valid(resource types.NetResource) error
@@ -266,6 +265,12 @@ func (p *poolImpl) productTicket() {
 	}
 }
 
+func (p *poolImpl) productTicketN(n int) {
+	for i := 0; i < n; i++ {
+		p.productTicket()
+	}
+}
+
 func (p *poolImpl) allocateFromPool(prefer, owner string) (types.NetResource, error) {
 	p.lock()
 	defer p.unlock()
@@ -356,23 +361,22 @@ func (p *poolImpl) Release(resID string) error {
 	err := p.factory.Valid(item.res)
 	if err != nil {
 		// try to delete
-		var newRes types.NetResource
-		newRes, err = p.factory.Release(item.res)
-		if newRes == nil && err == nil {
+		result := p.factory.Release(item.res)
+		if len(result) == 0 {
 			p.productTicket()
 			p.metricTotal.Dec()
 			return nil
 		}
-		if newRes != nil {
-			p.WarnS("Convert invalid resource to valid", "resID", resID, "validID", newRes.GetID())
+		if errors.Is(result[0].Error, apiErr.ErrNewPrimaryIPFromLegacy) {
+			p.WarnS("Convert invalid resource to valid", "resID", resID, "validID", result[0].NetResource.GetID())
 			p.available.Push(&poolItem{
-				res:           newRes,
+				res:           result[0].NetResource,
 				reserveBefore: time.Now(),
 			})
 			p.metricAvailable.Inc()
 			return nil
 		}
-		p.ErrorS(err, "Destroy resource failed", "resource", item.res)
+		p.ErrorS(result[0].Error, "Destroy resource failed", "resource", item.res)
 		p.invalid[resID] = item
 		return nil
 	}
@@ -507,7 +511,8 @@ func (p *poolImpl) popOverflow() *poolItem {
 
 func (p *poolImpl) tryReducePool() {
 	p.DebugS("Try Reduce pool")
-	var reAvailable []types.NetResource
+	var toRelease []types.NetResource
+	var toReleaseId []string
 	for {
 		item := p.popOverflow()
 		if item == nil {
@@ -515,24 +520,22 @@ func (p *poolImpl) tryReducePool() {
 		}
 		p.metricTotal.Dec()
 		p.metricAvailable.Dec()
-		_, err := p.factory.Release(item.res)
-		if err == nil {
-			p.InfoS("Destroy resource succeed", "res", item.res)
-			p.productTicket()
-			p.backoffReset()
-		} else if errors.Is(err, apiErr.ErrInvalidDeletionPrimaryIP) {
-			reAvailable = append(reAvailable, item.res)
-		} else {
-			p.ErrorS(err, "Destroy resource failed", "res", item.res, "backoff", p.backoff)
-			p.backoffCallFactory()
-			p.AddAvailable(item.res)
-			time.Sleep(p.backoff)
-		}
+		toRelease = append(toRelease, item.res)
+		toReleaseId = append(toReleaseId, item.res.GetID())
 	}
+	if len(toRelease) == 0 {
+		return
+	}
+	p.InfoS("Try destroy resources", "resources", toReleaseId)
 
-	for _, res := range reAvailable {
-		p.AddAvailable(res)
+	result := p.factory.Release(toRelease...)
+	for _, item := range result {
+		if !errors.Is(item.Error, apiErr.ErrInvalidDeletionPrimaryIP) {
+			p.ErrorS(item.Error, "Destroy resource failed", "res", item.NetResource.GetID(), "backoff", p.backoff)
+		}
+		p.AddAvailable(item.NetResource)
 	}
+	p.productTicketN(len(toRelease) - len(result))
 }
 
 func (p *poolImpl) checkInvalid() {
@@ -544,23 +547,22 @@ func (p *poolImpl) checkInvalid() {
 			"id":     invalid.res.GetID(),
 			"reason": "invalid",
 		})
-		ret, err := p.factory.Release(invalid.res)
-		if err != nil {
-			lg.ErrorS(err, "Release invalid resource failed", "res", invalid.res)
-			continue
-		}
-		delete(p.invalid, id)
-		if ret != nil {
-			p.available.Push(&poolItem{
-				res:           ret,
-				reserveBefore: time.Now(),
-			})
-			p.metricAvailable.Inc()
-			lg.InfoS("Release invalid resource succeed and get new one", "retID", ret.GetID())
-		} else {
+		result := p.factory.Release(invalid.res)
+		if len(result) == 0 {
+			delete(p.invalid, id)
 			p.metricTotal.Dec()
 			p.productTicket()
 			lg.InfoS("Release invalid resource succeed")
+			continue
+		}
+		res := result[0]
+		if errors.Is(res.Error, apiErr.ErrNewPrimaryIPFromLegacy) {
+			p.available.Push(&poolItem{
+				res:           res.NetResource,
+				reserveBefore: time.Now(),
+			})
+			p.metricAvailable.Inc()
+			lg.InfoS("Release invalid resource succeed and get new one", "retID", res.NetResource.GetID())
 		}
 	}
 }
