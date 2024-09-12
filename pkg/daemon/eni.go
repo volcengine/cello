@@ -250,7 +250,7 @@ func (f *eniFactory) CreateWithIPCount(ipCnt int, trunk bool) (types.NetResource
 }
 
 // Release releases NetResource.
-func (f *eniFactory) Release(resource types.NetResource) (types.NetResource, error) {
+func (f *eniFactory) release(resource types.NetResource) error {
 	var err error
 	defer func() {
 		if err != nil {
@@ -261,8 +261,21 @@ func (f *eniFactory) Release(resource types.NetResource) (types.NetResource, err
 		}
 	}()
 	eni := resource.GetVPCResource()
-	err = f.volcApi.FreeENI(eni.ENIId)
-	return nil, err
+	return f.volcApi.FreeENI(eni.ENIId)
+}
+
+func (f *eniFactory) Release(resources ...types.NetResource) []types.NetResourceWithError {
+	var result []types.NetResourceWithError
+	for _, resource := range resources {
+		err := f.release(resource)
+		if err != nil {
+			result = append(result, types.NetResourceWithError{
+				NetResource: resource,
+				Error:       err,
+			})
+		}
+	}
+	return result
 }
 
 // Valid checks if given NetResource is valid.

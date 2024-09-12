@@ -267,6 +267,11 @@ func (e *ENIIP) GetVPCResource() VPCResource {
 	}
 }
 
+func (e *ENIIP) WithPrimary() bool {
+	return e != nil && e.ENI != nil && e.ENI.PrimaryIP.IPv4 != nil &&
+		e.IPSet.IPv4 != nil && e.ENI.PrimaryIP.IPv4.Equal(e.IPSet.IPv4)
+}
+
 // NetResourceType
 const (
 	NetResourceTypeEni   = "eni"
@@ -363,6 +368,11 @@ type NetResource interface {
 	GetID() string
 	GetType() string
 	GetVPCResource() VPCResource
+}
+
+type NetResourceWithError struct {
+	NetResource NetResource
+	Error       error
 }
 
 type MockNetResource struct {

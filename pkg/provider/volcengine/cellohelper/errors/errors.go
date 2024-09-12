@@ -206,4 +206,5 @@ var (
 	ErrNotFound                 = errors.New("not found")
 	ErrHalfwayFailed            = errors.New("process halfway failed")
 	ErrInvalidDeletionPrimaryIP = errors.New("ip is primary, deletion invalid")
+	ErrNewPrimaryIPFromLegacy   = errors.New("new valid primary from legacy")
 )
