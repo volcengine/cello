@@ -1128,7 +1128,7 @@ func TestDaemon(t *testing.T) {
 	})
 
 	t.Run("TestGC", func(t *testing.T) {
-		err = d.gc()
+		err = d.gc(true)
 		assert.NoError(t, err)
 	})
 

@@ -17,27 +17,34 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/util/uuid"
 
 	apiErr "github.com/volcengine/cello/pkg/provider/volcengine/cellohelper/errors"
 	"github.com/volcengine/cello/pkg/utils/math"
 	"github.com/volcengine/cello/types"
 )
 
+var (
+	ErrIgnore       = errors.New("error ignored")
+	ErrCanNotIgnore = errors.New("error can not ignored")
+)
+
 const (
 	trys                   = 5
 	defaultMonitorInterval = 2 * time.Minute
+	invalidResourceIdBegin = 10000
 )
 
 type mockObjectFactory struct {
 	sync.Mutex
 	objects map[string]types.NetResource // id <---> id
+	invalid map[string]error             // id <---> error
 	idIndex int
 	created int
 	backoff time.Duration
@@ -86,6 +93,15 @@ func (m *mockObjectFactory) Add(count int) []types.NetResource {
 	return result
 }
 
+func (m *mockObjectFactory) AddInvalid(resId string, err error) types.NetResource {
+	m.Lock()
+	defer m.Unlock()
+
+	res := &types.MockNetResource{ID: resId}
+	m.invalid[resId] = err
+	return res
+}
+
 func (m *mockObjectFactory) Create(count int) ([]types.NetResource, error) {
 	if err := m.preProcess(); err != nil {
 		return nil, err
@@ -107,17 +123,34 @@ func (m *mockObjectFactory) Create(count int) ([]types.NetResource, error) {
 	return result, nil
 }
 
-func (m *mockObjectFactory) Release(resource types.NetResource) (types.NetResource, error) {
+func (m *mockObjectFactory) release(resource types.NetResource) error {
 	if err := m.preProcess(); err != nil {
-		return nil, err
+		return err
 	}
 	if resource == nil {
-		return nil, nil
+		return nil
 	}
 	m.Lock()
 	defer m.Unlock()
+
+	if err, exist := m.invalid[resource.GetID()]; exist && !errors.Is(err, ErrIgnore) {
+		return err
+	}
 	delete(m.objects, resource.GetID())
-	return nil, nil
+	return nil
+}
+
+func (m *mockObjectFactory) Release(resources ...types.NetResource) []types.NetResourceWithError {
+	result := make([]types.NetResourceWithError, 0)
+	for _, resource := range resources {
+		if err := m.release(resource); err != nil {
+			result = append(result, types.NetResourceWithError{
+				NetResource: resource,
+				Error:       err,
+			})
+		}
+	}
+	return result
 }
 
 func (m *mockObjectFactory) Valid(resource types.NetResource) error {
@@ -126,6 +159,10 @@ func (m *mockObjectFactory) Valid(resource types.NetResource) error {
 	}
 	m.Lock()
 	defer m.Unlock()
+
+	if err, exist := m.invalid[resource.GetID()]; exist {
+		return err
+	}
 
 	if _, exist := m.objects[resource.GetID()]; exist {
 		return nil
@@ -174,6 +211,7 @@ func (m *mockObjectFactory) setResourceLimit(cap int) {
 func newMockObjectFactory(cap int) *mockObjectFactory {
 	return &mockObjectFactory{
 		objects: make(map[string]types.NetResource),
+		invalid: make(map[string]error),
 		backoff: 0 * time.Second,
 		cap:     cap,
 	}
@@ -204,7 +242,7 @@ func createPool(factory *mockObjectFactory, target, targetMin, maxCap int, maxCa
 			}
 
 			for i := 0; i < initInvalid; i++ {
-				pool.AddInvalid(&types.MockNetResource{ID: string(uuid.NewUUID())})
+				pool.AddInvalid(&types.MockNetResource{ID: newId(invalidResourceIdBegin + i)})
 			}
 
 			return nil
@@ -508,6 +546,28 @@ func TestPoolAction(t *testing.T) {
 	}
 }
 
+func TestReleaseFailWhilePoolReduceAction(t *testing.T) {
+	factory := newMockObjectFactory(20)
+	pool := createPool(factory, 0, 0, 20, false, 5, 5, 0, 5*time.Second)
+	factory.AddInvalid(newId(5), ErrCanNotIgnore)
+
+	time.Sleep(7 * time.Second)
+	snap, err := pool.GetSnapshot()
+	assert.NoError(t, err)
+	assert.Equal(t, 6, len(snap.PoolSnapshot()))
+}
+
+func TestCheckInvalidPoolAction(t *testing.T) {
+	factory := newMockObjectFactory(20)
+	pool := createPool(factory, 0, 0, 20, false, 5, 5, 1, 5*time.Second)
+	factory.AddInvalid(newId(invalidResourceIdBegin+0), apiErr.ErrNewPrimaryIPFromLegacy)
+
+	time.Sleep(7 * time.Second)
+	snap, err := pool.GetSnapshot()
+	assert.NoError(t, err)
+	assert.Equal(t, 6, len(snap.PoolSnapshot()))
+}
+
 func TestRelease(t *testing.T) {
 	testCases := []struct {
 		target         int
@@ -518,12 +578,14 @@ func TestRelease(t *testing.T) {
 		initInvalid    int
 		releaseId      string
 		releaseInvalid bool
-		checkInvalid   bool
+		invalidType    error
 	}{
-		{3, 5, 20, 5, 5, 0, "ID-2", false, false},
-		{3, 5, 20, 5, 5, 0, "ID-6", true, false},
-		{3, 5, 20, 5, 5, 0, "no-exist", true, false},
-		{3, 5, 20, 5, 5, 0, "ID-1", false, true},
+		{3, 5, 20, 5, 5, 0, "ID-2", false, nil},
+		{3, 5, 20, 5, 5, 0, "ID-6", true, nil},
+		{3, 5, 20, 5, 5, 0, "no-exist", true, nil},
+		{3, 5, 20, 5, 5, 0, "ID-1", false, apiErr.ErrNewPrimaryIPFromLegacy},
+		{3, 5, 20, 5, 5, 0, "ID-1", false, ErrIgnore},
+		{3, 5, 20, 5, 5, 0, "ID-1", false, ErrCanNotIgnore},
 	}
 	exec := func(arg struct {
 		target         int
@@ -534,14 +596,12 @@ func TestRelease(t *testing.T) {
 		initInvalid    int
 		releaseId      string
 		releaseInvalid bool
-		checkInvalid   bool
+		invalidType    error
 	}) (bool, error) {
 		factory := newMockObjectFactory(arg.maxCap)
 		pool := createPool(factory, arg.target, arg.targetMin, arg.maxCap, false, arg.initInuse, arg.initAvailable, arg.initInvalid, defaultMonitorInterval)
-		if arg.checkInvalid {
-			res := factory.getById(arg.releaseId)
-			_, err := factory.Release(res)
-			assert.NoError(t, err)
+		if arg.invalidType != nil {
+			factory.AddInvalid(arg.releaseId, arg.invalidType)
 		}
 		err := pool.Release(arg.releaseId)
 		if arg.releaseInvalid {
@@ -734,7 +794,7 @@ func TestGCAvailableAppear(t *testing.T) {
 			_, exist := snap.PoolSnapshot()[podResID]
 			assert.Equal(t, true, exist)
 			delete(usedMap, podResID)
-			err = pool.GC(func() (map[string]types.NetResourceAllocated, error) {
+			err = pool.GC(true, func() (map[string]types.NetResourceAllocated, error) {
 				return usedMap, nil
 			})
 			assert.NoError(t, err)
@@ -827,7 +887,7 @@ func TestGCResourceDisappear(t *testing.T) {
 			_, exist := snap.PoolSnapshot()[podResID]
 			assert.Equal(t, true, exist)
 			delete(usedMap, podResID)
-			err = pool.GC(func() (map[string]types.NetResourceAllocated, error) {
+			err = pool.GC(true, func() (map[string]types.NetResourceAllocated, error) {
 				return usedMap, nil
 			})
 			assert.NoError(t, err)
@@ -847,6 +907,15 @@ func TestGCResourceDisappear(t *testing.T) {
 		paas, err := exec(testCase)
 		assert.Equalf(t, true, paas, fmt.Sprintf("TestCase %+v not pass, %v", testCase, err))
 	}
+}
+
+func TestUnnecessaryGC(t *testing.T) {
+	factory := newMockObjectFactory(20)
+	pool := createPool(factory, 3, 5, 20, false, 0, 1, 1, defaultMonitorInterval)
+	err := pool.GC(false, func() (map[string]types.NetResourceAllocated, error) {
+		return map[string]types.NetResourceAllocated{}, nil
+	})
+	assert.NoError(t, err)
 }
 
 func TestCapProbe(t *testing.T) {
