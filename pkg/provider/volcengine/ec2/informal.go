@@ -16,6 +16,8 @@
 package ec2
 
 import (
+	"reflect"
+
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 	"github.com/volcengine/volcengine-go-sdk/service/vpc"
 	"github.com/volcengine/volcengine-go-sdk/volcengine/response"
@@ -472,4 +474,29 @@ type DisassociateTrunkInterfaceOutput struct {
 	Metadata *response.ResponseMetadata
 
 	RequestId *string `type:"string"`
+}
+
+func getMetadataFromOutput(output interface{}) *response.ResponseMetadata {
+	if output == nil {
+		return nil
+	}
+	val := reflect.ValueOf(output)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	if val.Kind() == reflect.Struct {
+		metadataField := val.FieldByName("Metadata")
+		if metadataField.IsValid() && metadataField.CanInterface() {
+			return metadataField.Interface().(*response.ResponseMetadata)
+		}
+	}
+	return nil
+}
+
+func GetRequestIdFromOutput(output interface{}) string {
+	metadata := getMetadataFromOutput(output)
+	if metadata == nil {
+		return ""
+	}
+	return metadata.RequestId
 }
