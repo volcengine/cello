@@ -44,7 +44,7 @@ type ClientSet struct {
 func (c *ClientSet) DescribeInstances(input *ecs.DescribeInstancesInput) (*ecs.DescribeInstancesOutput, error) {
 	start := time.Now()
 	output, err := c.EcsSvc.DescribeInstancesWithContext(context.TODO(), input)
-	status := apiErr.NewAPIRequestStatus(output.Metadata, err)
+	status := apiErr.NewAPIRequestStatus(getMetadataFromOutput(output), err)
 	if status.ErrorCode() != apiErr.ClientErr {
 		metrics.OpenAPILatencyRecord("DescribeInstances", start)
 	}
@@ -108,7 +108,7 @@ func (c *ClientSet) CreateNetworkInterface(input *CreateNetworkInterfaceInput) (
 func (c *ClientSet) AttachNetworkInterface(input *vpc.AttachNetworkInterfaceInput) (*vpc.AttachNetworkInterfaceOutput, error) {
 	start := time.Now()
 	output, err := c.VpcSvc.AttachNetworkInterfaceWithContext(context.TODO(), input)
-	status := apiErr.NewAPIRequestStatus(output.Metadata, err)
+	status := apiErr.NewAPIRequestStatus(getMetadataFromOutput(output), err)
 	if status.ErrorCode() != apiErr.ClientErr {
 		metrics.OpenAPILatencyRecord("AttachNetworkInterface", start)
 	}
@@ -151,7 +151,7 @@ func (c *ClientSet) DescribeNetworkInterfaceAttributes(input *vpc.DescribeNetwor
 func (c *ClientSet) DetachNetworkInterface(input *vpc.DetachNetworkInterfaceInput) (*vpc.DetachNetworkInterfaceOutput, error) {
 	start := time.Now()
 	output, err := c.VpcSvc.DetachNetworkInterfaceWithContext(context.TODO(), input)
-	status := apiErr.NewAPIRequestStatus(output.Metadata, err)
+	status := apiErr.NewAPIRequestStatus(getMetadataFromOutput(output), err)
 	if status.ErrorCode() != apiErr.ClientErr {
 		metrics.OpenAPILatencyRecord("DetachNetworkInterface", start)
 	}
@@ -169,7 +169,7 @@ func (c *ClientSet) DetachNetworkInterface(input *vpc.DetachNetworkInterfaceInpu
 func (c *ClientSet) DeleteNetworkInterface(input *vpc.DeleteNetworkInterfaceInput) (*vpc.DeleteNetworkInterfaceOutput, error) {
 	start := time.Now()
 	output, err := c.VpcSvc.DeleteNetworkInterfaceWithContext(context.TODO(), input)
-	status := apiErr.NewAPIRequestStatus(output.Metadata, err)
+	status := apiErr.NewAPIRequestStatus(getMetadataFromOutput(output), err)
 	if status.ErrorCode() != apiErr.ClientErr {
 		metrics.OpenAPILatencyRecord("DeleteNetworkInterface", start)
 	}
@@ -209,7 +209,7 @@ func (c *ClientSet) DescribeNetworkInterfaces(input *vpc.DescribeNetworkInterfac
 func (c *ClientSet) UnAssignPrivateIpAddress(input *vpc.UnassignPrivateIpAddressesInput) (*vpc.UnassignPrivateIpAddressesOutput, error) {
 	start := time.Now()
 	output, err := c.VpcSvc.UnassignPrivateIpAddressesWithContext(context.TODO(), input)
-	status := apiErr.NewAPIRequestStatus(output.Metadata, err)
+	status := apiErr.NewAPIRequestStatus(getMetadataFromOutput(output), err)
 	if status.ErrorCode() != apiErr.ClientErr {
 		metrics.OpenAPILatencyRecord("UnAssignPrivateIpAddress", start)
 	}
@@ -224,7 +224,7 @@ func (c *ClientSet) UnAssignPrivateIpAddress(input *vpc.UnassignPrivateIpAddress
 func (c *ClientSet) AssignPrivateIpAddress(input *vpc.AssignPrivateIpAddressesInput) (*vpc.AssignPrivateIpAddressesOutput, error) {
 	start := time.Now()
 	output, err := c.VpcSvc.AssignPrivateIpAddressesWithContext(context.TODO(), input)
-	status := apiErr.NewAPIRequestStatus(output.Metadata, err)
+	status := apiErr.NewAPIRequestStatus(getMetadataFromOutput(output), err)
 	if status.ErrorCode() != apiErr.ClientErr {
 		metrics.OpenAPILatencyRecord("AssignPrivateIpAddress", start)
 	}
@@ -357,7 +357,7 @@ func (c *ClientSet) DescribeSubnetAttributes(input *vpc.DescribeSubnetAttributes
 func (c *ClientSet) TagResources(input *vpc.TagResourcesInput) (*vpc.TagResourcesOutput, error) {
 	start := time.Now()
 	output, err := c.VpcSvc.TagResourcesWithContext(context.TODO(), input)
-	status := apiErr.NewAPIRequestStatus(output.Metadata, err)
+	status := apiErr.NewAPIRequestStatus(getMetadataFromOutput(output), err)
 	if status.ErrorCode() != apiErr.ClientErr {
 		metrics.OpenAPILatencyRecord("TagResources", start)
 	}
@@ -421,16 +421,21 @@ func (c *ClientSet) DisassociateTrunkInterface(input *DisassociateTrunkInterface
 	return output, err
 }
 
-func NewClient(region, endpoint string, cred *credentials.Credentials) *ClientSet {
+func NewClient(region, endpoint, endpointConfigPath string, cred *credentials.Credentials) *ClientSet {
 	config := volcengine.NewConfig().
 		WithRegion(region).
 		WithHTTPClient(&http.Client{
 			Timeout: 10 * time.Second,
 		}).
-		WithDisableSSL(true).
 		WithCredentials(cred).
-		WithEndpoint(volcengineutil.NewEndpoint().WithCustomerEndpoint(endpoint).GetEndpoint()).
 		WithExtraUserAgent(volcengine.String(version.UserAgent()))
+
+	if len(endpointConfigPath) != 0 {
+		config = config.WithEndpointConfigState(true).
+			WithEndpointConfigPath(endpointConfigPath)
+	} else if len(endpoint) != 0 {
+		config = config.WithEndpoint(volcengineutil.NewEndpoint().WithCustomerEndpoint(endpoint).GetEndpoint())
+	}
 
 	if logger.GetLogLevel() == "trace" {
 		config = config.WithLogger(volcengine.NewDefaultLogger()).
