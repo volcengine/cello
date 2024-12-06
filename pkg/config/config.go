@@ -53,6 +53,9 @@ type DaemonConfig struct {
 	// OpenApiAddress address of top gateway for accessing volc openapi
 	OpenApiAddress *string `yaml:"openApiAddress" json:"openApiAddress,omitempty"`
 
+	// EndpointConfigPath is path of service top endpoints config
+	EndpointConfigPath *string `yaml:"endpointConfigPath" json:"endpointConfigPath,omitempty"`
+
 	// SecurityGroups used by pods (actually used by ENI)
 	SecurityGroups []string `yaml:"securityGroups" json:"securityGroups,omitempty"`
 
@@ -177,11 +180,22 @@ func (c *DaemonConfig) verifyConfig() error {
 		log.Infof("--Use static Credential")
 	}
 
+	if c.OpenApiAddress == nil && c.EndpointConfigPath == nil {
+		return fmt.Errorf("endpoint configured empty")
+	}
+
 	if c.OpenApiAddress != nil {
 		if datatype.StringValue(c.OpenApiAddress) == "" {
 			return fmt.Errorf("openApiAddress configured empty")
 		}
 		log.Infof("--OpenApiAddress=%s", datatype.StringValue(c.OpenApiAddress))
+	}
+
+	if c.EndpointConfigPath != nil {
+		if datatype.StringValue(c.EndpointConfigPath) == "" {
+			return fmt.Errorf("endpointConfigPath configured empty")
+		}
+		log.Infof("--EndpointConfigPath=%s", datatype.StringValue(c.EndpointConfigPath))
 	}
 
 	if len(c.SecurityGroups) == 0 {

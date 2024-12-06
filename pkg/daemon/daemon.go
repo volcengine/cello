@@ -164,7 +164,12 @@ func NewDaemon() (*daemon, error) {
 		log.InfoS("Set openapi address", "OpenApiAddress", *config.Config.OpenApiAddress)
 		endpoint = *config.Config.OpenApiAddress
 	}
-	apiClient := ec2.NewClient(instanceMeta.GetRegion(), endpoint, credentials.NewChainCredentials(credentialProviders))
+	endpointConfigPath := ""
+	if config.Config.EndpointConfigPath != nil {
+		log.InfoS("Set endpoint config path", "EndpointConfigPath", *config.Config.EndpointConfigPath)
+		endpointConfigPath = *config.Config.EndpointConfigPath
+	}
+	apiClient := ec2.NewClient(instanceMeta.GetRegion(), endpoint, endpointConfigPath, credentials.NewChainCredentials(credentialProviders))
 
 	if config.Config.ProjectName == nil {
 		projectName, inErr := getInstanceProject(apiClient, instanceMeta)

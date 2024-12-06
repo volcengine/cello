@@ -29,7 +29,7 @@ require (
 	github.com/urfave/cli/v2 v2.25.7
 	github.com/vishvananda/netlink v1.2.1-beta.2
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f
-	github.com/volcengine/volcengine-go-sdk v1.0.77
+	github.com/volcengine/volcengine-go-sdk v1.0.172
 	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8
 	golang.org/x/net v0.26.0

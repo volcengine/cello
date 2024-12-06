@@ -720,13 +720,13 @@ func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
 		})
 		if err != nil {
 			log.ErrorS(err, "DescribeInstanceType failed",
-				"InstanceType", e.GetInstanceType(), "RequestId", resp.Metadata.RequestId)
+				"InstanceType", e.GetInstanceType(), "RequestId", ec2.GetRequestIdFromOutput(resp))
 			return false, nil
 		}
 		if len(resp.InstanceTypes) != 1 ||
 			volcengine.StringValue(resp.InstanceTypes[0].InstanceTypeId) != e.GetInstanceType() {
 			return false, fmt.Errorf("DescribeInstanceType %s failed, no result [requestId: %s]",
-				e.GetInstanceType(), resp.Metadata.RequestId)
+				e.GetInstanceType(), ec2.GetRequestIdFromOutput(resp))
 		}
 		return true, nil
 	})
@@ -754,7 +754,7 @@ func (e *VolcApiImpl) GetInstanceLimit() (*InstanceLimits, error) {
 	if limit.NonPrimaryENI() <= 0 {
 		return nil, fmt.Errorf("limits of instance %s invalid, %s", e.GetInstanceId(), limit.String())
 	}
-	log.WithFields(logger.Fields{"InstanceID": e.GetInstanceId(), "RequestID": resp.Metadata.RequestId}).
+	log.WithFields(logger.Fields{"InstanceID": e.GetInstanceId(), "RequestID": ec2.GetRequestIdFromOutput(resp)}).
 		InfoS("Instance limits", "limit", limit.String())
 	return limit, nil
 }
