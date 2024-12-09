@@ -426,13 +426,22 @@ func getHpcCidrByMetadata(rdmaInterfaces []types.RdmaInterface) (*types.HpcRoute
 		if mErr != nil {
 			return nil, fmt.Errorf("get interface %s info by metadata failed, %v", intF.Mac, mErr)
 		}
+		if !intInfo.RdmaCapable {
+			return nil, fmt.Errorf("rdma capability of %s not enabled", intF.Mac)
+		}
 		if len(hpcCidr) == 0 {
 			hpcCidr = intInfo.SubnetCidrBlock
 		}
-		if !intInfo.RdmaCapable || intInfo.SubnetCidrBlock != hpcCidr {
+		if intInfo.SubnetCidrBlock != hpcCidr {
 			return nil, fmt.Errorf("found multi hpc cidr from metadata")
 		}
 	}
+
+	// check hpc cidr
+	if _, _, err := net.ParseCIDR(hpcCidr); err != nil {
+		return nil, fmt.Errorf("invalid hpc cidr %s", hpcCidr)
+	}
+
 	log.InfoS("Found hpc cidr from metadata", "hpc cidr", hpcCidr)
 	return &types.HpcRoute{
 		Dst: hpcCidr,
