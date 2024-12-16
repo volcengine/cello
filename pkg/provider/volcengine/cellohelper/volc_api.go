@@ -510,8 +510,7 @@ func (e *VolcApiImpl) AllocIPAddresses(eniID, eniMac string, v4Cnt, v6Cnt int) (
 	e.privateIPMutex.Lock()
 	defer e.privateIPMutex.Unlock()
 
-	var err, v4Err, v6Err error
-	var wg sync.WaitGroup
+	var err error
 	var ipv4s, ipv6s []net.IP
 	defer func() {
 		if err != nil {
@@ -557,26 +556,6 @@ func (e *VolcApiImpl) AllocIPAddresses(eniID, eniMac string, v4Cnt, v6Cnt int) (
 		if err != nil {
 			return ipv4s, ipv6s, err
 		}
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			var inErr error
-			var metaV4s []net.IP
-			v4Err = wait.ExponentialBackoff(backoff.BackOff(backoff.MetaStatusWait), func() (bool, error) {
-				metaV4s, inErr = e.metadataSvc.InterfaceSecondaryIPs(context.Background(), eniMac)
-				if inErr != nil {
-					return false, nil
-				}
-				if !ip2.NetIPContainAll(metaV4s, ipv4s) {
-					return false, nil
-				}
-				return true, nil
-			})
-			if v4Err != nil {
-				v4Err = fmt.Errorf("%w, metadata err: %v", v4Err, inErr)
-			}
-		}()
 	}
 
 	if e.ipFamily.Support(types.IPFamilyDual) && v4Cnt > 0 && v6Cnt > 0 {
@@ -613,34 +592,8 @@ func (e *VolcApiImpl) AllocIPAddresses(eniID, eniMac string, v4Cnt, v6Cnt int) (
 		if err != nil {
 			return ipv4s, ipv6s, err
 		}
-
-		// TODO: after metadata support ipv6
-		//wg.Add(1)
-		//go func() {
-		//	defer wg.Done()
-		//	var inErr error
-		//	var metaV6s []net.IP
-		//	v6Err = wait.ExponentialBackoff(backoff.BackOff(backoff.MetaStatusWait), func() (bool, error) {
-		//		metaV6s, inErr = e.metadataSvc.GetENIPrivateIPv6s(context.Background(), eniMac)
-		//		if inErr != nil {
-		//			return false, nil
-		//		}
-		//		if !utils.NetIPContainAll(metaV6s, ipv6s) {
-		//			return false, nil
-		//		}
-		//		return true, nil
-		//	})
-		//	if v6Err != nil {
-		//		v6Err = fmt.Errorf("%w, metadata err: %v", v6Err, inErr)
-		//	}
-		//}()
 	}
-	wg.Wait()
 
-	err = k8sErr.NewAggregate([]error{v4Err, v6Err})
-	if err != nil {
-		return nil, nil, err
-	}
 	log.InfoS("Successfully assigned IP address on ENI", "eniID", eniID, "ipv4s", ip2.ToStringSlice(ipv4s), "ipv6s", ip2.ToStringSlice(ipv6s))
 	return ipv4s, ipv6s, nil
 }
@@ -747,33 +700,6 @@ func (e *VolcApiImpl) deallocIPAddressesWithLocked(eniID, eniMac string, ipv4s, 
 		return k8sErr.NewAggregate(errs)
 	}
 
-	var inErr error
-	werr := wait.ExponentialBackoff(backoff.BackOff(backoff.MetaStatusWait), func() (bool, error) {
-		var metaV4s []net.IP
-		metaV4s, inErr = e.metadataSvc.InterfaceSecondaryIPs(context.Background(), eniMac)
-		if inErr != nil {
-			return false, nil
-		}
-
-		//metaV6s, inErr = e.metadataSvc.GetENIPrivateIPv6s(context.Background(), eniMac)
-		//if inErr != nil {
-		//	return false, nil
-		//}
-
-		if len(ipv4s) > 0 && ip2.NetIPContainAny(metaV4s, ipv4s) {
-			inErr = fmt.Errorf("ips %s expecte to be unassign, but currently has %s", ipv4s, metaV4s)
-			return false, nil
-		}
-		//if len(ipv6s) > 0 && ip2.NetIPContainAny(metaV6s, ipv6s) {
-		//	inErr = fmt.Errorf("ips %s expecte to be unassign, but currently has %s", ipv6s, metaV6s)
-		//	return false, nil
-		//}
-		return true, nil
-	})
-
-	if werr != nil {
-		return inErr
-	}
 	return nil
 }
 
