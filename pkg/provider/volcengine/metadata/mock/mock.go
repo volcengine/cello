@@ -43,6 +43,11 @@ const (
 	NetworkInfo      = "{\"NetworkInterfaceId\":\"eni-rs2vnlglkhdsv0x57806fyj\",\"PrimaryIpAddress\":\"172.16.1.9\",\"Gateway\":\"172.16.1.1\",\"SubnetId\":\"subnet-13fic2voyqk1s3n6nu4ysssg5\",\"SubnetCidrBlock\":\"172.16.1.0/24\",\"PrivateIpv4s\":\"172.16.1.10\\n172.16.1.17\\n172.16.1.18\\n172.16.1.19\\n172.16.1.20\\n172.16.1.21\\n172.16.1.22\\n172.16.1.28\\n172.16.1.29\\n172.16.1.38\\n172.16.1.39\\n172.16.1.40\\n172.16.1.41\\n172.16.1.42\"}"
 	EmptyNetworkInfo = "{\"NetworkInterfaceId\":\"eni-rs2vnlglkhdsv0x57806fyj\",\"PrimaryIpAddress\":\"172.16.1.9\",\"Gateway\":\"172.16.1.1\",\"SubnetId\":\"subnet-13fic2voyqk1s3n6nu4ysssg5\",\"SubnetCidrBlock\":\"172.16.1.0/24\",\"PrivateIpv4s\":\"\"}"
 	ServiceToken     = "{\"ExpiredTime\":\"2024-04-09T03:54:40+08:00\",\"CurrentTime\":\"2024-04-08T21:54:40+08:00\",\"AccessKeyId\":\"mock-access-key-id\",\"SecretAccessKey\":\"mock-secret-access-key\",\"SessionToken\":\"mock-session-token\"}"
+	NetworkData      = "{\"services\":[],\"networks\":[{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_0\"},{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_1\"},{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_2\"},{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_3\"},{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_4\"}],\"links\":[{\"id\":\"network_0\",\"ethernet_mac_address\":\"00:16:3e:49:85:0c\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"\"},{\"id\":\"network_1\",\"ethernet_mac_address\":\"94:6d:ae:6e:0c:18\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"{\\\"RdmaDataType\\\":\\\"Storage\\\"}\"},{\"id\":\"network_2\",\"ethernet_mac_address\":\"94:6d:ae:5c:36:a8\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"{\\\"RdmaDataType\\\":\\\"Storage\\\"}\"},{\"id\":\"network_3\",\"ethernet_mac_address\":\"94:6d:ae:5c:35:f8\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"{\\\"RdmaDataType\\\":\\\"Storage\\\"}\"},{\"id\":\"network_4\",\"ethernet_mac_address\":\"94:6d:ae:5c:36:04\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"{\\\"RdmaDataType\\\":\\\"Storage\\\"}\"}]}"
+)
+
+var (
+	VarNetworkData = NetworkData
 )
 
 type Client struct{}
@@ -95,6 +100,8 @@ func (m *Client) Get(ctx context.Context, sign, path string) ([]byte, error) {
 		return []byte(EmptyNetworkInfo), nil
 	case "iam/security_credentials/" + Role:
 		return []byte(ServiceToken), nil
+	case "network_data":
+		return []byte(VarNetworkData), nil
 	default:
 		return nil, errors.New("not found")
 	}
