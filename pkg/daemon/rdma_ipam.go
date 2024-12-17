@@ -29,6 +29,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
 	"github.com/volcengine/volcengine-go-sdk/volcengine"
+	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -92,6 +93,20 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 	}
 	log.Infof("Found rdma interfaces(likely): %v", rdmaInterfaces)
 
+	filteredRdmaCnt := 0
+	if datatype.BoolValue(config.Config.FilterStorageRdma) {
+		log.Infof("Filter storage rdma by metadata")
+		storageRdmaMacs, inErr := getStorageRdmaMacsByMetadata()
+		if inErr != nil {
+			return nil, fmt.Errorf("get storage rdma failed, %v", inErr)
+		}
+		log.InfoS("Found storage rdma interfaces", "macs", storageRdmaMacs)
+		filteredRdmaCnt = len(storageRdmaMacs)
+		rdmaInterfaces = slices.DeleteFunc(rdmaInterfaces, func(rdmaInterface device.RdmaHCA) bool {
+			return slices.Contains(storageRdmaMacs, rdmaInterface.Mac)
+		})
+	}
+
 	var output *ecs.DescribeInstancesOutput
 	var inErr error
 	err = wait.ExponentialBackoff(backoff.BackOff(backoff.APIFastRetry), func() (bool, error) {
@@ -104,23 +119,23 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 	if err = apiErr.BackoffErrWrapper(err, inErr); err != nil {
 		return nil, fmt.Errorf("get rdma ip addresses failed, %v", err)
 	}
-	rdmaIpAddrStrs := volcengine.StringValueSlice(output.Instances[0].RdmaIpAddresses)
-	if len(rdmaIpAddrStrs) == 0 {
+	rdmaIpAddrStrings := volcengine.StringValueSlice(output.Instances[0].RdmaIpAddresses)
+	if len(rdmaIpAddrStrings) == 0 {
 		return &info, nil
 	}
 
-	rdmaIpAddr, err := ip2.ParseIPs(rdmaIpAddrStrs)
+	rdmaIpAddresses, err := ip2.ParseIPs(rdmaIpAddrStrings)
 	if err != nil {
-		return nil, fmt.Errorf("parse %v failed, %v", rdmaIpAddrStrs, err)
+		return nil, fmt.Errorf("parse %v failed, %v", rdmaIpAddrStrings, err)
 	}
 
-	// rdmaInterfaces may include non rdma interfaces
+	// rdmaInterfaces may include non rdma interfaces, use ip to filter
 	for _, r := range rdmaInterfaces {
 		link, mErr := netlink.LinkByName(r.NetName)
 		if mErr != nil {
 			return nil, mErr
 		}
-		matches, err2 := linkHasAddresses(link, rdmaIpAddr)
+		matches, err2 := linkHasAddresses(link, rdmaIpAddresses)
 		if err2 != nil {
 			return nil, fmt.Errorf("check rdma ips on %s failed, %v", link.Attrs().HardwareAddr, err2)
 		}
@@ -135,8 +150,9 @@ func (d *daemon) getRdmaInfo() (*types.RdmaInfo, error) {
 		}
 	}
 
-	if len(rdmaIpAddrStrs) != len(info.RdmaInterfaces) {
-		return nil, fmt.Errorf("not found all rdma interfaces, rdma from remote: %v, from local: %v", rdmaIpAddrStrs, info.RdmaInterfaces)
+	if len(rdmaIpAddrStrings)-filteredRdmaCnt != len(info.RdmaInterfaces) {
+		return nil, fmt.Errorf("not found all rdma interfaces, rdma from remote: %v(include %d filtered rdma), from local: %v",
+			rdmaIpAddrStrings, filteredRdmaCnt, info.RdmaInterfaces)
 	}
 	hpcRoute, err := getHpcCidrByMetadata(info.RdmaInterfaces)
 	if err != nil {
@@ -446,4 +462,18 @@ func getHpcCidrByMetadata(rdmaInterfaces []types.RdmaInterface) (*types.HpcRoute
 	return &types.HpcRoute{
 		Dst: hpcCidr,
 	}, nil
+}
+
+func getStorageRdmaMacsByMetadata() ([]string, error) {
+	networkData, err := metadata.NewClientWrapper(metadata.NewClient()).NetworkData(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("get network data from metadata failed, %v", err)
+	}
+	var rdmaMacs []string
+	for _, link := range networkData.Links {
+		if link.ExtraData != nil && link.ExtraData.RdmaDataType == metadata.RdmaDataTypeStorage {
+			rdmaMacs = append(rdmaMacs, link.EthernetMacAddress)
+		}
+	}
+	return rdmaMacs, nil
 }

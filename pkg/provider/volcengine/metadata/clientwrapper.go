@@ -25,6 +25,37 @@ import (
 	"github.com/volcengine/cello/pkg/utils/logger"
 )
 
+// InterfaceInfo represents NIC information that metadata service would return
+type InterfaceInfo struct {
+	NetworkInterfaceID string   `json:"NetworkInterfaceId,omitempty"`
+	PrimaryIPAddress   string   `json:"PrimaryIpAddress,omitempty"`
+	Gateway            string   `json:"Gateway,omitempty"`
+	SubnetID           string   `json:"SubnetId,omitempty"`
+	SubnetCidrBlock    string   `json:"SubnetCidrBlock,omitempty"`
+	PrivateIpv4s       string   `json:"PrivateIpv4s,omitempty"`
+	PrivateIPAddresses []string `json:"PrivateIpAddresses,omitempty"`
+	RdmaCapable        bool     `json:"RdmaCapable,omitempty"`
+}
+
+const (
+	RdmaDataTypeStorage = "Storage"
+)
+
+type NetworkData struct {
+	Links []NetworkDataLink `json:"links"`
+}
+type NetworkDataLink struct {
+	ID                 string `json:"id"`
+	Type               string `json:"type"`
+	EthernetMacAddress string `json:"ethernet_mac_address"`
+	MTU                int    `json:"mtu"`
+	RawExtraData       string `json:"extra_data"` // ugly data format
+	ExtraData          *NetworkDataLinksExtraData
+}
+type NetworkDataLinksExtraData struct {
+	RdmaDataType string `json:"RdmaDataType"`
+}
+
 // Metadata APIs
 const (
 	region           = "region_id"
@@ -41,6 +72,8 @@ const (
 	ips              = "network/interfaces/macs/%s/private_ip_addresses"
 	networkInfo      = "network/interfaces/macs/%s/network_info"
 	iam              = "iam/security_credentials/"
+
+	metadataNetworkDataPath = "network_data"
 )
 
 var log = logger.GetLogger().WithFields(logger.Fields{"subsys": "metadata"})
@@ -181,6 +214,9 @@ func (client ClientWrapper) InterfaceInfo(ctx context.Context, mac string) (*Int
 	}
 	var nicInfo InterfaceInfo
 	err = json.Unmarshal(data, &nicInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get network inteface %v information: %w", mac, err)
+	}
 
 	for _, addr := range strings.Split(nicInfo.PrivateIpv4s, "\n") {
 		if len(addr) == 0 {
@@ -189,9 +225,6 @@ func (client ClientWrapper) InterfaceInfo(ctx context.Context, mac string) (*Int
 		nicInfo.PrivateIPAddresses = append(nicInfo.PrivateIPAddresses, addr)
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get network inteface %v information: %w", mac, err)
-	}
 	return &nicInfo, err
 }
 
@@ -206,4 +239,28 @@ func (client ClientWrapper) STSCredential(ctx context.Context, role string) (str
 	}
 
 	return string(data), nil
+}
+
+// NetworkData returns network data from metadata service.
+func (client ClientWrapper) NetworkData(ctx context.Context) (*NetworkData, error) {
+	data, err := client.getter.Get(ctx, "GetNetworkData", metadataNetworkDataPath)
+	if err != nil {
+		return nil, err
+	}
+	var networkData NetworkData
+	err = json.Unmarshal(data, &networkData)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range networkData.Links {
+		if len(networkData.Links[i].RawExtraData) == 0 {
+			continue
+		}
+		inErr := json.Unmarshal([]byte(networkData.Links[i].RawExtraData), &networkData.Links[i].ExtraData)
+		if inErr != nil {
+			return nil, fmt.Errorf("failed to unmarshal extra_data(%s): %w", networkData.Links[i].RawExtraData, inErr)
+		}
+	}
+	return &networkData, nil
 }
