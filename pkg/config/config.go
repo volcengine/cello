@@ -144,6 +144,8 @@ type DaemonConfig struct {
 
 	// ProjectName project name for vpc resources created by cello
 	ProjectName *string `yaml:"projectName" json:"projectName,omitempty"`
+
+	FilterStorageRdma *bool `yaml:"filterStorageRdma" json:"filterStorageRdma,omitempty"`
 }
 
 // verifyConfig verify DaemonConfig.
@@ -321,6 +323,12 @@ func (c *DaemonConfig) verifyConfig() error {
 
 	// Nil is used to indicate that ProjectName need obtained by calling the API.
 	log.Infof("--ProjectName=%s", datatype.StringValue(c.ProjectName))
+
+	if c.FilterStorageRdma == nil {
+		c.FilterStorageRdma = datatype.Bool(false)
+	}
+	log.Infof("--FilterStorageRdma=%t", datatype.BoolValue(c.FilterStorageRdma))
+
 	return nil
 }
 

@@ -162,3 +162,26 @@ func TestClientWrapper_STS(t *testing.T) {
 	_, err = meta.STSCredential(ctx, "NotExists")
 	assert.Error(t, err)
 }
+
+func TestClientWrapper_NetworkData(t *testing.T) {
+	networkData, err := meta.NetworkData(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, len(networkData.Links), 5)
+
+	var storageRdmaCnt int
+	for _, link := range networkData.Links {
+		if link.ExtraData != nil {
+			assert.Equal(t, link.ExtraData.RdmaDataType, metadata.RdmaDataTypeStorage)
+			storageRdmaCnt++
+		}
+	}
+	assert.Equal(t, storageRdmaCnt, 4)
+
+	mock.VarNetworkData = "{\"services\":[],\"networks\":[{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_0\"},{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_1\"},{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_2\"},{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_3\"},{\"id\":\"\",\"services\":[],\"ip_address\":\"\",\"type\":\"ipv4_dhcp\",\"network_id\":\"\",\"routes\":[],\"netmask\":\"\",\"link\":\"network_4\"}],\"links\":[{\"id\":\"network_0\",\"ethernet_mac_address\":\"00:16:3e:49:85:0c\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"\"},{\"id\":\"network_1\",\"ethernet_mac_address\":\"94:6d:ae:6e:0c:18\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"{\\\"RdmaDataType\\\":\\\"Storage\\\"}\"},{\"id\":\"network_2\",\"ethernet_mac_address\":\"94:6d:ae:5c:36:a8\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"{\\\"RdmaDataType\\\":\\\"Storage\\\"}\"},{\"id\":\"network_3\",\"ethernet_mac_address\":\"94:6d:ae:5c:35:f8\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"{\\\"RdmaDataType\\\":\\\"Storage\\\"}\"},{\"id\":\"network_4\",\"ethernet_mac_address\":\"94:6d:ae:5c:36:04\",\"type\":\"bridge\",\"mtu\":0,\"vif_id\":\"\",\"extra_data\":\"{\"RdmaDataType\":\"Storage\"}\"}]}"
+	networkData, err = meta.NetworkData(ctx)
+	assert.Error(t, err)
+
+	mock.VarNetworkData = "404"
+	networkData, err = meta.NetworkData(ctx)
+	assert.Error(t, err)
+}
