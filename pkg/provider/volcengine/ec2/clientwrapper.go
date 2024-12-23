@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/volcengine/volcengine-go-sdk/service/ecs"
@@ -434,7 +435,13 @@ func NewClient(region, endpoint, endpointConfigPath string, cred *credentials.Cr
 		config = config.WithEndpointConfigState(true).
 			WithEndpointConfigPath(endpointConfigPath)
 	} else if len(endpoint) != 0 {
-		config = config.WithEndpoint(volcengineutil.NewEndpoint().WithCustomerEndpoint(endpoint).GetEndpoint())
+		config = config.WithEndpoint(volcengineutil.NewEndpoint().WithCustomerEndpoint(endpoint).GetEndpoint()).
+			// old mode, keep disable ssl
+			WithDisableSSL(true)
+	}
+
+	if disableSSL := os.Getenv("ENDPOINT_DISABLE_SSL"); disableSSL != "" {
+		config = config.WithDisableSSL(disableSSL == "true")
 	}
 
 	if logger.GetLogLevel() == "trace" {
