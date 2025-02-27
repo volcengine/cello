@@ -112,7 +112,13 @@ func createEc2(cfg *config.Config, instanceMeta helper.InstanceMetadataGetter) (
 		log.Infof("Set openapi address to %s", *cfg.OpenApiAddress)
 		endpoint = *cfg.OpenApiAddress
 	}
-	apiClient := metrics.NewMetricEC2Wrapper(ec2.NewClient(instanceMeta.GetRegion(), endpoint, credentialProvider))
+
+	endpointConfigPath := ""
+	if cfg.EndpointConfigPath != nil {
+		endpointConfigPath = *cfg.EndpointConfigPath
+	}
+
+	apiClient := metrics.NewMetricEC2Wrapper(ec2.NewClient(instanceMeta.GetRegion(), endpoint, endpointConfigPath, credentialProvider))
 	return apiClient, nil
 }
 

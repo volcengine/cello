@@ -63,6 +63,9 @@ type Config struct {
 	// OpenApiAddress address of top gateway for accessing volc openapi
 	OpenApiAddress *string `yaml:"openApiAddress" json:"openApiAddress,omitempty"`
 
+	// EndpointConfigPath path of service top endpoints config
+	EndpointConfigPath *string `yaml:"endpointConfigPath" json:"endpointConfigPath,omitempty"`
+
 	// SecurityGroups used by pods (actually used by ENI)
 	SecurityGroups []string `yaml:"securityGroups" json:"securityGroups,omitempty"`
 

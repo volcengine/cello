@@ -28,7 +28,12 @@ data:
       {{- end }}
       "credentialAccessKeyId": "{{ .Values.cello.accessKey }}",
       "credentialAccessKeySecret": "{{ .Values.cello.secretKey }}",
+      {{- if .Values.cello.openAPIAddress }}
       "openApiAddress": "{{ .Values.cello.openAPIAddress }}",
+      {{- end }}
+      {{- if .Values.cello.serviceTopEndpoints }}
+      "endpointConfigPath": "{{.Values.cello.endpointConfigPath }}",
+      {{- end }}
       "poolTarget": 3,
       "poolTargetMin": 5,
       "poolMaxCapProbe": true,
@@ -59,3 +64,7 @@ data:
         }
       ]
     }
+{{- if .Values.cello.serviceTopEndpoints }}
+  endpoint-config: |
+  {{- toYaml .Values.cello.serviceTopEndpoints | nindent 4 }}
+{{- end }}
