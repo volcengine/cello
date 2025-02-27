@@ -14,6 +14,24 @@ cello:
   redirectToHostCIDRs: ["169.254.0.0/16"]
   # VolcEngine OpenAPI address.
   openAPIAddress: "open.volcengineapi.com"
+  # Enable custom service endpoints config with path.
+  #endpointConfigPath: "/etc/cello/endpoint.yaml"
+  # Custom service OpenAPI endpoints.
+  serviceTopEndpoints:
+  #    vpc:
+  #      Service: vpc
+  #      IsGlobal: false
+  #      GlobalEndpoint: ''
+  #      RegionEndpointMap:
+  #        cn-beijing: 'open.volcengineapi.com'
+  #        cn-beijing-autodriving: 'vpc.cn-beijing-autodriving.volcengineapi.com'
+  #    ecs:
+  #      Service: ecs
+  #      IsGlobal: false
+  #      GlobalEndpoint: ''
+  #      RegionEndpointMap:
+  #        cn-beijing: 'open.volcengineapi.com'
+  #        cn-beijing-autodriving: 'ecs.cn-beijing-autodriving.volcengineapi.com'
   # VolcEngine iamRole policy authorization.
   #iamRole: "KubernetesNodeRoleForECS"
   # VolcEngine OpenAPI secrets.

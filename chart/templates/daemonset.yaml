@@ -92,6 +92,11 @@ spec:
               name: host-log-cello-cni
             - mountPath: /var/lib/kubelet/device-plugins
               name: host-device-plugins
+            {{- if and .Values.cello.serviceTopEndpoints .Values.cello.endpointConfigPath }}
+            - mountPath: {{ .Values.cello.endpointConfigPath }}
+              name: configvolume
+              subPath: endpoint.yaml
+            {{- end }}
         - name: cilium
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -170,6 +175,10 @@ spec:
                 path: cello.json
               - key: 10-cello.conflist
                 path: net.d/10-cello.conflist
+              {{- if .Values.cello.serviceTopEndpoints }}
+              - key: endpoint-config
+                path: endpoint.yaml
+              {{- end }}
         - name: cilium-config-path
           configMap:
             name: cilium-config

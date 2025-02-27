@@ -216,19 +216,23 @@ func (c *ClientSet) TagResources(input *vpc.TagResourcesInput) (*vpc.TagResource
 	return output, nil
 }
 
-func NewClient(region, endpoint string, credentialProvider credential.Provider) *ClientSet {
+func NewClient(region, endpoint, endpointConfigPath string, credentialProvider credential.Provider) *ClientSet {
 	config := volcengine.NewConfig().
 		WithRegion(region).
 		WithHTTPClient(&http.Client{
 			Timeout: 10 * time.Second,
 		}).
-		WithDisableSSL(true).
 		WithDynamicCredentials(func(ctx context.Context) (*credentials.Credentials, *string) {
 			cred := credentialProvider.Get()
 			return credentials.NewStaticCredentials(cred.AccessKeyId, cred.SecretAccessKey, cred.SessionToken), volcengine.String(region)
 		}).
-		WithEndpoint(volcengineutil.NewEndpoint().WithCustomerEndpoint(endpoint).GetEndpoint()).
 		WithExtraUserAgent(volcengine.String(version.UserAgent()))
+
+	if len(endpointConfigPath) != 0 {
+		config = config.WithEndpointConfigState(true).WithEndpointConfigPath(endpointConfigPath)
+	} else if len(endpoint) != 0 {
+		config = config.WithEndpoint(volcengineutil.NewEndpoint().WithCustomerEndpoint(endpoint).GetEndpoint())
+	}
 
 	if logger.GetLogLevel() == "trace" {
 		config = config.WithLogger(volcengine.NewDefaultLogger()).
