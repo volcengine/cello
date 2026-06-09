@@ -1,0 +1,28 @@
+From c8d39abb99f12b75f419998ff4c101e0fa7f4df3 Mon Sep 17 00:00:00 2001
+From: Jian Wen <wenjian1@xiaomi.com>
+Date: Wed, 3 Jun 2026 10:47:43 +0800
+Subject: [PATCH] bpf: pass CGROUP_ATTACH_FLAGS to bpftool cgroup attach
+
+Allow passing flags (e.g. "override") to bpftool cgroup attach so that
+users can selectively replace cilium's cgroup BPF programs on specific
+pods while leaving the default cilium hooks in place for the rest.
+---
+ bpf/init.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/bpf/init.sh b/bpf/init.sh
+index 9d554e4044f8..1876527f8e92 100755
+--- a/bpf/init.sh
++++ b/bpf/init.sh
+@@ -295,7 +295,7 @@ function bpf_load_cgroups()
+ 
+ 	if [ "$RETCODE" -eq "0" ]; then
+ 		set +e
+-		bpftool cgroup attach $CGRP $WHERE pinned $TMP_FILE
++		bpftool cgroup attach $CGRP $WHERE pinned $TMP_FILE ${CGROUP_ATTACH_FLAGS}
+ 		RETCODE=$?
+ 		set -e
+ 		rm -f $TMP_FILE
+-- 
+2.43.0
+
