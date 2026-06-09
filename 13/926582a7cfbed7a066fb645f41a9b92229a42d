@@ -1,0 +1,67 @@
+patch/cilium/008-bpf-pass-CGROUP_ATTACH_FLAGS-to-bpftool-cgroup-attach.patch
+  s_c9a97bbdafb91d::t_ed1616fbba22d3 1-28 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a27b82bbdff9f4ca98af125","tool_type":"agent","tool_id":"RunCommand","line_ranges":[{"Range":[1,28]}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "13926582a7cfbed7a066fb645f41a9b92229a42d",
+  "prompts": {},
+  "sessions": {
+    "s_c9a97bbdafb91d": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a27b5e7bdff9f4ca98af0c3",
+        "model": "openrouter-2o__dev",
+        "display_model_name": "openrouter-2o"
+      },
+      "human_author": "quanwei <quanwei.153@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {
+    "patch/cilium/008-bpf-pass-CGROUP_ATTACH_FLAGS-to-bpftool-cgroup-attach.patch": [
+      {
+        "hash": "s_c9a97bbdafb91d::t_ed1616fbba22d3",
+        "line_ranges": [
+          {
+            "Range": [
+              1,
+              28
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a27b82bbdff9f4ca98af125",
+            "tool_type": "agent",
+            "tool_id": "RunCommand",
+            "line_ranges": [
+              {
+                "Range": [
+                  1,
+                  28
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "s_c9a97bbdafb91d": {
+      "tool": "trae",
+      "conversation_id": "6a27b5e7bdff9f4ca98af0c3",
+      "session_id": "6a27b5e7bdff9f4ca98af0c3",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_c9a97bbdafb91d::t_ed1616fbba22d3": {
+      "tool": "trae",
+      "conversation_id": "6a27b5e7bdff9f4ca98af0c3",
+      "session_id": "6a27b5e7bdff9f4ca98af0c3",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
