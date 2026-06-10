@@ -111,6 +111,10 @@ cd cello
 ### License
 Cello 使用 Apache 2.0 证书, 详情见 [LICENSE](./LICENSE)。
 
+## Security and privacy
+本项目高度重视安全问题。
+有关漏洞报告及受支持的版本，请参阅 [SECURITY.md](SECURITY.md)。
+
 
 [CNI]: https://www.cni.dev/
 [辅助ENI]: https://www.volcengine.com/docs/6401/68940#%E7%BD%91%E5%8D%A1
