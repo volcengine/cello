@@ -131,6 +131,10 @@ If you have any questions or want to contribute, you are welcome to communicate 
 ### License
 Cello is under the Apache 2.0 license. See the [LICENSE](./LICENSE) file for details.
 
+## Security and privacy
+This project takes security seriously.
+For vulnerability reporting and supported versions, see [SECURITY.md](SECURITY.md)
+
 
 [CNI]: https://www.cni.dev/
 [secondary ENI]: https://www.volcengine.com/docs/6401/68940#%E7%BD%91%E5%8D%A1
