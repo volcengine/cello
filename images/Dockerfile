@@ -50,6 +50,10 @@ RUN git clone -b $GIT_TAG --depth 1 https://github.com/cilium/cilium.git && \
 COPY ../patch/cilium /cilium_patch
 RUN cd cilium && git apply /cilium_patch/*.patch
 RUN cd cilium &&  make PKG_BUILD=1 SKIP_DOCS=true DESTDIR=/tmp/install clean-container build-container install-container
+# The embedded identity GC starts this binary, which build-container omits.
+RUN cd cilium && \
+    make -C operator PKG_BUILD=1 SKIP_DOCS=true cilium-operator-generic && \
+    install -m 0755 operator/cilium-operator-generic /tmp/install/usr/bin/cilium-operator-generic
 
 
 # cni-plugins
