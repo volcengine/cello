@@ -21,18 +21,13 @@ data:
       {{- if .Values.cello.iamRole }}
       "ramRole": {{ .Values.cello.iamRole | toJson }},
       {{- end }}
-      interfaceTagPrefixes: [
+      "interfaceTagPrefixes": [
         {{- $lastPrefix := sub (len .Values.cello.interfaceTagPrefixes) 1}}
         {{- range $idx,$item := .Values.cello.interfaceTagPrefixes }}
         {{ quote $item }}{{ if ne $idx $lastPrefix }},{{end}}
         {{- end}}
       ],
-      additionalTags: [
-        {{- $lastTag := sub (len .Values.cello.additionalTags) 1}}
-        {{- range $idx,$item := .Values.cello.additionalTags }}
-        {{ quote $item }}{{ if ne $idx $lastTag }},{{end}}
-        {{- end}}
-      ],
+      "additionalTags": {{ .Values.cello.additionalTags | default dict | toJson }},
       "credentialAccessKeyId": {{ .Values.cello.accessKey | toJson }},
       "credentialAccessKeySecret": {{ .Values.cello.secretKey | toJson }},
       "openApiAddress": "{{ .Values.cello.openAPIAddress }}",
