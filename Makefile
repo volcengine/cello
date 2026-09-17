@@ -21,9 +21,9 @@ IMAGE_NAME_TAG ?= $(IMAGE_NAME):$(IMAGE_TAG)
 
 # GO FLAGS
 GOPROXY ?=
-GO_FLAGS=-ldflags="-s -w"
-CNI_VERSION_LD_FLAG=-ldflags="-X github.com/volcengine/cello/pkg/version.Version=$(VERSION)@$(BRANCH) -X github.com/volcengine/cello/pkg/version.GitCommit=$(COMMIT)"
-BUILD_INFO=-ldflags="-X main.BuildInfo=$(VERSION)@$(BRANCH)_$(DATE)"
+GO_LDFLAGS=-s -w
+CNI_VERSION_LD_FLAG=-X github.com/volcengine/cello/pkg/version.Version=$(VERSION)@$(BRANCH) -X github.com/volcengine/cello/pkg/version.GitCommit=$(COMMIT)
+BUILD_INFO=-X main.BuildInfo=$(VERSION)@$(BRANCH)_$(DATE)
 
 BUILD_ARGS =
 BUILD_ARGS+=--build-arg TARGETOS=$(OS)
@@ -36,19 +36,19 @@ tidy:
 	go mod tidy
 
 cello-agent:
-	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/bin/cello-agent $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -o $(OUTPUT)/bin/cello-agent -ldflags="$(GO_LDFLAGS) $(CNI_VERSION_LD_FLAG)" \
 		./cmd/cello-agent
 
 cello-ctl:
-	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/bin/cello-ctl $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) $(BUILD_INFO)\
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -o $(OUTPUT)/bin/cello-ctl -ldflags="$(GO_LDFLAGS) $(CNI_VERSION_LD_FLAG) $(BUILD_INFO)" \
 		./cmd/cello-cli
 
 cello-cni:
-	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/cni/cello-cni $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -o $(OUTPUT)/cni/cello-cni -ldflags="$(GO_LDFLAGS) $(CNI_VERSION_LD_FLAG)" \
     	./cmd/cello-cni
 
 cilium-launcher:
-	CGO_ENABLED=0 GOOS=linux go build -o $(OUTPUT)/bin/cilium-launcher $(GO_FLAGS) $(CNI_VERSION_LD_FLAG) \
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -o $(OUTPUT)/bin/cilium-launcher -ldflags="$(GO_LDFLAGS) $(CNI_VERSION_LD_FLAG)" \
 		./cmd/launcher/cilium
 
 protobuf: tidy
